@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { decideTool, writesCode } from '../src/agent/policy.js';
+import { confineSearch, decideTool, writesCode } from '../src/agent/policy.js';
 
 const ctx = { cwd: '/work/proj', roots: ['/work/proj', '/work/docs'], autoEdit: false };
 const rw = { ...ctx, autoEdit: true };
@@ -140,5 +140,63 @@ describe('decideTool', () => {
     symlinkSync(share, viaLink);
     expect(decideTool('Read', { file_path: path.join(share, 'a.md') }, { ...linked, cwd: viaLink, roots: [viaLink] })).toBe('allow');
     expect(decideTool('Write', { file_path: path.join(viaLink, 'a.md') }, linked)).toBe('allow');
+  });
+
+  it('does not allow a directory search that would open a credential file it finds', () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'beluga-policy-search-'));
+    const dir = path.join(base, 'work');
+    const outside = path.join(base, 'outside');
+    mkdirSync(dir);
+    mkdirSync(outside);
+    writeFileSync(path.join(dir, 'notes.txt'), 'hello');
+    writeFileSync(path.join(dir, 'credentials.json'), 'x');
+    writeFileSync(path.join(outside, 'id_ed25519'), 'x');
+    symlinkSync(path.join(outside, 'id_ed25519'), path.join(dir, 'alias.txt'));
+    const here = { cwd: dir, roots: [dir], autoEdit: false };
+    // The arguments never name the secret. Full trust must not turn this into a yes.
+    expect(decideTool('Grep', { pattern: 'KEY', path: dir }, here)).toBe('deny');
+    expect(decideTool('Grep', { pattern: 'KEY', path: dir }, { ...here, scope: 'full' })).toBe('deny');
+    expect(decideTool('Glob', { pattern: '**/*', path: dir }, here)).toBe('deny');
+    expect(decideTool('LS', { path: dir }, here)).toBe('deny');
+    expect(decideTool('Read', { file_path: path.join(dir, 'credentials.json') }, here)).toBe('deny');
+    expect(decideTool('Read', { file_path: path.join(dir, 'alias.txt') }, here)).toBe('deny');
+    expect(decideTool('Read', { file_path: path.join(dir, 'notes.txt') }, here)).toBe('allow');
+    // A search that cannot match those files stays allowed.
+    expect(decideTool('Grep', { pattern: 'TODO', path: dir, glob: '**/*.ts' }, here)).toBe('allow');
+    expect(decideTool('Glob', { pattern: '**/*.ts', path: dir }, here)).toBe('allow');
+    // Narrowed, the same search runs and leaves the credential files out.
+    for (const [tool, input] of [
+      ['Grep', { pattern: 'KEY', path: dir }],
+      ['Glob', { pattern: '**/*', path: dir }],
+    ] as const) {
+      const next = confineSearch(tool, input, here);
+      const spec = String(tool === 'Grep' ? next?.glob : next?.pattern);
+      expect(spec.startsWith('!'), spec).toBe(true);
+      expect(spec).toContain('credentials.json');
+      expect(spec).toContain('alias.txt');
+      expect(spec).not.toContain('notes.txt');
+      expect(decideTool(tool, next!, here)).toBe('allow');
+    }
+    expect(confineSearch('LS', { path: dir }, here)).toBeUndefined();
+    // A directory with no credential files is unchanged.
+    const clean = path.join(base, 'clean');
+    mkdirSync(clean);
+    writeFileSync(path.join(clean, 'notes.txt'), 'hello');
+    const cleanCtx = { cwd: clean, roots: [clean], autoEdit: false };
+    expect(decideTool('Grep', { pattern: 'TODO', path: clean }, cleanCtx)).toBe('allow');
+    expect(confineSearch('Grep', { pattern: 'TODO', path: clean }, cleanCtx)).toBeUndefined();
+  });
+
+  it("asks about a directory search that would only open your own .env, and does not refuse it", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'beluga-policy-dotenv-'));
+    writeFileSync(path.join(dir, 'notes.txt'), 'hello');
+    writeFileSync(path.join(dir, '.env'), 'A=1');
+    const own = { cwd: dir, roots: [dir], autoEdit: true, dotenv: true };
+    expect(decideTool('Grep', { pattern: 'KEY', path: dir }, own)).toBe('secret');
+    expect(decideTool('Read', { file_path: path.join(dir, '.env') }, own)).toBe('secret');
+    expect(decideTool('Grep', { pattern: 'KEY', path: dir }, { ...own, dotenv: false })).toBe('deny');
+    const next = confineSearch('Grep', { pattern: 'KEY', path: dir }, own);
+    expect(String(next?.glob).startsWith('!')).toBe(true);
+    expect(decideTool('Grep', next!, own)).toBe('allow');
   });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -26,24 +26,38 @@ describe('loadIdentity', () => {
     expect(first.peerId).toHaveLength(32);
   });
 
-  it('makes a new identity when the file is corrupt', () => {
+  it('leaves a corrupt identity file unchanged and writes no new key', () => {
     const file = path.join(dir, 'identity.json');
-    const original = loadIdentity(file);
     writeFileSync(file, '{broken');
-    const fresh = loadIdentity(file);
-    expect(fresh.peerId).not.toBe(original.peerId);
-    expect(loadIdentity(file).peerId).toBe(fresh.peerId);
+    expect(() => loadIdentity(file)).toThrow(/invalid/i);
+    expect(readFileSync(file, 'utf8')).toBe('{broken');
+    expect(existsSync(`${file}.${process.pid}.tmp`)).toBe(false);
   });
 
-  it('makes a new identity when the key is missing or invalid', () => {
+  it('leaves an identity file with a missing or invalid key unchanged', () => {
     const file = path.join(dir, 'identity.json');
     writeFileSync(file, JSON.stringify({}));
-    const a = loadIdentity(file);
-    expect(loadIdentity(file).peerId).toBe(a.peerId);
-    writeFileSync(file, JSON.stringify({ privateKey: 'not a pem' }));
-    const b = loadIdentity(file);
-    expect(b.peerId).not.toBe(a.peerId);
-    expect(loadIdentity(file).peerId).toBe(b.peerId);
+    expect(() => loadIdentity(file)).toThrow(/invalid/i);
+    expect(readFileSync(file, 'utf8')).toBe('{}');
+    const bad = JSON.stringify({ privateKey: 'not a pem' });
+    writeFileSync(file, bad);
+    expect(() => loadIdentity(file)).toThrow(/invalid/i);
+    expect(readFileSync(file, 'utf8')).toBe(bad);
+    expect(existsSync(`${file}.${process.pid}.tmp`)).toBe(false);
+  });
+
+  it('does not replace an identity file it cannot read', () => {
+    if (process.platform === 'win32') return;
+    const file = path.join(dir, 'identity.json');
+    writeFileSync(file, '{broken');
+    chmodSync(file, 0);
+    try {
+      expect(() => loadIdentity(file)).toThrow(/unreadable/i);
+    } finally {
+      chmodSync(file, 0o600);
+    }
+    expect(readFileSync(file, 'utf8')).toBe('{broken');
+    expect(existsSync(`${file}.${process.pid}.tmp`)).toBe(false);
   });
 
   it('still returns a working one-off identity when it cannot save', () => {

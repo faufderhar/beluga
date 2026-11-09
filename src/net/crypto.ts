@@ -1,5 +1,5 @@
 import { type KeyObject, createCipheriv, createDecipheriv, createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, sign, timingSafeEqual, verify } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Box } from '../protocol.js';
 
@@ -92,22 +92,40 @@ export const identityPem = (identity: Identity): string => identity.privateKey.e
 /**
  * Your long-lived identity, kept in ~/.beluga/identity.json (readable only by you). It lets
  * friends recognize you across sessions, so the trust level they gave you comes back.
+ * A missing file is created. A file that is there but can't be read or isn't a key is left
+ * as it is: replacing it would silently change your peer id, and the trust tied to it.
  */
 export function loadIdentity(file: string): Identity {
+  let text: string;
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as { privateKey?: string };
-    if (raw.privateKey) return identityFrom(createPrivateKey(raw.privateKey));
-  } catch {
-    // Missing or unreadable: make a new one below.
+    text = readFileSync(file, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // Not there yet: make one. A path that can't exist (the parent is a file) stays a one-off.
+    if (code === 'ENOENT') return createIdentity(file);
+    if (code === 'ENOTDIR') return generateIdentity();
+    throw new Error('Identity file is unreadable');
   }
+  try {
+    const raw = JSON.parse(text) as { privateKey?: unknown };
+    if (typeof raw?.privateKey !== 'string' || !raw.privateKey) throw new Error('missing key');
+    return identityFrom(createPrivateKey(raw.privateKey));
+  } catch {
+    throw new Error('Identity file is invalid');
+  }
+}
+
+/** A new identity.json (0600, written whole or not at all). If it can't be saved, a one-off for this run. */
+function createIdentity(file: string): Identity {
   const fresh = generateIdentity();
   try {
-    mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify({ privateKey: identityPem(fresh) })}\n`, { mode: 0o600 });
-    renameSync(tmp, file);
+    saveIdentity(file, fresh);
   } catch {
-    // Can't save: this run still works, with a one-off identity.
+    try {
+      unlinkSync(`${file}.${process.pid}.tmp`);
+    } catch {
+      // Nothing was written.
+    }
   }
   return fresh;
 }

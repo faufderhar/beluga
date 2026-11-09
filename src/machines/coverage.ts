@@ -311,6 +311,11 @@ export const MACHINE: Record<Method, MachineSide> = {
   'stripe.connect': 'drive',
   'stripe.disconnect': 'drive',
   'stripe.refresh': 'drive',
+  // ---- revenuecat (the same Earnings sheet as Stripe)
+  'revenuecat.connect': 'drive',
+  'revenuecat.disconnect': 'drive',
+  'revenuecat.refresh': 'drive',
+  'revenuecat.setApps': 'drive',
   // ---- support
   'support.answer': 'drive',
   // ---- stats

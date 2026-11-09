@@ -4,7 +4,8 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../../../core/attachments.js';
 import { buildPrompt, summarizeTool } from '../../prompt.js';
 import { runInstructions } from '../../run-instructions.js';
-import { SECRET_DECLINED, decideTool, denyReason } from '../../policy.js';
+import { SECRET_DECLINED, confineSearch, decideTool, denyReason } from '../../policy.js';
+import { baseEnv } from '../../../core/peer-run.js';
 import { gateTool } from '../../tool-gate.js';
 import { syncProbes } from '../../sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse, toMs } from './usage.js';
@@ -38,6 +39,42 @@ import { expandCommand, mayBeCommand, skillOptions } from './skill-plugins.js';
 import { BACKGROUND_LIMIT_MS, INTERRUPT_TIMEOUT_MS } from '../types.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
+
+/**
+ * A friend's or a guest's Claude run must not inherit the daemon's environment (API tokens,
+ * cloud credentials). Your own runs do, and so does a dialogue or a compaction: those have no
+ * friend marker. A guest never does, even if another flag is set.
+ */
+export function inheritsDaemonEnv(input: Pick<AgentRunInput, 'guest' | 'ownerMcp' | 'dialogue' | 'vetTool' | 'viaAgent' | 'channel'>): boolean {
+  if (input.guest) return false;
+  if (input.ownerMcp || input.dialogue) return true;
+  if (input.vetTool || input.viaAgent || input.channel) return false;
+  return true;
+}
+
+/** Env names that carry a credential. Matched on the name, never the value. */
+const SECRET_ENV = /PASSWORD|PASSWD|SECRET|PRIVATE_KEY|SERVICE_ROLE_KEY|API_KEY|TOKEN|CREDENTIAL|_KEY/i;
+
+/** What a friend's shell is given, on top of baseEnv (see core/peer-run.ts). */
+const SCRUBBED_SHELL = { CI: '1', GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1', TERM: 'dumb', PAGER: 'cat', GIT_PAGER: 'cat' };
+
+const safeRunEnv = (extra: Readonly<Record<string, string>> | undefined): Record<string, string> =>
+  Object.fromEntries(Object.entries(extra ?? {}).filter(([name]) => name && !SECRET_ENV.test(name)));
+
+/**
+ * The environment Claude Code is launched with. Undefined: don't set one, so your own run (or a
+ * compaction) inherits the daemon's. A friend or a guest always gets an explicit scrubbed one,
+ * plus the non-secret variables the run already adds (a worktree tag, the compact threshold).
+ */
+export function claudeLaunchEnv(input: Pick<AgentRunInput, 'guest' | 'ownerMcp' | 'dialogue' | 'vetTool' | 'viaAgent' | 'channel' | 'env' | 'autoCompactAt'>, env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  const compact = compactEnv(Boolean(input.autoCompactAt), input.autoCompactAt ?? 0);
+  if (inheritsDaemonEnv(input)) {
+    if ((input.env && Object.keys(input.env).length) || input.autoCompactAt) return { ...env, ...input.env, ...compact } as Record<string, string>;
+    return undefined;
+  }
+  return { ...baseEnv(env), ...SCRUBBED_SHELL, ...compact, ...safeRunEnv(input.env) };
+}
+
 /**
  * How long a run stays open after answering for a command or watch the main conversation left
  * running (no agents): long enough for the full tests or a build to end and wake Claude, short
@@ -212,6 +249,9 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       };
       // Your `claude` flags (Settings › Agents): how it asks, in the SDK's words; the rest as they are.
       const launch = claudeLaunch(input.launchArgs?.claude ?? [], { plan: Boolean(input.plan), autoEdit });
+      // Set, this replaces Claude Code's whole environment. A friend or a guest gets a scrubbed one
+      // (never the daemon's tokens); your own run inherits unless it already passes variables.
+      const launchEnv = claudeLaunchEnv(input);
       const options: Options = {
         cwd,
         additionalDirectories: [...extraDirs, ...(fixup ? [fixup] : [])],
@@ -236,14 +276,17 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   const toolInput = (hookInput.tool_input ?? {}) as Record<string, unknown>;
                   const veto = input.vetTool?.(hookInput.tool_name, toolInput);
                   if (veto) return verdict('deny', veto);
-                  const decision = decideTool(hookInput.tool_name, toolInput, policy);
-                  if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, toolInput, policy));
+                  // A directory search is narrowed so it never opens a credential file, then judged on that.
+                  const confined = confineSearch(hookInput.tool_name, toolInput, policy);
+                  const judged = confined ?? toolInput;
+                  const decision = decideTool(hookInput.tool_name, judged, policy);
+                  if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, judged, policy));
                   // A sub-agent is told where its own scratch folder is, so what it makes shows on its page.
-                  const scratched = scratchRoot ? withAgentScratch(hookInput.tool_name, toolInput, hookInput.tool_use_id, scratchRoot) : undefined;
+                  const scratched = scratchRoot ? withAgentScratch(hookInput.tool_name, judged, hookInput.tool_use_id, scratchRoot) : undefined;
                   // In a worktree, what's kept on purpose is made to outlive the turn (see workspaces/test-procs.ts).
                   const keptLog = path.join(cwd, SCRATCH_DIR, `kept-${hookInput.tool_use_id.slice(-8)}.log`);
-                  const kept = input.env?.KLAUD_WORKTREE ? keptBashInput(hookInput.tool_name, scratched ?? toolInput, keptLog) : undefined;
-                  const patched = kept ?? scratched;
+                  const kept = input.env?.KLAUD_WORKTREE ? keptBashInput(hookInput.tool_name, scratched ?? judged, keptLog) : undefined;
+                  const patched = kept ?? scratched ?? confined;
                   const allow = (reason: string) => (patched ? { hookSpecificOutput: { ...verdict('allow', reason).hookSpecificOutput, updatedInput: patched } } : verdict('allow', reason));
                   if (decision === 'allow') return patched ? allow('Allowed by Beluga.') : {};
                   if (decision === 'secret') return (await input.canUseSecret?.(hookInput.tool_name, toolInput)) ? allow('Approved by the machine owner.') : verdict('deny', SECRET_DECLINED);
@@ -269,18 +312,19 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...skills,
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
-        // Set, this replaces Claude Code's whole environment, so it starts from ours.
         // Claude Code's own auto-compact follows Beluga's threshold (see shared/context-usage.ts).
-        ...((input.env && Object.keys(input.env).length) || input.autoCompactAt ? { env: { ...process.env, ...input.env, ...compactEnv(Boolean(input.autoCompactAt), input.autoCompactAt ?? 0) } } : {}),
+        ...(launchEnv ? { env: launchEnv } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         // Its last words, so a crash says why (see shared/run-failure.ts): read by our own spawn when there is one.
         ...(tracked ? { spawnClaudeCodeProcess: tracked.spawn } : { stderr: keepStderr }),
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
           if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
-          // The same gate the stdio tool server asks (agent/tool-gate.ts).
-          const denied = await gateTool(toolName, toolInput, input, policy);
-          return denied ? { behavior: 'deny', message: denied } : { behavior: 'allow', updatedInput: toolInput };
+          // The same gate the stdio tool server asks (agent/tool-gate.ts). A directory search is narrowed first.
+          const confined = confineSearch(toolName, toolInput, policy);
+          const judged = confined ?? toolInput;
+          const denied = await gateTool(toolName, judged, input, policy);
+          return denied ? { behavior: 'deny', message: denied } : { behavior: 'allow', updatedInput: judged };
         },
       };
 
