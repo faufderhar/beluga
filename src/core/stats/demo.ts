@@ -64,6 +64,19 @@ export function demoStats(projects: readonly Project[], now: number): Pick<Stats
       }
     });
   }
+  // The noise above can leave a whole month with only Claude's merges. Usage's month view, and
+  // the e2e that reads it, expect Codex and the local model in that window too.
+  const monthAgo = now - 30 * DAY;
+  const root = roots[0];
+  if (root) {
+    for (const { agent } of AGENTS) {
+      const recent = Object.values(prs).some((p) => p.agent === agent && p.merged !== undefined && p.merged >= monthAgo);
+      if (recent) continue;
+      const number = 100 + Object.keys(prs).length;
+      const merged = now - 6 * DAY;
+      prs[`${root}#${number}`] = { project: root, agent, number, opened: merged - 2 * DAY, merged, added: 80, removed: 20 };
+    }
+  }
   return { days, hours, prs, plan: demoPlan(now) };
 }
 

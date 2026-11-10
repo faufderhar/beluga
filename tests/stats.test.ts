@@ -136,6 +136,10 @@ describe('reading the stats', () => {
     expect(a).toEqual(demoStats([p], NOW));
     expect(Object.keys(a.days).length).toBeGreaterThan(150);
     expect(Object.keys(a.prs).length).toBeGreaterThan(5);
+    // The month view is what Usage opens on. Claude, Codex and the local model each merged one there.
+    const monthAgo = NOW - 30 * DAY;
+    const merged = new Set(Object.values(a.prs).filter((p) => p.merged !== undefined && p.merged >= monthAgo).map((p) => p.agent));
+    expect([...merged].sort()).toEqual(['claude', 'codex', 'local']);
   });
 });
 
