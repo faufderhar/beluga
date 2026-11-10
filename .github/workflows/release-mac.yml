@@ -1,0 +1,54 @@
+name: Release for Mac
+
+# The Mac disk image, built here when asked. This checkout has no Xcode and no updater key,
+# so the image is a download (Beluga_<version>_aarch64.dmg) and not an in-app update:
+# latest.json is not uploaded, and the updater's signature is not made.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release's tag (v3.1.0-mac)
+        required: true
+        default: v3.1.0-mac
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: packages/mac/src-tauri
+      - run: npm ci
+      - run: npm ci
+        working-directory: packages/mac
+      - name: Beluga's engine and Node, bundled
+        run: node scripts/build-sidecar.mjs
+      - name: The desktop widgets
+        run: node scripts/build-widgets.mjs
+      - name: The app, without an update signature
+        working-directory: packages/mac
+        run: npx tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: The disk image
+        working-directory: packages/mac
+        run: node scripts/make-dmg.mjs
+      - name: The release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          ver=$(node -p "require('./packages/mac/package.json').version")
+          dmg=$(echo packages/mac/src-tauri/target/release/bundle/dmg/*.dmg)
+          notes="docs/releases/${ver}.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$dmg" --clobber
+          else
+            gh release create "$TAG" "$dmg" --title "Beluga ${ver}" --notes-file "$notes" --latest
+          fi
