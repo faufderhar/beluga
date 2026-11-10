@@ -6,6 +6,7 @@ import { ActivityCard } from './usage/ActivityCard.js';
 import { Breakdown } from './usage/Breakdown.js';
 import { CleanupCard } from './usage/CleanupCard.js';
 import { EarningsSummaryCard } from './usage/EarningsSummaryCard.js';
+import { CacheCard } from './usage/CacheCard.js';
 import { PlanCard } from './usage/PlanCard.js';
 import { type PlanLimit, SessionsCard } from './usage/SessionsCard.js';
 import { usagesOf } from '@beluga/agent/usage.js';
@@ -108,6 +109,7 @@ export function UsageView() {
               <EarningsSummaryCard />
             </div>
           </div>
+          <CacheCard state={state} />
         </Chapter>
         <StatsSection state={state} got={got} />
         <Chapter title="Your disk" sub="The room your worktrees take, what’s safe to put away, and every project side by side.">

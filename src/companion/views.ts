@@ -36,7 +36,8 @@ import { resumeOf } from '../core/auto-continue.js';
 import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '../core/chat-people.js';
 import { type AgentRef, CLAUDE_AGENT, type Profile, defaultAgentOf } from '../protocol.js';
 import { threadNesting } from '../ui/thread-tree.js';
-import { providerCards } from '../ui/usage-cards.js';
+import { cacheHitRows, phoneCacheRows } from '../ui/cache-usage.js';
+import { type LocalLedger, providerCards, withLocalUsage } from '../ui/usage-cards.js';
 import {
   type BranchView,
   type ChatMessageView,
@@ -166,11 +167,12 @@ const PHONE_WINDOW: Readonly<Record<string, string>> = { '5-hour': '5 hours', We
 /**
  * Someone's providers as the phone's usage cards (src/ui/usage-cards.ts, as the Mac draws them):
  * plan windows where they have them, tokens and speed where not; their default first. A provider
- * that has said nothing yet is left out, unless it's signed out.
+ * that has said nothing yet is left out, unless it's signed out or its card explains why (Grok's
+ * period, when this Mac's own ledger is passed). A friend's card gets no ledger.
  */
-export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined): UsageView[] {
-  const cards = providerCards(p, defaultAgent)
-    .filter((c) => c.shape !== 'empty' || !c.signedIn)
+export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined, ledger?: LocalLedger): UsageView[] {
+  const cards = withLocalUsage(providerCards(p, defaultAgent), ledger)
+    .filter((c) => c.shape !== 'empty' || !c.signedIn || Boolean(c.note))
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
   return cards.slice(0, 8).map((c) => ({
     provider: c.key === CLAUDE_AGENT.runtime ? 'Claude Code' : clip(c.agent.label, 40),
@@ -182,6 +184,7 @@ export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | und
     ...(c.tokens ? { tokens: c.tokens } : {}),
     ...(c.tokensPerSec !== undefined ? { tokensPerSec: c.tokensPerSec } : {}),
     ...(c.signedIn ? {} : { signedIn: false }),
+    ...(c.note ? { note: clip(c.note, 200) } : {}),
   }));
 }
 
@@ -643,7 +646,20 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
     // 1.14: all of Your Mac's chats, for the phone's chat list.
     ...(macChats.length ? { macChats } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },
-    usage: usageViews(state.peers.find((p) => p.peerId === state.self?.peerId) ?? state.self, state.prefs.defaultAgent),
+    usage: usageViews(state.peers.find((p) => p.peerId === state.self?.peerId) ?? state.self, state.prefs.defaultAgent, {
+      projects: state.projects,
+      runtimes: state.runtimes,
+      defaultRuntime: state.prefs.defaultAgent?.runtime ?? 'claude',
+      ...(state.prefs.projectAgents ? { projectAgents: state.prefs.projectAgents } : {}),
+    }),
+    cache: phoneCacheRows(
+      cacheHitRows(state.projects, state.context, {
+        runtime: state.prefs.defaultAgent?.runtime ?? 'claude',
+        ...((state.prefs.defaultAgent?.runtime ?? 'claude') === 'claude' ? { model: state.prefs.defaultAgent?.model ?? state.prefs.model } : { ...(state.prefs.defaultAgent?.model ? { model: state.prefs.defaultAgent.model } : {}) }),
+        ...(state.prefs.projectAgents ? { projectAgents: state.prefs.projectAgents } : {}),
+      }),
+      clip,
+    ),
     needsYou: items,
     running: running.slice(0, 20),
     // Outputs live with their conversation now (ConvView `outputs`); Home only hints (`fresh`).

@@ -146,10 +146,10 @@ button.stat:disabled {
 .input::placeholder {
   color: var(--text-3);
 }
-/* One line: the fields give way (the name first) before anything wraps (BLG-786 added Runs on). */
+/* One line when it fits. The name gives way first; if the model chip still can't keep its words, the button wraps under them instead of covering the name (BLG-786 added Runs on). */
 .bar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
   padding: 6px 8px 8px 14px;
@@ -167,7 +167,8 @@ button.stat:disabled {
 /* Narrower than the draft's: the box's button stays on the same line. */
 .nameInput {
   width: 130px;
-  min-width: 88px;
+  min-width: 0;
+  max-width: 9rem;
   flex: 0 1 130px;
 }
 .bar > label,
@@ -176,10 +177,23 @@ button.stat:disabled {
   flex-shrink: 0;
   white-space: nowrap;
 }
-/* Only the name (it's optional) gives way, down to a short box; the branch, the chips and the button keep their shape. */
+/* The name gives way first, down to a box you can still type in. The input flexes inside the label, so it can't paint over the model chip. */
 .bar > label:has(.nameInput) {
-  flex-shrink: 1;
+  flex: 1 1 11rem;
+  min-width: 8.25rem;
+  max-width: 14rem;
+}
+/* Beats the draft's fixed .name width. */
+.bar .nameInput {
+  width: auto;
   min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+/* The model chip keeps its words. It never shrinks over the name; the row wraps first. */
+.bar > button[data-shrink] {
+  flex: 0 0 auto;
+  max-width: 100%;
 }
 /* Just Ask's and New Plan's line of words: it takes two lines before it pushes anything off. */
 .bar > .note {
@@ -201,12 +215,7 @@ button.stat:disabled {
     display: none;
   }
 }
-/* Too narrow for one line: the button goes under the fields, still on the right. */
-@container (max-width: 520px) {
-  .bar {
-    flex-wrap: wrap;
-  }
-}
+
 
 /* ---- lists */
 .lists {

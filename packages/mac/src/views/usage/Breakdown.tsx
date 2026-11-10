@@ -1,5 +1,6 @@
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import type { AppState } from '@beluga/core/store.js';
+import { cacheHitPct, sessionCache } from '@beluga/shared/context-usage.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { activityOf, stateOf } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
@@ -32,11 +33,11 @@ const CLAUDE = 'var(--claude)';
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 const stop = (e: MouseEvent): void => e.stopPropagation();
 
-function Tokens({ tokens, cost, max }: { tokens: number; cost: number; max: number }) {
+function Tokens({ tokens, cost, max, cache }: { tokens: number; cost: number; max: number; cache?: number }) {
   return (
     <span className={s.metric}>
       <Bar value={tokens} max={max} color={CLAUDE} />
-      <span className={s.metricValue}>{tokens ? `${compact(tokens)} · ${formatCost(cost)}` : '–'}</span>
+      <span className={s.metricValue}>{tokens ? `${compact(tokens)} · ${formatCost(cost)}${cache !== undefined ? ` · cache ${cache}%` : ''}` : '–'}</span>
     </span>
   );
 }
@@ -113,7 +114,7 @@ function Row({ r, state, scale, color, measured, now }: { r: WsRow; state: AppSt
           )}
         </span>
         <span role="cell">
-          <Tokens tokens={r.tokens} cost={r.cost} max={scale.tokens} />
+          <Tokens tokens={r.tokens} cost={r.cost} max={scale.tokens} cache={cacheHitPct(sessionCache(r.ws.usage))} />
         </span>
         <Trailing when={r.lastActive ? ago(r.lastActive, now) : ''}>
           {r.archivable ? <IconButton icon="archive" label={`Archive ${w.name}…`} onClick={() => actions.run({ type: 'ws', id: w.id, action: 'archive' })} /> : null}

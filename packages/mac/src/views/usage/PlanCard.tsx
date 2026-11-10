@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import type { AppState } from '@beluga/core/store.js';
-import { type CardWindow, type FriendRoom, type ProviderCard, friendRooms, providerCards, shortTokens } from '@beluga/ui/usage-cards.js';
+import { type CardWindow, type FriendRoom, type ProviderCard, friendRooms, providerCards, shortTokens, withLocalUsage } from '@beluga/ui/usage-cards.js';
 import { agentMark } from '@beluga/shared/agent-marks.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar, IconButton, cx } from '../../components/ui.js';
@@ -27,8 +27,9 @@ function WindowMeter({ w, now }: { w: CardWindow; now: number }) {
   );
 }
 
-/** A local model has no plan: what it used, and how fast it answers. */
+/** A provider with no plan window: what it used. Speed only when a run actually reported it. */
 function TokensFigures({ card }: { card: ProviderCard }) {
+  const hideSpeed = Boolean(card.note) && card.tokensPerSec === undefined;
   return (
     <div className={s.windows}>
       <div className={s.window}>
@@ -38,16 +39,18 @@ function TokensFigures({ card }: { card: ProviderCard }) {
         </div>
         <div className={s.windowFoot}>{card.tokens ? `${shortTokens(card.tokens.input)} in · ${shortTokens(card.tokens.output)} out` : 'Since Beluga started'}</div>
       </div>
-      <div className={s.window}>
-        <div className={s.windowHead}>
-          <span className={s.windowTitle}>Speed</span>
-          <span className={s.windowPct}>
-            {card.tokensPerSec !== undefined ? Math.round(card.tokensPerSec) : '–'}
-            <small> tok/s</small>
-          </span>
+      {hideSpeed ? null : (
+        <div className={s.window}>
+          <div className={s.windowHead}>
+            <span className={s.windowTitle}>Speed</span>
+            <span className={s.windowPct}>
+              {card.tokensPerSec !== undefined ? Math.round(card.tokensPerSec) : '–'}
+              <small> tok/s</small>
+            </span>
+          </div>
+          <div className={s.windowFoot}>Over its last run</div>
         </div>
-        <div className={s.windowFoot}>Over its last run</div>
-      </div>
+      )}
     </div>
   );
 }
@@ -105,7 +108,12 @@ function ProviderBox({ card, now }: { card: ProviderCard; now: number }) {
           ))}
         </div>
       ) : card.shape === 'tokens' ? (
-        <TokensFigures card={card} />
+        <>
+          <TokensFigures card={card} />
+          {card.note ? <p className={s.quiet}>{card.note}</p> : null}
+        </>
+      ) : card.note ? (
+        <p className={s.quiet}>{card.note}</p>
       ) : (
         <p className={s.quiet}>{card.agent.label}’s usage shows up here after its next run.</p>
       )}
@@ -177,7 +185,12 @@ export function PlanCard({ state, now }: { state: AppState; now: number }) {
   const selfId = state.self?.peerId ?? state.selfId;
   const me = state.peers.find((p) => p.peerId === selfId) ?? state.self;
   // Your setting (unset: Claude) answers at once; the peer card friends see follows it.
-  const cards = providerCards(me, state.prefs.defaultAgent);
+  const cards = withLocalUsage(providerCards(me, state.prefs.defaultAgent), {
+    projects: state.projects,
+    runtimes: state.runtimes,
+    defaultRuntime: state.prefs.defaultAgent?.runtime ?? 'claude',
+    ...(state.prefs.projectAgents ? { projectAgents: state.prefs.projectAgents } : {}),
+  });
   const rooms = friendRooms(state.peers, selfId);
   return (
     <>

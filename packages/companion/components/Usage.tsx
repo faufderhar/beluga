@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { until, useSupports } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
-import type { UsageView } from '../lib/link/protocol';
+import type { HomeView, UsageView } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
 import { AgentMarkIcon, runtimeMark } from './AgentMark';
@@ -37,7 +37,7 @@ function Bar({ pct }: { pct: number }) {
 const shortTokens = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
 
 /** A provider without a plan (a local model): what it used, and how fast it answers. */
-function TokenFigures({ usage }: { readonly usage: UsageView }) {
+function TokenFigures({ usage, hideSpeed }: { readonly usage: UsageView; readonly hideSpeed?: boolean }) {
   const figure = (label: string, value: string, sub: string) => (
     <View style={{ flex: 1, gap: 2 }}>
       <T v="caption">{label}</T>
@@ -51,14 +51,21 @@ function TokenFigures({ usage }: { readonly usage: UsageView }) {
   return (
     <View style={{ flexDirection: 'row', gap: 16 }}>
       {figure('Tokens', t ? shortTokens(t.input + t.output) : '–', t ? `${shortTokens(t.input)} in · ${shortTokens(t.output)} out` : 'since your Mac started')}
-      {figure('Speed', usage.tokensPerSec !== undefined ? `${Math.round(usage.tokensPerSec)} tok/s` : '–', 'over its last run')}
+      {hideSpeed ? null : figure('Speed', usage.tokensPerSec !== undefined ? `${Math.round(usage.tokensPerSec)} tok/s` : '–', 'over its last run')}
     </View>
   );
 }
 
 export function UsageBars({ usage }: { readonly usage: UsageView }) {
   if (usage.signedIn === false) return <T v="caption">Not signed in on your Mac.</T>;
-  if (!usage.windows.length) return <TokenFigures usage={usage} />;
+  if (usage.note && !usage.windows.length && !usage.tokens) return <T v="caption">{usage.note}</T>;
+  if (!usage.windows.length)
+    return (
+      <View style={{ gap: 8 }}>
+        <TokenFigures usage={usage} hideSpeed={Boolean(usage.note) && usage.tokensPerSec === undefined} />
+        {usage.note ? <T v="caption">{usage.note}</T> : null}
+      </View>
+    );
   return (
     <View style={{ gap: 12 }}>
       {usage.windows.map((w) => (
@@ -129,7 +136,47 @@ function DefaultChip({ usage }: { readonly usage: UsageView }) {
   );
 }
 
-export function UsageSheet({ usage, visible, onClose }: { readonly usage: readonly UsageView[]; readonly visible: boolean; readonly onClose: () => void }) {
+function CacheSection({ cache }: { readonly cache: NonNullable<HomeView['cache']> }) {
+  const sessions = cache.filter((r) => r.scope === 'session');
+  const models = cache.filter((r) => r.scope === 'model');
+  const block = (title: string, rows: typeof sessions) => (
+    <View style={{ gap: 6 }}>
+      <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
+        {title}
+      </T>
+      {rows.length ? (
+        rows.map((r) => (
+          <View key={`${r.scope}:${r.label}`} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+            <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
+              {r.label}
+            </T>
+            <T v="caption" style={{ fontVariant: ['tabular-nums'] }}>
+              {Math.round(r.pct)}%
+            </T>
+          </View>
+        ))
+      ) : (
+        <T v="caption">No cache measurements yet.</T>
+      )}
+    </View>
+  );
+  return (
+    <View style={{ gap: 14 }}>
+      <T v="heading">Cache</T>
+      {cache.length ? (
+        <>
+          <T v="caption">By session is this conversation. By model counts each one under the model it uses now.</T>
+          {block('By session', sessions)}
+          {block('By model', models)}
+        </>
+      ) : (
+        <T v="caption">No cache measurements yet.</T>
+      )}
+    </View>
+  );
+}
+
+export function UsageSheet({ usage, cache, visible, onClose }: { readonly usage: readonly UsageView[]; readonly cache?: HomeView['cache']; readonly visible: boolean; readonly onClose: () => void }) {
   return (
     <Sheet window visible={visible} onDismiss={onClose}>
       <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 22 }}>
@@ -146,6 +193,7 @@ export function UsageSheet({ usage, visible, onClose }: { readonly usage: readon
             <UsageBars usage={u} />
           </View>
         ))}
+        {cache ? <CacheSection cache={cache} /> : null}
       </View>
     </Sheet>
   );

@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 49 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 50 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -134,6 +134,9 @@ export const COMPANION_PROTO = { major: 1, minor: 49 } as const;
  * older phone drops the frame: nothing changes for either. Each says its Runs on line as the Mac's
  * menu does (`line`, `why`), and the phone shows every computer's work, Needs You and New Task's
  * Runs on from its own links (BLG-810).
+ * 1.50: Usage says when a provider can't report its billing period (`UsageView.note`), and Home
+ * carries cache hit rate by session and by model (`HomeView.cache`). An older phone drops both.
+ * An older Mac leaves them out: the phone hides the cache section.
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 32, providers: 33, dialogues: 34, workAgents: 35, terminalView: 36, reactions: 41, cancelSteer: 43, triage: 44, draftReview: 45, threads: 47, threadAgents: 47, seen: 48, computers: 49 } as const;
 
@@ -249,6 +252,8 @@ export const UsageView = z.object({
   tokensPerSec: z.number().min(0).optional(),
   /** 1.33: false when it's installed on the Mac but not signed in. */
   signedIn: z.boolean().optional(),
+  /** 1.50: why this provider has no plan window (Grok Build, when its period can't be read from here). */
+  note: z.string().max(200).optional(),
 });
 export type UsageView = z.infer<typeof UsageView>;
 
@@ -514,6 +519,11 @@ export const HomeView = z.object({
   mac: z.object({ name: z.string().max(100), version: z.string().max(40), keepAwake: z.enum(['off', 'power', 'always']).optional() }),
   me: z.object({ name: z.string().max(64), peerId: id }),
   usage: z.array(UsageView).max(8),
+  /**
+   * 1.50: prompt-cache hit rate by conversation and by model. Empty means nothing was counted yet
+   * (not a measured 0%). Absent: an older Mac, and the phone hides the section.
+   */
+  cache: z.array(z.object({ scope: z.enum(['session', 'model']), label: z.string().max(80), pct: z.number().min(0).max(100) })).max(24).optional(),
   needsYou: z.array(NeedsYou).max(50),
   running: z.array(ConvSummary).max(20),
   /**

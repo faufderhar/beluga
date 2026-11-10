@@ -27,6 +27,11 @@ export interface ProviderCard {
   /** The agent that answers when nobody names one (the make-default chip's state). */
   readonly isDefault: boolean;
   readonly updatedAt?: number;
+  /**
+   * Why a card has no plan window (Grok Build, when `grok usage` can't read the period).
+   * Computed for this Mac's own view. Not part of the profile friends see.
+   */
+  readonly note?: string;
 }
 
 /** A provider's quota windows in order: 5-hour, weekly, then its own. */
@@ -90,6 +95,85 @@ export function friendRooms(peers: readonly PeerInfo[], selfId: string | undefin
         .map((r) => ({ ...r, left: 100 - Math.max(...r.windows.map((w) => w.pct)) }))
         .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
     });
+}
+
+/** Workspaces and runtimes the Usage view already has, so a provider can show its local ledger before a refresh. */
+export interface LocalLedger {
+  readonly projects?: ReadonlyArray<{
+    readonly name: string;
+    readonly workspaces: ReadonlyArray<{
+      readonly agent?: { readonly runtime: string };
+      readonly usage?: { readonly input: number; readonly output: number };
+    }>;
+  }>;
+  readonly runtimes?: ReadonlyArray<{ readonly id: string; readonly label?: string; readonly available: boolean; readonly state?: string }>;
+  readonly defaultRuntime?: string;
+  readonly projectAgents?: Readonly<Record<string, { readonly runtime: string }>>;
+}
+
+const GROK = 'grok';
+
+const grokNote = (team: boolean, tokens: boolean): string => {
+  if (team) return tokens ? 'Usage limits are managed by your team. These tokens are from conversations on this Mac.' : 'Usage limits are managed by your team.';
+  return tokens ? "Grok Build can't report its billing period from here. These tokens are from conversations on this Mac." : "Grok Build can't report its billing period from here. It shows up after a conversation reports tokens.";
+};
+
+/**
+ * Grok Build's card for this Mac. A plan window from `grok usage` is left as it is. Otherwise the
+ * card says the period isn't available here and, when conversations counted tokens, shows those.
+ * A signed-out Grok stays signed out. Friends' profiles pass no ledger, so their cards are unchanged.
+ */
+export function withLocalUsage(cards: readonly ProviderCard[], ledger?: LocalLedger): ProviderCard[] {
+  if (!ledger) return [...cards];
+  const grok = ledger.runtimes?.find((r) => r.id === GROK);
+  const available = Boolean(grok?.available && grok.state !== 'missing');
+  const fallback = ledger.defaultRuntime ?? 'claude';
+  let input = 0;
+  let output = 0;
+  for (const project of ledger.projects ?? []) {
+    for (const ws of project.workspaces) {
+      const runtime = ws.agent?.runtime ?? ledger.projectAgents?.[project.name]?.runtime ?? fallback;
+      if (runtime !== GROK || !ws.usage) continue;
+      input += ws.usage.input;
+      output += ws.usage.output;
+    }
+  }
+  const hasTokens = input + output > 0;
+  const existing = cards.find((c) => c.key === GROK);
+  if (existing?.signedIn === false || grok?.state === 'signed_out') {
+    if (existing?.signedIn === false) return [...cards];
+    if (!available && !existing) return [...cards];
+    const signedOut: ProviderCard = {
+      key: GROK,
+      agent: existing?.agent ?? { runtime: GROK, label: grok?.label || 'Grok Build' },
+      shape: 'empty',
+      windows: [],
+      signedIn: false,
+      isDefault: existing?.isDefault ?? fallback === GROK,
+      ...(existing?.updatedAt ? { updatedAt: existing.updatedAt } : {}),
+    };
+    return existing ? cards.map((c) => (c.key === GROK ? signedOut : c)) : [...cards, signedOut];
+  }
+  // A period already read from grok usage stays. A runtime that isn't on this Mac, with nothing counted, stays as it was.
+  if (existing?.shape === 'quota') return [...cards];
+  if (!available && !hasTokens) return [...cards];
+  const tokens = hasTokens ? { input, output } : existing?.tokens;
+  const team = existing?.plan === 'Team';
+  const note = grokNote(team, Boolean(tokens));
+  const next: ProviderCard = {
+    key: GROK,
+    agent: existing?.agent ?? { runtime: GROK, label: grok?.label || 'Grok Build' },
+    shape: tokens ? 'tokens' : 'empty',
+    windows: existing?.windows ?? [],
+    ...(existing?.plan ? { plan: existing.plan } : {}),
+    ...(tokens ? { tokens } : {}),
+    ...(existing?.tokensPerSec !== undefined ? { tokensPerSec: existing.tokensPerSec } : {}),
+    signedIn: true,
+    isDefault: existing?.isDefault ?? fallback === GROK,
+    ...(existing?.updatedAt ? { updatedAt: existing.updatedAt } : {}),
+    note,
+  };
+  return existing ? cards.map((c) => (c.key === GROK ? next : c)) : [...cards, next];
 }
 
 /** "1.2M", "84k", "512" tokens. */
