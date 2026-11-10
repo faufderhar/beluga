@@ -91,6 +91,7 @@ export const SETTINGS: readonly Entry[] = [
     ['Thinking effort', 'How hard your agent thinks.', 'reasoning think effort max high low'],
     ['Ask before running commands', 'Your own agent. Secrets stay blocked either way.', 'approval permission self approval bash'],
   ]),
+  group('claude', 'Models in chat', 'Which models the chat’s model menu offers.', 'open models picker whitelist opus sonnet'),
   group('claude', 'Your agents', 'Each agent Beluga can run, and how to set it up.', 'sign in install login claude code codex'),
   ...rows('claude', 'Your agents', [['Signed in or installed one just now?', 'Check Again looks for your agents now.', 'check again refresh']]),
   group('claude', 'Launch flags', 'Your own flags for claude and codex.', 'args arguments cli flags dangerously skip permissions'),

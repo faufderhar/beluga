@@ -193,6 +193,8 @@ export const PHONE: Record<Method, Side> = {
   'workbench.shareScripts': 'mac',
   'workbench.setModel': 'phone',
   'workbench.setAgent': 'phone',
+  // A conversation's thinking effort stays on the Mac (the phone's picker has no effort meter).
+  'workbench.setEffort': 'mac',
   'workbench.createPr': 'mac',
   'workbench.quickPr': 'mac',
   'workbench.mergeToBase': 'mac',

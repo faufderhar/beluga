@@ -120,7 +120,8 @@ test('picks a model and how hard Claude thinks', async ({ page }) => {
   await page.getByRole('radio', { name: /Opus/ }).click();
   await page.getByRole('radio', { name: 'High', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Agent, model and effort' })).toHaveText(/Opus · High/);
-  await page.getByRole('radio', { name: 'Auto' }).click();
+  // In a conversation the left step follows Settings again (it does not change every conversation).
+  await page.getByRole('radio', { name: 'Settings' }).click();
 });
 
 test("opens a person's card beside their row", async ({ page }) => {
@@ -476,13 +477,13 @@ test('clicking a notification goes where it happened', async ({ page }) => {
   await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
 });
 
-test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {
+test('effort follows Settings again, and Shift-Tab switches plan mode on and off', async ({ page }) => {
   await openWorkspace(page);
   await page.getByRole('button', { name: 'Agent, model and effort' }).click();
   await page.getByRole('radio', { name: 'Max', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Agent, model and effort' })).toHaveText(/Max/);
-  await page.getByRole('radio', { name: 'Auto' }).click();
-  await expect(page.getByRole('radio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('radio', { name: 'Settings' }).click();
+  await expect(page.getByRole('radio', { name: 'Settings' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('button', { name: 'Agent, model and effort' })).not.toHaveText(/Max/);
   await page.keyboard.press('Escape');
   await composer(page).click();

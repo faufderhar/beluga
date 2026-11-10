@@ -38,6 +38,7 @@ import { openCode } from '../workspaces/open-code.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
+import type { Effort } from '../shared/settings-schema.js';
 import { sentinelChatOf } from './sentinel/model.js';
 import { ASSISTANT_TITLE, assistantChatOf, assistantChatTitle, isAssistant } from '../shared/assistant.js';
 import { type AgentRef, defaultAgentOf } from '../protocol.js';
@@ -376,6 +377,19 @@ export class Workbench {
     }
     this.deps.setPrefs({ model: value || undefined });
     this.deps.toast(`New conversations use ${label}`, 'success');
+  }
+
+  /** Pick how hard one conversation thinks. Unset: Settings apply again. A channel with no conversation sets the default. */
+  setEffort(channel: string, effort: Effort | undefined): void {
+    const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+    if (id && this.manager.find(id)) {
+      this.manager.setEffort(id, effort);
+      void this.deps.controller.refresh();
+      const word = effort === 'xhigh' ? 'Extra High' : effort ? `${effort[0]!.toUpperCase()}${effort.slice(1)}` : undefined;
+      this.deps.toast(word ? `${word} thinking in this conversation, from the next message` : 'This conversation follows the effort in Settings', 'success');
+      return;
+    }
+    this.deps.setPrefs({ effort });
   }
 
   /**

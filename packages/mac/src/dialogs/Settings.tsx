@@ -5,6 +5,7 @@ import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
 import { BRANCH_PREFIX_RE, EFFORTS, type LowPower } from '@beluga/shared/settings-schema.js';
 import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { EFFORT_INFO, agentEntries, modelInfo, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
+import { openModelCatalog, toggleOpenModel } from '@beluga/shared/open-models.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, cx } from '../components/ui.js';
@@ -372,6 +373,41 @@ function AgentsGroup({ mine }: { mine: string }) {
 }
 
 /**
+ * Models the chat’s model menu offers. With every switch on, the list is empty and a model found
+ * later is on too. The last one stays on, so the menu always has a choice.
+ */
+function OpenModelsGroup() {
+  const api = useApi();
+  const runtimes = useApp((st) => st.runtimes);
+  const models = useApp((st) => st.models);
+  const open = useApp((st) => st.prefs.openModels) ?? [];
+  const catalog = openModelCatalog(runtimes, models);
+  const known = catalog.map((m) => m.key);
+  const chosen = (key: string): boolean => open.length === 0 || open.includes(key);
+  const toggle = (key: string): void => {
+    const next = toggleOpenModel(open, key, known);
+    if (next === undefined) return;
+    void api.session.setPrefs({ openModels: [...next] });
+  };
+  return (
+    <Group title="Models in chat">
+      <div className={s.note}>Only these appear in the chat’s model menu. With every one on, a model found later is on too.</div>
+      {catalog.length ? (
+        catalog.map((m) => (
+          <Row key={m.key} label={m.label} detail={[m.runtimeLabel, m.description].filter(Boolean).join(' · ')}>
+            <Switch label={`${m.runtimeLabel} ${m.label}`} on={chosen(m.key)} onChange={() => toggle(m.key)} />
+          </Row>
+        ))
+      ) : (
+        <Row label="None" detail="No agent on this Mac is ready with a model yet.">
+          {null}
+        </Row>
+      )}
+    </Group>
+  );
+}
+
+/**
  * Your agent (BLG-497): one pick of runtime and model, for every conversation that picked none of
  * its own and for @you; then how hard it thinks (only the levels its model takes) and the rest.
  */
@@ -409,6 +445,7 @@ function AgentPane() {
           <Switch label="Self approval" on={p.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </Row>
       </Group>
+      <OpenModelsGroup />
       <AgentsGroup mine={runtime} />
       <LaunchFlagsSettings />
       <McpSettings />

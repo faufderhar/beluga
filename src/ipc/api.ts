@@ -94,6 +94,8 @@ export const PrefsPatch = z
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
+    // Which models the chat menu offers (`runtime|value`). Empty: every model.
+    openModels: z.array(z.string().max(120)).max(80),
     // Who answers "@you" (null: back to Claude), and per-project ones by project name (BLG-444).
     defaultAgent: AgentRef.nullable().optional(),
     projectAgents: z.record(z.string().min(1).max(80), AgentRef),
@@ -384,6 +386,11 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
+  /**
+   * Thinking effort for one conversation (the composer’s meter). `''` clears it, so Settings apply again.
+   * The phone does not set effort.
+   */
+  'workbench.setEffort': args(channel, z.union([z.enum(EFFORTS), z.literal('')])),
   /**
    * A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts).
    * Then, when the new agent can't read the session (BLG-592): 'quiet' switches now and sends the recent conversation with your next message; 'note' (left out) has the old agent write a handoff note first.

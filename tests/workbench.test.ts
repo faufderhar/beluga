@@ -437,6 +437,10 @@ describe('models, usage, space and search', () => {
     await waitFor(() => kay.runs.length === 2, 4000);
     expect(kay.runs[1]).toMatchObject({ model: 'opus', effort: 'high' });
     expect(kay.workspaces.find(ws!.id)?.model).toBe('opus');
+    kay.bench.setEffort(`ws:${ws!.id}`, 'low');
+    expect(kay.workspaces.find(ws!.id)?.effort).toBe('low');
+    kay.bench.setEffort(`ws:${ws!.id}`, undefined);
+    expect(kay.workspaces.find(ws!.id)?.effort).toBeUndefined();
   });
 
   it('adds up tokens and cost per workspace and measures its folder', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type PickerState, agentPicker, pickAction } from '../src/shared/agent-picker.js';
+import { CLOSED_WHY } from '../src/shared/open-models.js';
 import { runtimeChoices } from '../src/shared/agent-runtimes.js';
 import { modelMenu } from '../src/ui/settings-menus.js';
 import type { AppState } from '../src/core/store.js';
@@ -67,6 +68,18 @@ describe('agentPicker', () => {
     const d = agentPicker(st, 'draft');
     expect(pickAction(d, d.groups[1]!, 'gpt-5-codex')).toBeUndefined();
   });
+
+  it('lists only models turned on, and greys a runtime left with none', () => {
+    const claudeOnly = agentPicker({ ...state(), prefs: { openModels: ['claude|', 'claude|opus'] } }, 'ws:a');
+    expect(claudeOnly.groups[0]?.models.map((m) => m.value)).toEqual(['', 'opus']);
+    const codex = claudeOnly.groups.find((g) => g.runtime === 'codex');
+    expect(codex).toMatchObject({ available: false, why: CLOSED_WHY, models: [] });
+    // A runtime this Mac doesn't run keeps its own reason.
+    const missing = agentPicker({ ...state([], false), prefs: { openModels: ['claude|opus'] } }, 'ws:a');
+    expect(missing.groups.find((g) => g.runtime === 'codex')?.why).toBe("Codex isn't set up on this Mac yet");
+    // Nothing chosen: every model.
+    expect(agentPicker(state(), 'ws:a').groups[0]?.models.map((m) => m.label)).toEqual(['Default', 'Opus', 'Haiku']);
+  });
 });
 
 describe('/model', () => {
@@ -77,6 +90,9 @@ describe('/model', () => {
     expect(ids).toEqual(['runtime:claude', 'model:', 'model:opus', 'model:haiku', 'runtime:codex', 'runtime:opencode', 'runtime:local', 'close']);
     expect(menu.options.find((o) => o.id === 'model:opus')?.label).toContain('◉');
     expect(menu.options.find((o) => o.id === 'runtime:codex')?.hint).toBe("Codex isn't set up on this Mac yet");
+    const allowed = modelMenu({ ...st, prefs: { openModels: ['claude|opus'] } } as unknown as AppState, 'ws:a', 'this conversation');
+    expect(allowed.options.map((o) => o.id)).toContain('model:opus');
+    expect(allowed.options.map((o) => o.id)).not.toContain('model:haiku');
     const withCodex = modelMenu({ ...st, ...state([{ id: 'a' }]) } as unknown as AppState, 'ws:a', 'this conversation');
     expect(withCodex.options.map((o) => o.id)).toContain('agent:codex:gpt-5-codex');
   });

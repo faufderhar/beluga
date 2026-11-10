@@ -125,6 +125,11 @@ export const Settings = z.object({
   /** Model for new conversations (unset: Claude Code's default). */
   model: z.string().regex(/^[\w.:[\]-]{1,80}$/).optional(),
   effort: z.enum(EFFORTS).optional(),
+  /**
+   * Models the chat’s model menu offers, as `runtime|value` (shared/open-models.ts).
+   * Empty: every model, including ones found later.
+   */
+  openModels: z.array(z.string().max(120)).max(80).catch([]).default([]),
   /** The agent that answers when someone addresses you plainly ("@kay"); published on your peer card. Unset: Claude. */
   defaultAgent: AgentRef.optional(),
   /** A project's own default agent (by project name), over `defaultAgent` for work in that project. */

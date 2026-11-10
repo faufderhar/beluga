@@ -23,7 +23,7 @@ import { getPrefs, usePrefs } from '../lib/prefs.js';
 import { sendsToTerminal } from '../lib/convo-mode.js';
 import { chordLabel } from '../lib/shortcuts-model.js';
 import { cmdReturn, returnName, thisComputer, upFirst, yourComputer } from '../lib/os-words.js';
-import { ModelPicker, myRuntime } from './ModelPicker.js';
+import { ModelPicker, myRuntime, shownEffort } from './ModelPicker.js';
 import { ContextMeter } from './ContextMeter.js';
 import { McpChip } from './McpChip.js';
 import { RunsOnLabel, RunsOnPicker } from './RunsOn.js';
@@ -254,7 +254,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   // The box's effects (Settings › Fire & Confetti): on Max effort by default, or everywhere.
   // `burning` is the fire itself; without it, only the confetti and pixels fly.
-  const effects = !shared && effectsOn(prefs.maxFire, state.prefs.effort);
+  const effortHere = shownEffort(state, channel);
+  const effects = !shared && effectsOn(prefs.maxFire, effortHere);
   const burning = effects && prefs.maxFire.show !== 'off';
   // A friend's worktree you have a copy of (its project shared whole): you pick where it runs.
   const sharedWs = state.view.kind === 'shared' ? state.shared.find((w) => w.id === (state.view as { id: string }).id && w.via === 'mesh') : undefined;
@@ -696,7 +697,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           {!shared ? <ModelPicker channel={channel} {...(draftProject ? { draft: worktree.agent, onDraft: (agent: AgentRef | undefined) => setWorktree({ ...worktree, agent }) } : {})} /> : null}
           {/* Where new work runs (BLG-786); a chat that runs somewhere already says where. Only with a computer paired. */}
           {shared ? null : newWork ? <RunsOnPicker {...(newWork.project ? { project: newWork.project } : {})} {...(worktree.agent?.runtime && draftProject ? { runtime: worktree.agent.runtime } : {})} {...(newWork.folder ? { folder: newWork.folder } : {})} /> : <RunsOnLabel />}
-          {burning && state.prefs.effort === 'max' ? (
+          {burning && effortHere === 'max' ? (
             <Tip label={`Max effort: ${agentHere} thinks as hard as it can`}>
               <span className={m.tag}>
                 <Icon name="flame" size={11} className={m.flicker} />

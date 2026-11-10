@@ -153,6 +153,10 @@
   padding: 12px 14px;
   color: var(--text-3);
 }
+.groupBox > .note {
+  border-bottom: 0.5px solid var(--hairline);
+  font-size: 0.88rem;
+}
 .switch {
   position: relative;
   width: 32px;

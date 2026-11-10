@@ -242,7 +242,7 @@ export function modelMenu(state: AppState, channel: string | undefined, forWhat:
 export function myAgentPicker(state: AppState, channel: string): ReturnType<typeof agentPicker> {
   const mine = state.prefs.defaultAgent;
   const other = mine && mine.runtime !== CLAUDE_AGENT.runtime ? mine : undefined;
-  return agentPicker({ ...state, prefs: { model: other ? other.model : state.prefs.model } }, channel, other?.runtime ?? CLAUDE_AGENT.runtime);
+  return agentPicker({ ...state, prefs: { model: other ? other.model : state.prefs.model, openModels: state.prefs.openModels } }, channel, other?.runtime ?? CLAUDE_AGENT.runtime);
 }
 
 /** The inbox as the menu shows it: which notices, and whether each row clears one. */

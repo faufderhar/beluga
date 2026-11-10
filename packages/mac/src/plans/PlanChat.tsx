@@ -10,6 +10,7 @@ import { useMentionWorld } from "../chat/Mention.js";
 import { useSuggestions } from "../chat/Suggestions.js";
 import { suggest } from "@beluga/ui/suggest.js";
 import { MaxFire } from "../chat/MaxFire.js";
+import { shownEffort } from "../chat/ModelPicker.js";
 import { effectsOn, fireVars } from "../chat/fire-look.js";
 import m from "../chat/max.module.css";
 import { usePrefs } from "../lib/prefs.js";
@@ -88,7 +89,7 @@ export function PlanChat({
   // The box burns here as in every message box (Settings › Fire & Confetti).
   const form = useRef<HTMLFormElement>(null);
   const fire = usePrefs().maxFire;
-  const effort = useApp((st) => st.prefs.effort);
+  const effort = useApp((st) => shownEffort(st, channel));
   const effects = effectsOn(fire, effort);
   const burning = effects && fire.show !== "off";
   const busy = useApp((st) => activityOf(st.log, channel).running);

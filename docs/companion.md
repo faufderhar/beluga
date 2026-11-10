@@ -271,7 +271,9 @@ covering several), a task on a board of several says which repo it runs in (`Tas
 `companion.draftTask` / `addTask` take a board's id too.
 1.32 (BLG-446) gives the phone the composer's agent picker: a conversation's ••• › Agent opens runtimes as
 groups with their models (`ConvView.agent`), your default agent first, one your Mac doesn't run greyed with
-what's missing. A model of the same runtime is `workbench.setModel`; another runtime, `workbench.setAgent`.
+what's missing. The list is the models turned on in Settings › Agent › Models in chat (with none chosen, every
+model). A model of the same runtime is `workbench.setModel`; another runtime, `workbench.setAgent`. Effort stays
+on the Mac.
 1.41 (BLG-702) brings emoji reactions to the phone's chats (`SINCE.reactions`): each message's
 `reactions` (emoji, count, whether one is yours, who) as chips under it (a tap adds yours or takes it
 back, a long-press says who), and long-press on a message opens its sheet with your quick row

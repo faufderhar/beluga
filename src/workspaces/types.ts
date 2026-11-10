@@ -88,7 +88,7 @@ export interface WorkspaceRecord {
   readonly envKept?: Readonly<Record<string, string>>;
   /** Model picked for this conversation (unset: your default). */
   readonly model?: string;
-  /** Thinking effort picked for this conversation (a Sentinel step's, BLG-498; unset: Settings'). */
+  /** Thinking effort for this conversation (the chat’s meter, or a Sentinel step; unset: Settings'). */
   readonly effort?: Effort;
   readonly usage?: WorkspaceUsage;
   /** Handed off to a friend (their name), who continues it on their computer. */

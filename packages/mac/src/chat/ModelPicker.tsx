@@ -40,7 +40,14 @@ export function setMyAgent(api: Api, runtime: string, label: string, model: stri
 }
 
 /** The picker's view of the state: "your default model" is your agent's, whichever runtime it is. */
-export const pickerState = (st: AppState): PickerState => ({ ...st, prefs: { model: myModel(st.prefs) || undefined } });
+export const pickerState = (st: AppState): PickerState => ({ ...st, prefs: { model: myModel(st.prefs) || undefined, openModels: st.prefs.openModels } });
+
+/** The effort a conversation shows: its own pick, else Settings’. Not a conversation: Settings’. */
+export function shownEffort(st: Pick<AppState, 'projects' | 'prefs'>, channel: string): Effort | undefined {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const own = id ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === id)?.effort : undefined;
+  return own ?? st.prefs.effort;
+}
 
 /** A model's details (its effort levels) by runtime and value; Claude's come from Claude Code itself. */
 export function modelInfo(st: Pick<AppState, 'runtimes' | 'models'>, runtime: string, model: string): RuntimeModel | undefined {
@@ -130,7 +137,16 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   const api = useApi();
   // Only what the picker shows (not the whole state): not drawn again on every streamed event (KLD-48).
   const picker = useApp((st) => agentPicker(pickerState(st), channel, myRuntime(st.prefs), draft), samePicker);
-  const effort = useApp((st) => st.prefs.effort);
+  const globalEffort = useApp((st) => st.prefs.effort);
+  // In an open chat the meter pins that conversation; elsewhere it is Settings, for every conversation.
+  const place = useApp(
+    (st) => {
+      const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+      const ws = id ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
+      return ws ? { inChat: true as const, effort: ws.effort } : { inChat: false as const, effort: undefined };
+    },
+    (a, b) => a.inChat === b.inChat && a.effort === b.effort,
+  );
   const carried = useApp((st) => carriedOf(st, channel), sameCarried);
   const [others, setOthers] = useState(() => picker.groups.some((g) => !g.isDefault && g.current));
   const [move, setMove] = useState<Move>();
@@ -142,7 +158,12 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   // Some models take only some effort levels.
   const allowed = new Set((model?.efforts ?? EFFORTS) as readonly string[]);
   const label = picker.label;
-  const chip = `${label}${effort ? ` · ${EFFORT_INFO[effort].label}` : ''}`;
+  const inChat = place.inChat;
+  const pinned = inChat && place.effort !== undefined;
+  // The chip says what the next message uses. The meter highlights a pin, or Settings when this isn’t a chat.
+  const shown = pinned ? place.effort : globalEffort;
+  const meter = pinned ? place.effort : inChat ? undefined : globalEffort;
+  const chip = `${label}${shown ? ` · ${EFFORT_INFO[shown].label}` : ''}`;
   const pick = (g: PickerGroup, value: string): void => {
     if (onDraft && !conversation) {
       // A new worktree: your default's model is the default for new ones; another runtime is this worktree's own.
@@ -187,10 +208,10 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
     </div>
   );
   // Narrow (a side panel): the effort alone, the whole of it in the tooltip; never two lines.
-  const words = effort ? (
+  const words = shown ? (
     <>
       <span className={s.chipModel}>{label} · </span>
-      {EFFORT_INFO[effort].label}
+      {EFFORT_INFO[shown].label}
     </>
   ) : (
     label
@@ -237,26 +258,52 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
               ) : null}
               <div className={s.heading}>
                 Thinking
-                <span className={s.scope}>for every conversation</span>
+                <span className={s.scope}>{pinned ? 'for this conversation' : inChat ? 'follows Settings' : 'for every conversation'}</span>
               </div>
               <div className={s.meterRow}>
-                <button type="button" role="radio" aria-checked={!effort} className={cx(s.auto, !effort && s.autoOn)} onClick={() => void api.session.setPrefs({ effort: null })}>
-                  Auto
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={inChat ? !pinned : !globalEffort}
+                  className={cx(s.auto, (inChat ? !pinned : !globalEffort) && s.autoOn)}
+                  onClick={() => (inChat ? void api.workbench.setEffort(channel, '') : void api.session.setPrefs({ effort: null }))}
+                >
+                  {inChat ? 'Settings' : 'Auto'}
                 </button>
                 <div className={s.meter} role="radiogroup" aria-label="Thinking effort">
                   {EFFORTS.map((e, i) => {
-                    const level = effort ? EFFORTS.indexOf(effort) : -1;
+                    const level = meter ? EFFORTS.indexOf(meter) : -1;
                     return (
-                      <button key={e} type="button" role="radio" aria-checked={effort === e} disabled={!allowed.has(e)} className={s.step} onClick={() => void api.session.setPrefs({ effort: e })}>
+                      <button
+                        key={e}
+                        type="button"
+                        role="radio"
+                        aria-checked={meter === e}
+                        disabled={!allowed.has(e)}
+                        className={s.step}
+                        onClick={() => (inChat ? void api.workbench.setEffort(channel, e) : void api.session.setPrefs({ effort: e }))}
+                      >
                         <span className={cx(s.bar, i <= level && s.barOn)} style={{ height: 6 + i * 5 }} />
-                        <span className={cx(s.stepLabel, effort === e && s.stepLabelOn)}>{EFFORT_INFO[e].label}</span>
+                        <span className={cx(s.stepLabel, meter === e && s.stepLabelOn)}>{EFFORT_INFO[e].label}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
               <div className={s.effortDetail}>
-                <strong>{effort ? EFFORT_INFO[effort].label : 'Auto'}</strong> · {effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}
+                {pinned && place.effort ? (
+                  <>
+                    <strong>{EFFORT_INFO[place.effort].label}</strong> · {EFFORT_INFO[place.effort].detail}
+                  </>
+                ) : inChat ? (
+                  <>
+                    <strong>Settings</strong> · {globalEffort ? `Follows Settings (${EFFORT_INFO[globalEffort].label})` : 'Follows Settings, where your agent decides how much to think'}
+                  </>
+                ) : (
+                  <>
+                    <strong>{globalEffort ? EFFORT_INFO[globalEffort].label : 'Auto'}</strong> · {globalEffort ? EFFORT_INFO[globalEffort].detail : 'Your agent decides how much to think, case by case'}
+                  </>
+                )}
               </div>
             </>
           )}

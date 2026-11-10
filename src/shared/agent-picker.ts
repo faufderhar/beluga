@@ -1,6 +1,7 @@
 import type { AgentRef } from '../protocol.js';
 import type { RuntimeChoice, RuntimeModel } from './agent-runtimes.js';
 import { modelName } from './agent-label.js';
+import { CLOSED_WHY, modelsForChat, runtimeModels } from './open-models.js';
 
 /**
  * The agent picker (BLG-446), as the Mac's composer and the phone show it: runtimes as groups
@@ -14,7 +15,7 @@ export interface PickerState {
   readonly runtimes: readonly RuntimeChoice[];
   /** Claude Code's own models (the 'claude' runtime's). */
   readonly models: readonly RuntimeModel[];
-  readonly prefs: { readonly model?: string };
+  readonly prefs: { readonly model?: string; readonly openModels?: readonly string[] };
   readonly projects: ReadonlyArray<{ readonly workspaces: ReadonlyArray<{ readonly id: string; readonly agent?: AgentRef; readonly model?: string }> }>;
 }
 
@@ -61,9 +62,10 @@ export function runtimeOf(state: PickerState, channel: string, defaultRuntime = 
   return workspaceOf(state, channel)?.agent?.runtime ?? defaultRuntime;
 }
 
-function modelsOf(state: PickerState, r: RuntimeChoice): readonly RuntimeModel[] {
-  if (!r.available) return [];
-  return r.id === DEFAULT_RUNTIME ? state.models : (r.models ?? [{ value: '', label: 'Default', description: `${r.label}'s choice` }]);
+function modelsOf(state: PickerState, r: RuntimeChoice): { readonly models: readonly RuntimeModel[]; readonly closed: boolean } {
+  const listed = runtimeModels(r, state.models);
+  const models = modelsForChat(listed, r.id, state.prefs.openModels);
+  return { models, closed: r.available && listed.length > 0 && models.length === 0 };
 }
 
 /** `draft`: a new worktree's own pick, before it exists (the New Worktree box). */
@@ -74,15 +76,18 @@ export function agentPicker(state: PickerState, channel: string, defaultRuntime 
   const runtime = pinned?.runtime ?? defaultRuntime;
   const model = (ws ? ws.model : draft?.model) ?? (runtime === defaultRuntime ? state.prefs.model : undefined) ?? '';
   const order = [...state.runtimes].sort((a, b) => Number(b.id === defaultRuntime) - Number(a.id === defaultRuntime));
-  const groups = order.map((r): PickerGroup => ({
-    runtime: r.id,
-    label: r.label,
-    available: r.available,
-    ...(r.why ? { why: r.why } : {}),
-    isDefault: r.id === defaultRuntime,
-    current: r.id === runtime,
-    models: modelsOf(state, r).map((m) => ({ ...m, on: r.id === runtime && m.value === model })),
-  }));
+  const groups = order.map((r): PickerGroup => {
+    const { models, closed } = modelsOf(state, r);
+    return {
+      runtime: r.id,
+      label: r.label,
+      available: r.available && !closed,
+      ...(closed ? { why: CLOSED_WHY } : r.why ? { why: r.why } : {}),
+      isDefault: r.id === defaultRuntime,
+      current: r.id === runtime,
+      models: models.map((m) => ({ ...m, on: r.id === runtime && m.value === model })),
+    };
+  });
   const group = groups.find((g) => g.current);
   const picked = group?.models.find((m) => m.on);
   const modelWords = picked?.label ?? (model ? modelName(model) : 'Default');

@@ -190,6 +190,7 @@ export const MACHINE: Record<Method, MachineSide> = {
   'workbench.shareScripts': 'drive',
   'workbench.setModel': 'drive',
   'workbench.setAgent': 'drive',
+  'workbench.setEffort': 'drive',
   'workbench.createPr': 'drive',
   'workbench.quickPr': 'drive',
   'workbench.mergeToBase': 'drive',

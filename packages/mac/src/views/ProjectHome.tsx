@@ -21,7 +21,7 @@ import { toast, useApi, useApp, useBeluga } from "../lib/beluga.js";
 import { useMyAgentName } from "../lib/agent-words.js";
 import { RunsOnPicker } from "../chat/RunsOn.js";
 import { type WorkToStart, sendToComputer, useStartDeps } from "../machines/start-there.js";
-import { myRuntime } from "../chat/ModelPicker.js";
+import { ModelPicker, myRuntime } from "../chat/ModelPicker.js";
 import { useStartWith } from "../components/agent-options.js";
 import { SplitButton } from "../components/SplitButton.js";
 import type { AgentRef } from "@beluga/protocol.js";
@@ -568,6 +568,8 @@ function HomeComposer({ project }: { project: Project }) {
           )}
           {/* Where it runs (BLG-786): a worktree, a question or a plan alike. Only with a computer paired. */}
           <RunsOnPicker project={project.id} />
+          {/* Model and thinking effort for new conversations (a chat of its own pins effort once it exists). */}
+          <ModelPicker channel="draft" />
           <span className={s.flex} />
           {plan ? (
             <label className={d.field}>
