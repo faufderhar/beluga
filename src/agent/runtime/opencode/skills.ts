@@ -18,7 +18,7 @@ export interface OpenCodePrompt {
   readonly notes: readonly string[];
 }
 
-export async function mapOpenCodeSlash(prompt: string, cwd: string, home: string, commands: ReadonlySet<string>): Promise<OpenCodePrompt> {
+export async function mapOpenCodeSlash(prompt: string, cwd: string, home: string, commands: ReadonlySet<string>, agentName = 'OpenCode'): Promise<OpenCodePrompt> {
   // "//name": the / menu's way of saying a skill that shares a Beluga command's name.
   const m = /^\/\/?([\w.:-]+)(?:\s+([\s\S]*))?$/.exec(prompt.trim());
   if (!m) return { prompt, notes: [] };
@@ -27,7 +27,7 @@ export async function mapOpenCodeSlash(prompt: string, cwd: string, home: string
   if (commands.has(name)) return { prompt: args ? `/${name} ${args}` : `/${name}`, notes: [] };
   const found = await findSkill(name, cwd, home);
   if (!found) {
-    if (CLAUDE_BUILT_INS.has(name)) return { prompt, notes: [`/${name} is one of Claude Code's own commands: not on OpenCode, so it went in as plain text.`] };
+    if (CLAUDE_BUILT_INS.has(name)) return { prompt, notes: [`/${name} is one of Claude Code's own commands: not on ${agentName}, so it went in as plain text.`] };
     return { prompt, notes: [] };
   }
   const body = fillArguments(found.body, args, found.source === 'plugin' ? found.dir : undefined);

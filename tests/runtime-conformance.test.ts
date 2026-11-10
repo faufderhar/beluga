@@ -3,6 +3,8 @@ import { claudeRuntime } from '../src/agent/runtime/claude/index.js';
 import { createCodexRuntime } from '../src/agent/runtime/codex/index.js';
 import { createOpenCodeRuntime } from '../src/agent/runtime/opencode/index.js';
 import { ScriptedOpenCode } from '../src/agent/runtime/opencode/scripted.js';
+import { createGrokRuntime } from '../src/agent/runtime/grok/index.js';
+import { ScriptedGrok } from '../src/agent/runtime/grok/scripted.js';
 import type { AgentRuntime, RuntimeCapabilities } from '../src/agent/runtime/types.js';
 import type { AgentRunInput } from '../src/agent/types.js';
 import { FakeClaude } from './fake-claude.js';
@@ -24,6 +26,8 @@ const codex = new FakeCodex();
 runtimeConformance('codex', () => createCodexRuntime({ connect: codex.connect }));
 const opencode = new ScriptedOpenCode();
 runtimeConformance('opencode', () => createOpenCodeRuntime({ connect: opencode.connect, resolve: async () => undefined }));
+const grok = new ScriptedGrok();
+runtimeConformance('grok', () => createGrokRuntime({ connect: grok.connect }));
 
 /** The fake runtime, changed: its capabilities patched, and its runs' inputs or answers bent. */
 function mutant(caps: Partial<RuntimeCapabilities>, bend: { input?: (i: AgentRunInput) => AgentRunInput; answer?: (a: string) => string } = {}): () => AgentRuntime {

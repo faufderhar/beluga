@@ -99,7 +99,7 @@ export function buildScratchAppend(dir: string): string {
  */
 export function buildKeepAppend(agent: AgentRef = CLAUDE_AGENT): string {
   const how =
-    agent.runtime === 'codex' || agent.runtime === 'opencode'
+    agent.runtime === 'codex' || agent.runtime === 'opencode' || agent.runtime === 'grok'
       ? [
           'BELUGA_KEEP=1 in front, detached with its output in a file, e.g.',
           '`BELUGA_KEEP=1 nohup npm run dev > .beluga/dev.log 2>&1 &` (so your command returns at once),',

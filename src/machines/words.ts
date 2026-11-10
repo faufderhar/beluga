@@ -83,7 +83,7 @@ export const DISTRO_WORDS: Record<LinuxDistro, string> = {
   kali: 'Kali Linux',
 };
 
-const RUNTIME_WORDS: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', gemini: 'Gemini' };
+const RUNTIME_WORDS: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', gemini: 'Gemini' };
 export const runtimeWords = (id: string): string => RUNTIME_WORDS[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 
 /** 14:02, as this device's clock says it. */

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CLAUDE_CAPABILITIES } from '../src/agent/runtime/claude/index.js';
 import { CODEX_CAPABILITIES } from '../src/agent/runtime/codex/index.js';
 import { OPENCODE_CAPABILITIES } from '../src/agent/runtime/opencode/index.js';
+import { GROK_CAPABILITIES } from '../src/agent/runtime/grok/index.js';
 import type { RuntimeCapabilities } from '../src/agent/runtime/types.js';
 import { COMMANDS } from '../src/core/commands.js';
 import { METHODS } from '../src/ipc/api.js';
@@ -65,15 +66,16 @@ describe('docs/parity.md, per runtime', () => {
   const RUNTIMES: ReadonlyArray<{ readonly id: string; readonly column: number; readonly caps: RuntimeCapabilities }> = [
     { id: 'codex', column: 3, caps: CODEX_CAPABILITIES },
     { id: 'opencode', column: 4, caps: OPENCODE_CAPABILITIES },
+    { id: 'grok', column: 5, caps: GROK_CAPABILITIES },
   ];
 
-  it('has a column for Claude, Codex and OpenCode', () => {
-    expect(header).toEqual(['What', 'Ways in', 'Claude', 'Codex', 'OpenCode']);
+  it('has a column for Claude, Codex, OpenCode and Grok Build', () => {
+    expect(header).toEqual(['What', 'Ways in', 'Claude', 'Codex', 'OpenCode', 'Grok Build']);
     expect(rows.length).toBeGreaterThan(10);
   });
 
   it('leaves no cell blank: each is pass, a fallback or n/a', () => {
-    const bad = rows.flatMap((r) => [2, 3, 4].filter((i) => r.length !== 5 || !/^(pass|fallback|n\/a)\b/.test(r[i] ?? '')).map((i) => `${r[0]} › ${header[i]}: "${r[i] ?? ''}"`));
+    const bad = rows.flatMap((r) => [2, 3, 4, 5].filter((i) => r.length !== 6 || !/^(pass|fallback|n\/a)\b/.test(r[i] ?? '')).map((i) => `${r[0]} › ${header[i]}: "${r[i] ?? ''}"`));
     expect(bad).toEqual([]);
   });
 

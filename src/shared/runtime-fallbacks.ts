@@ -33,6 +33,13 @@ export const RUNTIME_FALLBACKS: Readonly<Record<string, Readonly<Partial<Record<
     // agent-wording: claude (the way out is the Claude runtime, by name)
     friends: { capability: 'canGateEveryTool', reason: 'Your OpenCode plugins can let a step through without Beluga asking, so friends’ tasks go to Claude (or Codex) instead.' },
   },
+  grok: {
+    rewind: { reason: 'On Grok Build, going back puts the files back but starts a new conversation from your edited message.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+    guests: { capability: 'canGateEveryTool', reason: 'Grok Build’s step-by-step check can be switched off by a company’s Grok policy, so it doesn’t answer guests. Switch this conversation to Claude for them.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+    friends: { capability: 'canGateEveryTool', reason: 'Grok Build’s step-by-step check can be switched off by a company’s Grok policy, so friends’ tasks go to Claude (or Codex) instead.' },
+  },
 };
 
 /**
@@ -46,6 +53,7 @@ export type FeatureId = 'btw' | 'terminal' | 'steer';
 export const RUNTIME_MISSING: Readonly<Record<string, readonly FeatureId[]>> = {
   codex: ['btw', 'terminal'],
   opencode: ['terminal', 'steer'],
+  grok: ['terminal', 'steer'],
 };
 
 /** Whether `feature` is there on `runtime` (unset: Claude's, which has them all). */

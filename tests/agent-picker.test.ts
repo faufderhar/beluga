@@ -30,11 +30,12 @@ describe('agentPicker', () => {
       ['claude', true, true],
       ['codex', false, false],
       ['opencode', false, false],
+      ['grok', false, false],
       ['local', false, false],
     ]);
     expect(p.groups[1]).toMatchObject({ why: "Codex isn't set up on this Mac yet", models: [] });
     expect(p.groups[2]).toMatchObject({ why: "OpenCode isn't set up on this Mac yet", models: [] });
-    expect(p.groups[3]?.why).toBe('No local model endpoint is set');
+    expect(p.groups[4]?.why).toBe('No local model endpoint is set');
     expect(p.groups[0]?.models.map((m) => m.label)).toEqual(['Default', 'Opus', 'Haiku']);
   });
 
@@ -87,7 +88,7 @@ describe('/model', () => {
     const st = { ...state([{ id: 'a', model: 'opus' }], false), inbox: [] } as unknown as AppState;
     const menu = modelMenu(st, 'ws:a', 'this conversation');
     const ids = menu.options.map((o) => o.id);
-    expect(ids).toEqual(['runtime:claude', 'model:', 'model:opus', 'model:haiku', 'runtime:codex', 'runtime:opencode', 'runtime:local', 'close']);
+    expect(ids).toEqual(['runtime:claude', 'model:', 'model:opus', 'model:haiku', 'runtime:codex', 'runtime:opencode', 'runtime:grok', 'runtime:local', 'close']);
     expect(menu.options.find((o) => o.id === 'model:opus')?.label).toContain('◉');
     expect(menu.options.find((o) => o.id === 'runtime:codex')?.hint).toBe("Codex isn't set up on this Mac yet");
     const allowed = modelMenu({ ...st, prefs: { openModels: ['claude|opus'] } } as unknown as AppState, 'ws:a', 'this conversation');

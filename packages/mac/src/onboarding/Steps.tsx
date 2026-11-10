@@ -34,7 +34,7 @@ export function Hello({ onStart }: { readonly onStart: () => void }) {
         </motion.span>
       </h1>
       <Rise delay={2.45} className={s.heroBody}>
-        Claude Code, Codex, OpenCode or a model of your own, working across all your repositories in parallel. Everything they do, in view. Your friends’ agents, one message away.
+        Claude Code, Codex, OpenCode, Grok Build or a model of your own, working across all your repositories in parallel. Everything they do, in view. Your friends’ agents, one message away.
       </Rise>
       <Rise delay={2.75}>
         <GlowButton onClick={onStart} autoFocus>

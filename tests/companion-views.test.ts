@@ -363,6 +363,7 @@ describe('the views of a known Mac', () => {
       ['claude', true],
       ['codex', false],
       ['opencode', false],
+      ['grok', false],
       ['local', false],
     ]);
     expect(w1.agent?.groups[1]?.why).toMatch(/Codex/);

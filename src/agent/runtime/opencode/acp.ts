@@ -42,6 +42,8 @@ export type StopReason = 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'refu
 
 export interface PromptResponse {
   readonly stopReason: StopReason;
+  /** An agent's own additions (Grok Build's tokens and cost for the turn). */
+  readonly _meta?: Readonly<Record<string, unknown>>;
   readonly usage?: { readonly inputTokens?: number; readonly outputTokens?: number; readonly totalTokens?: number; readonly thoughtTokens?: number; readonly cachedReadTokens?: number; readonly cachedWriteTokens?: number };
 }
 
@@ -60,6 +62,8 @@ export interface ToolCall {
   readonly rawInput?: Record<string, unknown>;
   readonly rawOutput?: unknown;
   readonly content?: readonly ToolContent[];
+  /** An agent's own additions (Grok Build's tool id). */
+  readonly _meta?: Readonly<Record<string, unknown>>;
 }
 
 /** What `session/update` carries (the kinds Beluga reads). */

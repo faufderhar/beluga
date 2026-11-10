@@ -28,6 +28,7 @@ const WHO: Readonly<Record<string, { readonly agent: string; readonly app: strin
   claude: { agent: 'Claude', app: 'Claude Code', vendor: 'Anthropic' },
   codex: { agent: 'Codex', app: 'Codex', vendor: 'OpenAI' },
   opencode: { agent: 'OpenCode', app: 'OpenCode', vendor: 'its model provider' },
+  grok: { agent: 'Grok Build', app: 'Grok Build', vendor: 'xAI' },
 };
 
 /** What Continue (and an automatic resume) sends: the same session goes on. */

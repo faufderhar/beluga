@@ -56,7 +56,7 @@ export function modelInfo(st: Pick<AppState, 'runtimes' | 'models'>, runtime: st
 }
 
 /** The maker a runtime's models usually come from: its own models carry no second mark. */
-const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode' };
+const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode', grok: 'grok' };
 
 /** A model's maker mark when it isn't its runtime's own (a local runtime serving a GPT model); else none. */
 export function foreignMark(model: string, runtime: string): AgentMark | undefined {

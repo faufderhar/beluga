@@ -124,6 +124,17 @@ OpenCode asks before each step it takes, the way Claude Code does, once Beluga h
 - Friends' tasks and guests don't run on OpenCode. Your OpenCode plugins, and in newer OpenCode the rules you saved with "Always allow" in its own app, can answer a step before Beluga is asked, and OpenCode has no sandbox to fall back on. A friend's task goes to Claude (or Codex) instead, and their card says why. Guests are turned away, with the reason on the Invite People sheet.
 - Quick side calls on OpenCode (answering in a chat, naming a worktree) and side questions (/btw) run without your plugins. Every tool still asks, and Beluga allows only the ones the call was given: none for a side question.
 
+## Grok Build runs
+
+Grok Build runs what it thinks is read-only without asking, so Beluga starts each run with a hook of its own, for that one process, that makes every step ask. Every step, reads and searches and steps you once "always allowed" included, comes to Beluga first and is checked by the same rules as Claude's. Your Grok config isn't changed.
+
+- `.env` files, keys and credential stores are turned down unless you say yes, as on Claude. Reads, edits, commands and searches outside the run's folders ask you or are refused, as on Claude.
+- A project's main folder stays read only, and a plan while it's being made changes nothing (Beluga's read-only rules, and no sub-agents until you approve).
+- Beluga's own tools (the room, the board) check each call where they run.
+- Beluga always answers "allow once" or "reject", never "always", so nothing it allows is kept in Grok.
+- Grok's web search runs on xAI's side: the step shows on the card, but Beluga isn't asked first.
+- Friends' tasks and guests don't run on Grok Build. A company's Grok policy (`allowManagedHooksOnly`) can switch Beluga's hook off, and Grok has no sandbox Beluga could fall back on. A friend's task goes to Claude (or Codex) instead, and their card says why. Guests are turned away, with the reason on the Invite People sheet.
+
 ## Machines: your computers
 
 Your Beluga app can drive your other computers (a Mac mini, a cloud server, a Linux box): see

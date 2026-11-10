@@ -410,14 +410,14 @@ describe('modelLabel and modelMenu', () => {
     const s = initialState('r');
     const m = modelMenu(s, undefined, 'this chat');
     expect(m.title).toBe('Agent and model for this chat');
-    expect(ids(m)).toEqual(['runtime:claude', 'model:', 'model:opus', 'model:sonnet', 'model:haiku', 'runtime:codex', 'runtime:opencode', 'runtime:local', 'close']);
+    expect(ids(m)).toEqual(['runtime:claude', 'model:', 'model:opus', 'model:sonnet', 'model:haiku', 'runtime:codex', 'runtime:opencode', 'runtime:grok', 'runtime:local', 'close']);
     const on = (menu: ReturnType<typeof modelMenu>) => menu.options.filter((o) => o.label.trim().startsWith('◉')).map((o) => o.label.trim());
     expect(on(m)).toEqual(['◉ Default']);
     expect(on(modelMenu(reduce(s, { type: 'prefs', prefs: { model: 'opus' } }), undefined, 'x'))).toEqual(['◉ Opus']);
     // Another runtime isn't set up: its row says why, with no models under it.
     expect(m.options.find((o) => o.id === 'runtime:codex')?.hint).toBe("Codex isn't set up on this Mac yet");
     const custom = reduce(s, { type: 'models', models: [{ value: 'm1', label: 'M1', description: 'd' }] });
-    expect(ids(modelMenu(custom, undefined, 'x'))).toEqual(['runtime:claude', 'model:m1', 'runtime:codex', 'runtime:opencode', 'runtime:local', 'close']);
+    expect(ids(modelMenu(custom, undefined, 'x'))).toEqual(['runtime:claude', 'model:m1', 'runtime:codex', 'runtime:opencode', 'runtime:grok', 'runtime:local', 'close']);
     expect(modelMenu(custom, undefined, 'x').options[1]!.label.trim()).toBe('○ M1');
   });
 });

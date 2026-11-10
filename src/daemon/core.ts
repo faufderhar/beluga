@@ -9,6 +9,8 @@ import { createCodexRuntime } from '../agent/runtime/codex/index.js';
 import { ScriptedCodex } from '../agent/runtime/codex/scripted.js';
 import { createOpenCodeRuntime } from '../agent/runtime/opencode/index.js';
 import { ScriptedOpenCode } from '../agent/runtime/opencode/scripted.js';
+import { createGrokRuntime } from '../agent/runtime/grok/index.js';
+import { ScriptedGrok } from '../agent/runtime/grok/scripted.js';
 import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
@@ -79,6 +81,13 @@ function demoOpenCode(): AgentRuntime {
   const scripted = new ScriptedOpenCode({ stepMs: 600 });
   const models = scripted.models.map((m) => ({ value: m.value, label: m.name.split('/').at(-1) ?? m.name, description: m.value.split('/')[0] ?? '', ...(m.efforts.length ? { efforts: m.efforts } : {}) }));
   return createOpenCodeRuntime({ connect: scripted.connect, resolve: async () => undefined, status: async () => ({ state: 'ready', models }) });
+}
+
+/** The demo's Grok Build: ready, with the scripted one's models. */
+function demoGrok(): AgentRuntime {
+  const scripted = new ScriptedGrok({ stepMs: 600 });
+  const models = scripted.models.map((m) => ({ value: m.value, label: m.name, description: 'xAI', efforts: m.efforts }));
+  return createGrokRuntime({ connect: scripted.connect, status: async () => ({ state: 'ready', models }) });
 }
 
 let claudeWithStatus: AgentRuntime | undefined;
@@ -328,7 +337,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
       : undefined,
     // The demo's Codex and OpenCode: the real runtimes over a scripted app-server and a scripted
     // `opencode acp`, so a worktree can run on either (BLG-462, BLG-686).
-    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect }), demoOpenCode()] } : {}),
+    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect }), demoOpenCode(), demoGrok()] } : {}),
     // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
     ...(!demo && config.agent
       ? {

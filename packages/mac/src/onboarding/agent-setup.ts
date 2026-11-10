@@ -12,6 +12,7 @@ import { thisComputer } from '../lib/os-words.js';
 export const INSTALLS: Readonly<Record<string, { readonly page: string; readonly command: string }>> = {
   codex: { page: 'https://developers.openai.com/codex', command: 'npm i -g @openai/codex' },
   opencode: { page: 'https://opencode.ai/download', command: 'npm i -g opencode-ai' },
+  grok: { page: 'https://x.ai/cli', command: 'curl -fsSL https://x.ai/cli/install.sh | bash' },
 };
 
 /** Codex's own install: the app, or its CLI from npm. */
@@ -68,6 +69,11 @@ const DETAIL: Readonly<Record<string, Partial<Record<RuntimeState, string>> & { 
     ready: 'The open-source coding agent, on the models you set up in it (its free ones too).',
     signed_out: 'Installed. Add a model provider once (opencode auth login).',
     missing: 'Install OpenCode, or in Terminal:',
+  },
+  grok: {
+    ready: 'xAI’s coding agent, through its Grok Build command line.',
+    signed_out: 'Installed. Sign in once with your Grok account (grok login).',
+    missing: 'Install Grok Build, in Terminal:',
   },
   local: {
     ready: `A model of your own: Ollama on ${thisComputer()}, or an endpoint you added. Free.`,

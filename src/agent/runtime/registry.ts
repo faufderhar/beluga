@@ -4,6 +4,8 @@ import { codexRuntime } from './codex/index.js';
 import { findCodex } from './codex/app-server.js';
 import { openCodeRuntime } from './opencode/index.js';
 import { findOpenCode } from './opencode/connection.js';
+import { grokRuntime } from './grok/index.js';
+import { findGrok } from './grok/connection.js';
 import type { AgentRuntime, RuntimeId, RuntimeStatus } from './types.js';
 
 /** The runtime an agent runs on when none is named. */
@@ -13,9 +15,10 @@ const RUNTIMES: ReadonlyMap<RuntimeId, AgentRuntime> = new Map([
   [claudeRuntime.id, claudeRuntime],
   [codexRuntime.id, codexRuntime],
   [openCodeRuntime.id, openCodeRuntime],
+  [grokRuntime.id, grokRuntime],
 ]);
 
-/** The runtime an AgentRef names ('claude', 'codex', 'opencode'); undefined for one this Beluga doesn't know. */
+/** The runtime an AgentRef names ('claude', 'codex', 'opencode', 'grok'); undefined for one this Beluga doesn't know. */
 export function runtimeFor(id: RuntimeId = DEFAULT_RUNTIME): AgentRuntime | undefined {
   return RUNTIMES.get(id);
 }
@@ -40,5 +43,6 @@ export function signInCommand(id: RuntimeId): readonly string[] | undefined {
   if (id === claudeRuntime.id) return claudeSignInCommand();
   if (id === codexRuntime.id) return [findCodex() ?? 'codex', 'login'];
   if (id === openCodeRuntime.id) return [findOpenCode() ?? 'opencode', 'auth', 'login'];
+  if (id === grokRuntime.id) return [findGrok() ?? 'grok', 'login'];
   return undefined;
 }

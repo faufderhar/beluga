@@ -15,7 +15,7 @@ test('the welcome finds your agents, picks the first ready one, and lets you pic
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await expect(welcome).toBeVisible();
-  await expect(welcome.getByText('Claude Code, Codex, OpenCode or a model of your own')).toBeVisible();
+  await expect(welcome.getByText('Claude Code, Codex, OpenCode, Grok Build or a model of your own')).toBeVisible();
   await expect(welcome.getByText('starting with Claude')).toHaveCount(0);
   if (shots) {
     // Once the welcome has drawn itself in (about three seconds).

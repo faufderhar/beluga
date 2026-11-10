@@ -19,6 +19,7 @@ import { moveToTrash } from './trash.js';
 import { dropFolderSessions, dropSession, pathVariants, sessionFoldersUnder } from '../agent/runtime/claude/claude-sessions.js';
 import { dropCodexSessions } from '../agent/runtime/codex/codex-sessions.js';
 import { dropOpenCodeFolder, dropOpenCodeSession } from '../agent/runtime/opencode/sessions.js';
+import { dropGrokSession } from '../agent/runtime/grok/sessions.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { DeletePlan, MergeWait, Project, ProjectGroup, PullHead, ProjectSync, ProjectsConfig, RenameResult, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -1213,9 +1214,11 @@ export class WorkspaceManager {
         if (ws.sessionId) await dropOpenCodeSession(ws.sessionId).catch(() => false);
         await dropOpenCodeFolder(sessionsDir, ws.kind === 'worktree' ? ws.projectRoot : sessionsDir).catch(() => 0);
       }
+      if (ws.sessionRuntime === 'grok' && ws.sessionId) await dropGrokSession(ws.sessionId).catch(() => false);
     } else if (ws.kind === 'chat' && this.ownSession(ws)) {
       if (ws.sessionRuntime === 'codex') await dropCodexSessions({ threadId: ws.sessionId! }).catch(() => 0);
       else if (ws.sessionRuntime === 'opencode') await dropOpenCodeSession(ws.sessionId!).catch(() => false);
+      else if (ws.sessionRuntime === 'grok') await dropGrokSession(ws.sessionId!).catch(() => false);
       else await dropSession(sessionsDir, ws.sessionId!).catch(() => undefined);
     }
     this.records = this.records.filter((r) => r.id !== id);
