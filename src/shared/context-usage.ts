@@ -112,6 +112,85 @@ export function formatTokenCount(n: number): string {
   return String(Math.max(0, Math.round(n)));
 }
 
+/** Fresh input, tokens served from the prompt cache, and tokens written into it. */
+export interface CacheCounts {
+  readonly input: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+}
+
+const counted = (n: number | undefined): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
+
+/**
+ * Prompt-cache hit rate for one conversation: cache reads over fresh input, cache reads and cache
+ * writes. Undefined when nothing was counted, so the screen shows nothing rather than 0% or NaN.
+ * A session that wrote cache and read none is 0.
+ */
+export function cacheHitPct(parts: CacheCounts | undefined): number | undefined {
+  if (!parts) return undefined;
+  const input = counted(parts.input);
+  const cacheRead = counted(parts.cacheRead);
+  const cacheWrite = counted(parts.cacheWrite);
+  const total = input + cacheRead + cacheWrite;
+  if (total <= 0) return undefined;
+  return Math.round((cacheRead / total) * 100);
+}
+
+/**
+ * The current conversation's cache counts. `session` is every turn of this session added up (a
+ * running total from the agent contributes only its growth). Until that exists, `last` is the
+ * latest report, which for a running-total SDK is the session so far. An empty session hides `last`.
+ */
+export function sessionCache(usage: { readonly session?: CacheCounts; readonly last?: CacheCounts } | undefined): CacheCounts | undefined {
+  if (!usage) return undefined;
+  // A stored session, even an empty one, wins over the latest report so a new session doesn't keep the old rate.
+  const raw = usage.session ?? usage.last;
+  if (!raw) return undefined;
+  const parts = { input: counted(raw.input), cacheRead: counted(raw.cacheRead), cacheWrite: counted(raw.cacheWrite) };
+  return parts.input + parts.cacheRead + parts.cacheWrite > 0 ? parts : undefined;
+}
+
+/** "Fresh 2k · cache read 6k · cache write 300" — what the hit rate is made of. */
+export function cacheDetail(parts: CacheCounts): string {
+  return `Fresh ${formatTokenCount(parts.input)} · cache read ${formatTokenCount(parts.cacheRead)} · cache write ${formatTokenCount(parts.cacheWrite)}`;
+}
+
+/** "Cache 77%". */
+export const cacheLabel = (pct: number): string => `Cache ${pct}%`;
+
+/** What the context meter shows for this conversation's cache, if there is anything to divide by. */
+export function cacheHitOf(usage: { readonly session?: CacheCounts; readonly last?: CacheCounts } | undefined): { readonly pct: number; readonly label: string; readonly detail: string; readonly counts: CacheCounts } | undefined {
+  const counts = sessionCache(usage);
+  if (!counts) return undefined;
+  const pct = cacheHitPct(counts);
+  if (pct === undefined) return undefined;
+  return { pct, label: cacheLabel(pct), detail: cacheDetail(counts), counts };
+}
+
+/**
+ * Fold one usage report into the session totals. Same session and a running total (the caller
+ * found nothing went down): add only the growth. Same session and a per-turn report that dropped:
+ * add the turn. A new session starts over. No session id: leave the totals (a lifetime seed is not
+ * one conversation).
+ */
+export function foldSessionCache(
+  prev: { readonly lastSession?: string; readonly last?: CacheCounts; readonly session?: CacheCounts } | undefined,
+  run: CacheCounts & { readonly session?: string },
+  continues: boolean,
+): CacheCounts | undefined {
+  if (!run.session) return prev?.session;
+  const last = prev?.last;
+  const same = prev?.lastSession === run.session && last !== undefined;
+  const base = same ? (prev?.session ?? last) : undefined;
+  const running = continues && same;
+  const step = (now: number, was: number | undefined): number => counted(running && was !== undefined ? now - was : now);
+  return {
+    input: counted(base?.input) + step(run.input, last?.input),
+    cacheRead: counted(base?.cacheRead) + step(run.cacheRead, last?.cacheRead),
+    cacheWrite: counted(base?.cacheWrite) + step(run.cacheWrite, last?.cacheWrite),
+  };
+}
+
 /** Claude Code's /context categories → our three rows, scaled so they add up to `used`. */
 export function breakdownFrom(
   report: { readonly categories?: ReadonlyArray<{ readonly name: string; readonly tokens: number; readonly kind?: string }>; readonly messageBreakdown?: { readonly toolCallTokens?: number; readonly toolResultTokens?: number } } | undefined,

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { formatTokens } from '@beluga/ui/work-models.js';
 import { formatBytes } from '@beluga/shared/format.js';
-import { contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { cacheHitOf, contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { speedWords } from '@beluga/shared/local-endpoints.js';
 import { unreadCount } from '@beluga/core/work-store.js';
 import { issuesOfWorkspace } from '@beluga/core/board/model.js';
@@ -181,6 +181,7 @@ function WorkspaceDetails({ id }: { id: string }) {
   if (!ws || !st) return null;
   const members = Object.entries(state.members ?? {});
   const tokens = ws.usage ? ws.usage.input + ws.usage.output + ws.usage.cacheWrite : 0;
+  const cache = cacheHitOf(ws.usage);
   const project = state.projects.find((p) => p.id === ws.projectId);
   return (
     <>
@@ -203,6 +204,11 @@ function WorkspaceDetails({ id }: { id: string }) {
               <span style={{ width: `${contextPct(ctx)}%` }} />
             </span>
             {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)}`}
+          </Field>
+        ) : null}
+        {cache ? (
+          <Field label="Cache">
+            <span title={cache.detail} data-cache-hit="">{`${cache.pct}%`}</span>
           </Field>
         ) : null}
         {tokens ? <Field label="Agent">{`${formatTokens(tokens)} tokens${ws.usage?.local ? ` · ${speedWords(ws.usage.local.tps)}` : ws.usage?.cost ? ` · $${ws.usage.cost.toFixed(2)}` : ''}`}</Field> : null}

@@ -323,7 +323,9 @@ function seedDemoUsage(mgr: WorkspaceManager): void {
       const share = weight[w.name]! * pace;
       if (share < 0.12) continue;
       const input = Math.round(42_000 * share);
-      mgr.addUsage(w.id, { input, output: Math.round(input * 0.18), cacheRead: input * 6, cacheWrite: Math.round(input * 0.3), cost: Math.round(input * 0.0000165 * 100) / 100 }, Date.now() - ago * day);
+      // A new id each day, so each run is added in full (the Usage chart stays the two-week sum).
+      // The last day is the open session: the context meter shows that day's cache hit rate.
+      mgr.addUsage(w.id, { input, output: Math.round(input * 0.18), cacheRead: input * 6, cacheWrite: Math.round(input * 0.3), cost: Math.round(input * 0.0000165 * 100) / 100, session: `demo-${w.id}-${ago}` }, Date.now() - ago * day);
     }
   }
 }

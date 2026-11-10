@@ -60,5 +60,29 @@ describe('WorkspaceManager.addUsage', () => {
     expect(u?.days).toEqual({ '2026-10-17': { tokens: 1500, cost: 0.05 }, '2026-10-18': { tokens: 600, cost: expect.closeTo(0.03, 6) } });
     expect(u?.lastAt).toBe(today);
     expect(u).toMatchObject({ input: 1500, output: 300, runs: 2 });
+    // The session total is the running report, not the sum of both reports.
+    expect(u?.session).toEqual({ input: 1500, cacheRead: 6000, cacheWrite: 300 });
+  });
+
+  it('keeps a session’s cache counts apart from the lifetime total', async () => {
+    const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-usage-session-')));
+    const store = new WorkspaceStore(path.join(base, 'home'));
+    store.saveConfig({ roots: [], projects: [], hidden: [] });
+    const mgr = new WorkspaceManager(store);
+    await mgr.refresh();
+    const chat = await mgr.createChat('chats', 'ideas');
+    mgr.addUsage(chat.id, { input: 100, output: 5, cacheRead: 10, cacheWrite: 40, cost: 1, session: 's1' });
+    // The next turn’s numbers went down, so the whole turn is new.
+    const summed = mgr.addUsage(chat.id, { input: 20, output: 1, cacheRead: 80, cacheWrite: 0, cost: 0.1, session: 's1' });
+    expect(summed?.session).toEqual({ input: 120, cacheRead: 90, cacheWrite: 40 });
+    expect(summed).toMatchObject({ input: 120, cacheRead: 90, cacheWrite: 40 });
+    // A new session starts its own total. The lifetime total keeps both.
+    const next = mgr.addUsage(chat.id, { input: 5, output: 1, cacheRead: 0, cacheWrite: 50, cost: 0.2, session: 's2' });
+    expect(next?.session).toEqual({ input: 5, cacheRead: 0, cacheWrite: 50 });
+    expect(next).toMatchObject({ input: 125, cacheRead: 90, cacheWrite: 90 });
+    // A report with no session id does not replace the session or change how the lifetime total grows.
+    const bare = mgr.addUsage(chat.id, { input: 7, output: 1, cacheRead: 3, cacheWrite: 1, cost: 0.01 });
+    expect(bare?.session).toEqual({ input: 5, cacheRead: 0, cacheWrite: 50 });
+    expect(bare).toMatchObject({ input: 132, cacheRead: 93, cacheWrite: 91 });
   });
 });

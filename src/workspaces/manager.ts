@@ -20,6 +20,7 @@ import { dropFolderSessions, dropSession, pathVariants, sessionFoldersUnder } fr
 import { dropCodexSessions } from '../agent/runtime/codex/codex-sessions.js';
 import { dropOpenCodeFolder, dropOpenCodeSession } from '../agent/runtime/opencode/sessions.js';
 import { dropGrokSession } from '../agent/runtime/grok/sessions.js';
+import { foldSessionCache } from '../shared/context-usage.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { DeletePlan, MergeWait, Project, ProjectGroup, PullHead, ProjectSync, ProjectsConfig, RenameResult, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -1340,6 +1341,8 @@ export class WorkspaceManager {
     // Same conversation and nothing went down: these are running totals, so only the growth is new.
     const continues = run.session !== undefined && run.session === prev.lastSession && last !== undefined && run.input >= last.input && run.output >= last.output && run.cacheRead >= last.cacheRead && run.cacheWrite >= last.cacheWrite && run.cost >= last.cost;
     const delta = (k: 'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'cost'): number => (continues && last ? run[k] - last[k] : run[k]);
+    // This session's cache counts, for the hit rate. Lifetime totals and cost stay as they were.
+    const session = foldSessionCache(prev, run, continues);
     const next: WorkspaceUsage = {
       input: prev.input + delta('input'),
       output: prev.output + delta('output'),
@@ -1350,6 +1353,7 @@ export class WorkspaceManager {
       // A local run says how fast it was (the last speed stays when a turn is too short to tell).
       ...(run.free ? { local: { ...((run.tps ?? prev.local?.tps) ? { tps: run.tps ?? prev.local?.tps } : {}) } } : {}),
       ...(run.session ? { lastSession: run.session, last: { input: run.input, output: run.output, cacheRead: run.cacheRead, cacheWrite: run.cacheWrite, cost: run.cost } } : {}),
+      ...(session ? { session } : {}),
       // Per day too, for the Usage screen's chart and "this week".
       days: addDay(prev.days, dayKey(now), { tokens: delta('input') + delta('output') + delta('cacheWrite'), cost: delta('cost') }),
       lastAt: now,

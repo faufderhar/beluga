@@ -1,7 +1,8 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { modelLabel, modelOf } from '@beluga/ui/menus.js';
-import { clampThreshold, contextWindowFor, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { cacheHitOf, clampThreshold, contextWindowFor, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { LOCAL_RUNTIME, speedWords } from '@beluga/shared/local-endpoints.js';
 import { cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -48,6 +49,17 @@ function useLocalRun(channel: string): { tokens: number; tps?: number } | undefi
   );
 }
 
+/** This conversation's prompt-cache hit rate (fresh, cache read, cache write added up for the session). */
+function useCacheHit(channel: string): ReturnType<typeof cacheHitOf> {
+  return useApp(
+    (st) => {
+      const id = channel.startsWith('ws:') ? channel.slice(3) : '';
+      return id ? cacheHitOf(findWorkspace(st.projects, id)?.usage) : undefined;
+    },
+    (a, b) => a?.pct === b?.pct && a?.detail === b?.detail,
+  );
+}
+
 /** Open on hover (after a beat), stay open while the pointer is over it; a click pins it. */
 function useHoverOpen(): { open: boolean; setOpen: (v: boolean) => void; hover: { onPointerEnter: () => void; onPointerLeave: () => void } } {
   const [open, setOpen] = useState(false);
@@ -74,6 +86,7 @@ function useHoverOpen(): { open: boolean; setOpen: (v: boolean) => void; hover: 
 export function ContextMeter({ channel }: { channel: string }) {
   const model = useMeter(channel);
   const local = useLocalRun(channel);
+  const cache = useCacheHit(channel);
   const { open, setOpen, hover } = useHoverOpen();
   if (!model) return null;
   const label = model.compacting ? 'Compacting…' : `${model.pct}%`;
@@ -83,12 +96,15 @@ export function ContextMeter({ channel }: { channel: string }) {
         <button
           type="button"
           className={cx(s.meter, model.compacting ? s.spinning : model.tone === 'full' ? s.full : model.tone === 'warn' && s.warn)}
-          aria-label={model.compacting ? 'Context: compacting' : `Context ${model.pct}% used`}
+          aria-label={model.compacting ? 'Context: compacting' : cache ? `Context ${model.pct}% used, ${cache.label}` : `Context ${model.pct}% used`}
           data-context-meter={model.compacting ? 'compacting' : model.tone}
           {...hover}
         >
           <Ring pct={model.pct} spinning={model.compacting} />
           {label}
+          {cache && !model.compacting ? (
+            <span className={s.cache} data-cache-hit="" title={cache.detail}>{`· ${cache.label}`}</span>
+          ) : null}
           {local?.tps && !model.compacting ? <span className={s.speed} data-local-speed="">{`· ${local.tps} tok/s`}</span> : null}
         </button>
       </Popover.Trigger>
@@ -111,6 +127,7 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
   // A workspace someone shared with you: their Claude, so only they can compact it.
   const theirs = useApp((st) => st.view.kind === 'shared');
   const local = useLocalRun(channel);
+  const cache = useCacheHit(channel);
   const info = model.info;
   const rows = info ? breakdownRows(info) : [];
   const at = clampThreshold(prefs.autoCompactAt);
@@ -157,6 +174,12 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
           {formatTokenCount(info?.window ?? contextWindowFor(picked))}
           {modelName ? ` · ${modelName}` : ''}
         </dd>
+        {cache ? (
+          <>
+            <dt>Cache</dt>
+            <dd title={cache.detail} data-cache-hit="">{`${cache.pct}%`}</dd>
+          </>
+        ) : null}
         {local ? (
           <>
             <dt>This conversation</dt>

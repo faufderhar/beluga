@@ -4,13 +4,17 @@ import {
   COMPACT_INSTRUCTIONS,
   autoCompactDue,
   breakdownFrom,
+  cacheHitOf,
+  cacheHitPct,
   clampThreshold,
   compactEnv,
   contextPct,
   contextTokens,
   contextTone,
   contextWindowFor,
+  foldSessionCache,
   formatTokenCount,
+  sessionCache,
   windowOfRun,
 } from '../src/shared/context-usage.js';
 import { Settings } from '../src/shared/settings-schema.js';
@@ -129,5 +133,51 @@ describe('context breakdown', () => {
     expect(breakdownFrom(undefined, 1000)).toBeUndefined();
     expect(breakdownFrom({ categories: [{ name: 'Free space', tokens: 10, kind: 'free' }] }, 1000)).toBeUndefined();
     expect(breakdownFrom({ categories: [{ name: 'Messages', tokens: 900 }], messageBreakdown: { toolResultTokens: 5_000 } }, 0)).toEqual({ conversation: 0, tools: 900, system: 0 });
+  });
+});
+
+describe('prompt-cache hit rate', () => {
+  it('is cache reads over fresh input, cache reads and cache writes', () => {
+    expect(cacheHitPct(undefined)).toBeUndefined();
+    expect(cacheHitPct({ input: 0, cacheRead: 0, cacheWrite: 0 })).toBeUndefined();
+    expect(cacheHitPct({ input: Number.NaN, cacheRead: Number.NaN, cacheWrite: Number.NaN })).toBeUndefined();
+    expect(cacheHitPct({ input: 0, cacheRead: 100, cacheWrite: 0 })).toBe(100);
+    expect(cacheHitPct({ input: 1_500, cacheRead: 6_000, cacheWrite: 300 })).toBe(77);
+    expect(cacheHitPct({ input: 0, cacheRead: 0, cacheWrite: 50 })).toBe(0);
+    expect(cacheHitPct({ input: -5, cacheRead: 10, cacheWrite: -1 })).toBe(100);
+  });
+
+  it('reads the session total, and the latest report until a session total exists', () => {
+    const session = { input: 100, cacheRead: 50, cacheWrite: 50 };
+    const last = { input: 10, cacheRead: 0, cacheWrite: 90 };
+    expect(sessionCache({ session, last })).toEqual(session);
+    expect(cacheHitOf({ session, last })).toMatchObject({ pct: 25, label: 'Cache 25%', counts: session });
+    expect(cacheHitOf({ session, last })?.detail).toBe('Fresh 100 · cache read 50 · cache write 50');
+    // Older records kept only the latest running total.
+    expect(cacheHitOf({ last: { input: 20, cacheRead: 60, cacheWrite: 20 } })).toMatchObject({ pct: 60, label: 'Cache 60%' });
+    expect(cacheHitOf({ last: { input: 1_500, cacheRead: 6_000, cacheWrite: 300 } })?.detail).toBe('Fresh 2k · cache read 6k · cache write 300');
+    // A new session with nothing counted yet does not keep the previous session's rate.
+    expect(cacheHitOf({ session: { input: 0, cacheRead: 0, cacheWrite: 0 }, last: { input: 0, cacheRead: 100, cacheWrite: 0 } })).toBeUndefined();
+    expect(cacheHitOf(undefined)).toBeUndefined();
+    expect(cacheHitOf({})).toBeUndefined();
+  });
+
+  it('adds a session up across turns, and starts over when the session changes', () => {
+    const first = foldSessionCache(undefined, { input: 1_000, cacheRead: 5_000, cacheWrite: 300, session: 's1' }, false);
+    expect(first).toEqual({ input: 1_000, cacheRead: 5_000, cacheWrite: 300 });
+    // A running total: only the growth is new, so the session matches the report.
+    const grown = foldSessionCache({ lastSession: 's1', last: { input: 1_000, cacheRead: 5_000, cacheWrite: 300 }, session: first }, { input: 1_500, cacheRead: 6_000, cacheWrite: 300, session: 's1' }, true);
+    expect(grown).toEqual({ input: 1_500, cacheRead: 6_000, cacheWrite: 300 });
+    expect(cacheHitPct(grown)).toBe(77);
+    // A per-turn report that dropped: the whole turn is added.
+    const turns = foldSessionCache({ lastSession: 's1', last: { input: 100, cacheRead: 10, cacheWrite: 40 }, session: { input: 100, cacheRead: 10, cacheWrite: 40 } }, { input: 20, cacheRead: 80, cacheWrite: 0, session: 's1' }, false);
+    expect(turns).toEqual({ input: 120, cacheRead: 90, cacheWrite: 40 });
+    expect(cacheHitPct(turns)).toBe(36);
+    // A new session replaces the totals.
+    expect(foldSessionCache({ lastSession: 's1', last: { input: 100, cacheRead: 10, cacheWrite: 40 }, session: turns }, { input: 5, cacheRead: 0, cacheWrite: 50, session: 's2' }, false)).toEqual({ input: 5, cacheRead: 0, cacheWrite: 50 });
+    expect(cacheHitPct({ input: 5, cacheRead: 0, cacheWrite: 50 })).toBe(0);
+    // No session id (a lifetime seed): the session totals stay put.
+    expect(foldSessionCache({ session: first }, { input: 9, cacheRead: 9, cacheWrite: 9 }, false)).toEqual(first);
+    expect(foldSessionCache(undefined, { input: 9, cacheRead: 9, cacheWrite: 9 }, false)).toBeUndefined();
   });
 });

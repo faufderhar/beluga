@@ -26,8 +26,9 @@
 .warn {
   color: var(--warn);
 }
-/* A local model's speed beside its context (BLG-450): quieter than the percentage. */
-.speed {
+/* Quieter than the context percentage: a local model's speed, or this session's cache hit rate. */
+.speed,
+.cache {
   color: var(--text-3);
   font-weight: 400;
 }

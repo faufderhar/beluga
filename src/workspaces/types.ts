@@ -20,6 +20,12 @@ export interface WorkspaceUsage {
   /** The SDK reports running totals per conversation; remembered to add only what's new. */
   readonly lastSession?: string;
   readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
+  /**
+   * Fresh input, cache read and cache write for the conversation session open now, added up across
+   * its turns. A running total contributes only its growth. Older records leave this out: `last`
+   * is that session's latest report.
+   */
+  readonly session?: { readonly input: number; readonly cacheRead: number; readonly cacheWrite: number };
   /** What each local day ("2026-10-18") added, the last few weeks (see usage-days.ts). */
   readonly days?: Readonly<Record<string, UsageDay>>;
   /** When Claude last reported usage here (epoch ms). */

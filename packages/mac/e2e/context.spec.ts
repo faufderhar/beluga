@@ -13,6 +13,9 @@ const meter = (page: Page) => page.locator('[data-context-meter]');
 const popover = (page: Page) => page.getByRole('dialog', { name: 'Context window' });
 const dividers = (page: Page) => page.locator('[data-compact-divider]');
 
+/** The fill percentage is the meter's first number. A cache rate may follow it ("48% · Cache 82%"). */
+const fillPct = (text: string | null): number => Number(text?.match(/(\d+)%/)?.[1]);
+
 async function open(page: Page, name: string, project = 'bob-api'): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: project }).first().click({ position: { x: 60, y: 10 } });
@@ -27,13 +30,15 @@ test.beforeEach(async ({ page }) => {
 
 test('the meter shows how full the conversation is, with the details on hover', async ({ page }) => {
   await open(page, 'add-auth');
-  await expect(meter(page)).toHaveText(/^\d+%$/);
+  await expect(meter(page)).toHaveText(/^\d+%\s*·\s*Cache \d+%$/);
+  await expect(meter(page).locator('[data-cache-hit]')).toHaveAttribute('title', /Fresh .+ · cache read .+ · cache write/);
   await expect(meter(page)).toHaveAttribute('data-context-meter', 'normal');
-  const pct = Number((await meter(page).textContent())!.replace('%', ''));
+  const pct = fillPct(await meter(page).textContent());
   expect(pct).toBeGreaterThan(0);
   await meter(page).hover();
   await expect(popover(page)).toBeVisible();
   await expect(popover(page).locator('[data-context-usage]')).toContainText(`${pct}% of 200k`);
+  await expect(popover(page).locator('dd[data-cache-hit]')).toHaveText(/^\d+%$/);
   await expect(popover(page)).toContainText('Model window');
   await expect(popover(page)).toContainText('Auto-compact');
   await expect(popover(page).getByRole('button', { name: /Compact/ })).toBeEnabled();
@@ -59,7 +64,7 @@ async function setAutoCompact(page: Page, on: boolean): Promise<void> {
 test('a conversation past the threshold compacts on its own after Claude answers', async ({ page }) => {
   await setAutoCompact(page, true);
   await open(page, 'How do deploys work?');
-  const before = Number((await meter(page).textContent())!.replace('%', ''));
+  const before = fillPct(await meter(page).textContent());
   expect(before).toBeGreaterThanOrEqual(80);
   await composer(page).fill('how do the deploy scripts work?');
   await composer(page).press('Enter');
@@ -68,7 +73,7 @@ test('a conversation past the threshold compacts on its own after Claude answers
   await expect(divider).toHaveAttribute('data-compact-divider', 'done', { timeout: 15_000 });
   await expect(divider).toContainText(/Auto-compacted · \d+k → \d+k tokens/);
   // Claude's working memory is small again; the conversation is all still there.
-  await expect.poll(async () => Number((await meter(page).textContent())!.replace('%', ''))).toBeLessThan(30);
+  await expect.poll(async () => fillPct(await meter(page).textContent())).toBeLessThan(30);
   await expect(page.getByText('how do the deploy scripts work?')).toBeVisible();
   await setAutoCompact(page, false);
 });
