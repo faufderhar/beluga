@@ -34,13 +34,21 @@ export interface ProviderCard {
   readonly note?: string;
 }
 
+/** Two or three letters for a named window ("Weekly" -> "wk"). */
+function shortOf(label: string): string {
+  if (label === 'Weekly') return 'wk';
+  if (label === 'Monthly') return 'mo';
+  if (label === 'Daily') return 'day';
+  return label.slice(0, 3).toLowerCase();
+}
+
 /** A provider's quota windows in order: 5-hour, weekly, then its own. */
 export function windowsOf(u: Pick<ProviderUsage, 'fiveHour' | 'week' | 'windows'> | undefined): CardWindow[] {
   if (!u) return [];
   const out: CardWindow[] = [];
   if (u.fiveHour) out.push({ label: '5-hour', short: '5h', ...u.fiveHour });
   if (u.week) out.push({ label: 'Weekly', short: 'wk', ...u.week });
-  for (const w of u.windows ?? []) out.push({ label: w.label, short: w.label.slice(0, 3).toLowerCase(), pct: w.pct, ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}) });
+  for (const w of u.windows ?? []) out.push({ label: w.label, short: shortOf(w.label), pct: w.pct, ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}) });
   return out;
 }
 
