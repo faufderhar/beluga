@@ -97,14 +97,13 @@ describe('voice: the Mac writes it down', () => {
       },
     });
     await expect(voice.transcribe(audio(), { model: 'parakeet', language: 'en' })).rejects.toThrow(/still getting Parakeet \(\d+%\)/);
-    await new Promise((r) => setTimeout(r, 10));
-    const mid = await voice.status();
-    expect(mid.models.find((m) => m.model === 'parakeet')).toMatchObject({ ready: false, progress: 0.5 });
+    // The download and the size check are async. A fixed wait loses that race on a busy runner,
+    // so the model is still "coming" and has no incomplete error yet.
+    const parakeet = async () => (await voice.status()).models.find((m) => m.model === 'parakeet');
+    await expect.poll(parakeet, { timeout: 5_000 }).toMatchObject({ ready: false, progress: 0.5 });
     release();
-    await new Promise((r) => setTimeout(r, 20));
-    const after = await voice.status();
-    expect(after.models.find((m) => m.model === 'parakeet')).toMatchObject({ ready: false, error: expect.stringMatching(/incomplete/) });
-    expect(after.models.map((m) => m.model)).toEqual(['whisper-turbo', 'parakeet']);
+    await expect.poll(parakeet, { timeout: 5_000 }).toMatchObject({ ready: false, error: expect.stringMatching(/incomplete/) });
+    expect((await voice.status()).models.map((m) => m.model)).toEqual(['whisper-turbo', 'parakeet']);
   });
 });
 
