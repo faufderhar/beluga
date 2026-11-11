@@ -11,6 +11,9 @@ describe('agent marks', () => {
     expect(runtimeMark('opencode')).toBe('opencode');
     expect(runtimeMark('grok')).toBe('grok');
     expect(agentMark(undefined)).toBe('claudeCode');
+    // Grok Build's mark is xAI's, from the same LobeHub set as the others (a filled 24×24 path).
+    expect(AGENT_MARKS.grok.evenOdd).toBe(true);
+    expect(AGENT_MARKS.grok.d.startsWith('M9.27')).toBe(true);
     for (const mark of ['claudeCode', 'codex', 'localModel', 'anthropic', 'openai'] as const) expect(AGENT_MARKS[mark].d).toMatch(/^M/);
   });
 
