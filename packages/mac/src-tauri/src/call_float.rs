@@ -180,7 +180,7 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
         .visible(false);
     #[cfg(target_os = "macos")]
     let builder = builder.accept_first_mouse(true);
-    let window = builder.build()?;
+    let window = crate::menu::without_menu_bar(app, builder).build()?;
     #[cfg(target_os = "macos")]
     {
         let w = window.clone();
@@ -191,8 +191,7 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
             crate::call_overlay::leave_out_of_captures(&w);
         });
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = window.remove_menu();
+    crate::menu::drop_menu_bar(&window);
     let handle = app.clone();
     window.on_window_event(move |e| {
         if let tauri::WindowEvent::Moved(_) = e {

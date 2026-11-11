@@ -11,6 +11,7 @@ import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-m
 import { imageLinksIn } from '@beluga/shared/attachment-links.js';
 import { type RefKey, boxRef, plainRefs, refKey, referencedImages, withoutRef } from './image-refs.js';
 import { keepPreview, openLightbox, pendingImage, previewOf } from './images.js';
+import { plainWorktrees, toBox, worktreeNamesOf } from './worktree-box.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
 import img from './images.module.css';
@@ -393,10 +394,13 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
         out += sent.slice(link.start, link.end);
       }
     }
-    return out + sent.slice(at);
+    // Worktrees' links back short, as they were typed.
+    return toBox(out + sent.slice(at), worktreeNamesOf(client.store.getState().projects));
   };
 
-  const take = (typed: string): { text: string; images: readonly number[]; shown: readonly number[]; putBack: () => void } => {
+  const take = (boxed: string): { text: string; images: readonly number[]; shown: readonly number[]; putBack: () => void } => {
+    // Worktrees' links written short in the box go out whole ("worktree:wt-…").
+    const typed = plainWorktrees(boxed, worktreeNamesOf(client.store.getState().projects));
     if (typed.startsWith('/')) return { text: typed, images: [], shown: [], putBack: () => undefined };
     const pictures = pendingImages;
     const placed = referencedImages(typed);

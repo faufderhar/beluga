@@ -1476,9 +1476,11 @@ export class WorkspaceController {
     }
   }
 
-  async commit(id: string, message = 'Work from Beluga'): Promise<void> {
+  /** → whether anything was committed; undefined when it failed (a toast says why). */
+  async commit(id: string, message = 'Work from Beluga'): Promise<boolean | undefined> {
     const committed = await this.act("Couldn't commit", () => this.deps.manager.commitAll(id, message));
     if (committed !== undefined) this.deps.toast(committed ? 'Committed all changes' : 'Nothing to commit', committed ? 'success' : 'info');
+    return committed;
   }
 
   /** Merge into the main folder; on conflicts, hand the job to Claude. */

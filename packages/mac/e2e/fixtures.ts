@@ -1,4 +1,4 @@
-import { test as base } from '@playwright/test';
+import { expect as baseExpect, test as base } from '@playwright/test';
 import { slotHomes } from '../../../scripts/e2e-lock.mjs';
 import { type Demo, startDemo } from './daemon.js';
 
@@ -59,6 +59,9 @@ class Demos {
   }
 }
 
+/** React's words for a view whose store read never holds still, or that redraws itself without end. */
+const RENDER_LOOP = /The result of getSnapshot should be cached|Maximum update depth exceeded/;
+
 /** `demoLinkMs` (a project's option): the round trip added to the demo's computers' pages (the remote project: 80 ms). */
 export const test = base.extend<{ demo: Demo }, { demos: Demos; demoLinkMs: number }>({
   demoLinkMs: [0, { scope: 'worker', option: true }],
@@ -71,6 +74,18 @@ export const test = base.extend<{ demo: Demo }, { demos: Demos; demoLinkMs: numb
     { scope: 'worker', timeout: 120_000 },
   ],
   demo: [async ({ demos }, use, info) => use(await demos.for(info.file)), { auto: true, timeout: 120_000 }],
+  // A view that redraws for good (BLG-905: the bell froze the window grey) fails the test it shows up in.
+  page: async ({ page }, use) => {
+    const loops: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error' && RENDER_LOOP.test(m.text())) loops.push(m.text().slice(0, 500));
+    });
+    page.on('pageerror', (e) => {
+      if (RENDER_LOOP.test(e.message)) loops.push(e.message.slice(0, 500));
+    });
+    await use(page);
+    baseExpect(loops, 'A view redrew for good: React said so in the console (BLG-905)').toEqual([]);
+  },
   context: async ({ context, demo }, use) => {
     await context.route('**/__beluga/endpoint', (route) => route.fulfill({ json: demo.endpoint }));
     await use(context);

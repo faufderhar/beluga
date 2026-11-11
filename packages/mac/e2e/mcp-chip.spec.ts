@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures.js';
+import { openGroupChat } from './helpers.js';
 
 /**
  * Your MCP servers in the box you type in (BLG-252): a plug with how many are connected, an amber
@@ -8,6 +9,8 @@ import { expect, test } from './fixtures.js';
 test('the box you type in shows your MCP servers, and signs you in from there', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: 'Sidebar' })).toBeVisible();
+  // A box to type in: the room's group chat (the window opens on the Overview, BLG-871).
+  await openGroupChat(page);
   const chip = page.getByRole('button', { name: /^MCP servers: / });
   await expect(chip).toHaveText('2/5');
   await expect(chip).toHaveAttribute('data-mcp-chip', 'needs-you');

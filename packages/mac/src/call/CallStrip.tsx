@@ -86,7 +86,7 @@ export function CallControls({ call, compact }: { call: CallView; compact?: bool
 /**
  * Which microphone you speak into and which speaker you hear them on (BLG-737), beside Mute.
  * Picked during a call, it switches at once; Beluga remembers it for the next one. With them,
- * Noise Removal (BLG-744): on in every call, off for this one with a click.
+ * Noise Removal (BLG-744): off until you turn it on, then on in every call on this Mac.
  */
 function DevicesButton() {
   const engine = useCallEngine();
@@ -116,8 +116,8 @@ function DevicesButton() {
           label: 'Noise Removal',
           icon: 'wand',
           checked: live.quiet === 'on',
-          hint: live.quiet === 'on' ? 'Typing, fans and the room stay out · off for this call' : 'Off for this call: they hear the room too',
-          onSelect: () => engine.setQuiet(live.quiet !== 'on'),
+          hint: live.quiet === 'on' ? 'Typing, fans and the room stay out · if they can’t hear you, turn it off' : 'Off: they hear the room too · on to take out typing and fans',
+          onSelect: () => void engine.setQuiet(live.quiet !== 'on'),
         },
     devices?.canPickSpeaker === false
       ? { label: 'Speaker', icon: 'speaker', hint: 'As set in macOS (Control Center › Sound)', disabled: true, onSelect: () => undefined }

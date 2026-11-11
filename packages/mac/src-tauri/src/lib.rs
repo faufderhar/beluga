@@ -8,6 +8,7 @@
 mod daemon;
 mod export;
 mod focus;
+mod i18n;
 mod menu;
 mod call_float;
 mod call_overlay;
@@ -16,6 +17,7 @@ mod popup;
 #[cfg(target_os = "macos")]
 mod power;
 mod privacy;
+mod quit;
 mod rename;
 mod requests;
 mod sounds;
@@ -254,12 +256,10 @@ pub fn run() {
             w.visible = false;
         }
     }
-    let window_state = if background {
-        tauri_plugin_window_state::StateFlags::all()
-            - tauri_plugin_window_state::StateFlags::VISIBLE
-    } else {
-        tauri_plugin_window_state::StateFlags::all()
-    };
+    // Whether the window shows comes from the config (hidden only for the background relaunch),
+    // never from the last run: quitting hides it first (quit.rs), so that would always say hidden.
+    let window_state = tauri_plugin_window_state::StateFlags::all()
+        - tauri_plugin_window_state::StateFlags::VISIBLE;
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder.activate_ignoring_other_apps(!background);
@@ -282,6 +282,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(quit::Quitting::default())
         .manage(updater::Updates::default())
         .manage(requests::TrayState::default())
         .manage(popup::PopupState::default())
@@ -334,9 +335,14 @@ pub fn run() {
             updater::update_set_mode,
             updater::update_choose,
             updater::update_activity,
-            updater::update_dismiss_news
+            updater::update_dismiss_news,
+            i18n::set_ui_language
         ])
-        .menu(menu::build)
+        .menu(|app| {
+            // The language the window last chose (src/i18n.rs), before the menus are built.
+            i18n::load(app);
+            i18n::menu_bar(app)
+        })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "check-updates" => updater::check_from_menu(app),
             id => menu::on_event(app, id),
@@ -425,10 +431,14 @@ pub fn run() {
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => focus_main(app),
         // Quitting leaves the room (unless this app didn't start Beluga; it's left running then),
-        // then puts a downloaded update in place.
+        // then puts a downloaded update in place. However it began, it ends: if a step hangs,
+        // the watchdog ends Beluga itself (quit.rs, #426).
         RunEvent::Exit => {
+            quit::guard(app);
+            quit::at(app, quit::Stage::StoppingEngine);
             daemon::stop(app);
             updater::on_exit(app);
+            quit::at(app, quit::Stage::Leaving);
         }
         _ => {}
     });

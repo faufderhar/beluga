@@ -16,6 +16,7 @@ The same Beluga runs on Linux and Windows. Some things stay Mac only.
 | Moving to the Trash | Finder / trash | gio trash | Recycle Bin |
 | Window | blur, traffic lights | solid, the desktop's own title bar | solid, the system title bar |
 | Packages | .dmg | AppImage (updates itself), .deb, .rpm | installer (updates itself) |
+| Sound and media in the window | built in | GStreamer: the AppImage carries its plugins (so it works on Arch, CachyOS and the like); the .deb and .rpm depend on the base and good plugins | built in |
 
 Mac only: desktop widgets, Focus, the macOS permission steps in the welcome, the Dock badge,
 sleeping only after the outbox is mailed (BLG-277), and notification sounds played from files
@@ -37,6 +38,11 @@ Archive has no key (it's in the menu and ⌘K).
   modifier, as Tauri's CmdOrCtrl does. `keyPlatform()` says which keyboard it is.
 - The Tauri shell gates Mac-only code with `cfg(target_os = "macos")`.
   `tauri.linux.conf.json` and `tauri.windows.conf.json` set the window and the bundles.
+- Windows and Linux give every window the app's menu bar. The small windows (the request card, the
+  call card, the call overlay) take it off with `menu::without_menu_bar` and `menu::drop_menu_bar`:
+  on Linux they start with an empty menu, because taking the app's menu off a GTK window makes GTK
+  warn once per shortcut ("no accelerator … installed in accel group"). A language switch clears
+  the old menu's shortcuts (`menu::clear_keys`) before swapping it out, for the same reason.
 
 ## Checks and releases
 

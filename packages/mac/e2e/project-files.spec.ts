@@ -59,5 +59,6 @@ test('a project’s page browses and searches its main folder, and opens a file 
   await expect(back).toBeVisible();
   await page.screenshot({ path: info.outputPath('04-in-full.png') });
   await back.click();
-  await expect(page.getByRole('heading', { level: 1, name: 'landing' })).toBeVisible();
+  // Exactly: the README still previews in the panel, and its own h1 is "Landing page".
+  await expect(page.getByRole('heading', { level: 1, name: 'landing', exact: true })).toBeVisible();
 });

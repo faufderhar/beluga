@@ -30,8 +30,8 @@ export interface StatsCounterDeps {
   readonly seed?: (projects: readonly Project[], now: number) => Pick<StatsFile, 'days' | 'hours' | 'prs' | 'plan'>;
   /** Where chat histories are (unset: ~/.beluga/history; null: none to read). */
   readonly historyDir?: string | null;
-  /** A project's pull requests as gh lists them (JSON); unset: gh itself; null: never ask. */
-  readonly listPrs?: ((root: string) => Promise<string>) | null;
+  /** A project's newest `limit` pull requests as gh lists them (JSON); unset: gh itself; null: never ask. */
+  readonly listPrs?: ((root: string, limit: number) => Promise<string>) | null;
   readonly now?: () => number;
   /** Say there's no GitHub CLI without asking (the sparse demo). */
   readonly noGitHub?: boolean;
@@ -45,9 +45,15 @@ const OBSERVE_MS = 3000;
 const BACKFILL_AFTER_MS = 60_000;
 /** Pull requests are asked of GitHub at most this often per project. */
 const PRS_EVERY_MS = 6 * 3_600_000;
+/** The first time a project is asked: all of them (the newest come first, and a busy repo has hundreds). */
+const PR_FIRST_LIMIT = 3000;
+/** Later: the newest only (what was read before stays). */
 const PR_LIMIT = 300;
+/** A PR seen merging is asked about this soon after (GitHub has the merge by then). */
+const AFTER_MERGE_MS = 5000;
 
-const defaultListPrs = (root: string): Promise<string> => runGh(['pr', 'list', '--state', 'all', '--author', '@me', '--limit', String(PR_LIMIT), '--json', GH_PR_FIELDS], root, 60_000);
+const defaultListPrs = (root: string, limit: number): Promise<string> =>
+  runGh(['pr', 'list', '--state', 'all', '--author', '@me', '--limit', String(limit), '--json', GH_PR_FIELDS], root, limit > PR_LIMIT ? 180_000 : 60_000);
 
 export class StatsCounter {
   private data: StatsFile;
@@ -58,6 +64,9 @@ export class StatsCounter {
   /** Runs started and not finished: requestId → when. */
   private readonly running = new Map<string, number>();
   private backfilling = false;
+  /** Projects with a pull request seen merging, asked about again soon (not in a few hours). */
+  private readonly mergedIn = new Set<string>();
+  private mergeTimer?: ReturnType<typeof setTimeout>;
   /** gh isn't installed or signed in here (learned at the last backfill). */
   private noGitHub: boolean;
   private seeded = false;
@@ -85,6 +94,7 @@ export class StatsCounter {
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
     if (this.observeTimer) clearTimeout(this.observeTimer);
+    if (this.mergeTimer) clearTimeout(this.mergeTimer);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveNow();
@@ -120,6 +130,8 @@ export class StatsCounter {
     if (this.stopped) return;
     // Workspaces, and your plan usage (it comes with your own card).
     if (a.type === 'projects' || a.type === 'peers' || a.type === 'welcome') return this.observeSoon();
+    // A worktree's pull request merged (from Beluga or on GitHub): its lines count now, not at the next refresh.
+    if (a.type === 'pr' && a.pr?.state === 'MERGED') return this.mergedSoon(a.id, a.pr.number);
     const self = this.deps.store.getState().selfId;
     // Your agent's runs for you (a friend's requests run on your Mac too: not your time).
     if (a.type === 'agent_event' && a.owner === self && a.requester === self) {
@@ -168,6 +180,26 @@ export class StatsCounter {
     this.observeTimer.unref?.();
   }
 
+  private mergedSoon(workspaceId: string, number: number): void {
+    const p = this.deps.store.getState().projects.find((x) => x.workspaces.some((w) => w.id === workspaceId));
+    if (!p?.root || this.data.prs[`${p.root}#${number}`]?.merged !== undefined) return;
+    this.mergedIn.add(p.root);
+    this.askMergedSoon();
+  }
+
+  private askMergedSoon(): void {
+    if (this.mergeTimer || this.stopped) return;
+    this.mergeTimer = setTimeout(() => {
+      this.mergeTimer = undefined;
+      // The backfill is asking already: after it.
+      if (this.backfilling) return this.askMergedSoon();
+      const roots = new Set(this.mergedIn);
+      this.mergedIn.clear();
+      void this.readPrs(roots);
+    }, AFTER_MERGE_MS);
+    this.mergeTimer.unref?.();
+  }
+
   // ---------------------------------------------------------------- backfill
 
   /** Chat histories once (prompts and agent time from before), then each project's pull requests, then again every few hours. */
@@ -186,7 +218,8 @@ export class StatsCounter {
   private async readHistories(): Promise<void> {
     const dir = this.deps.historyDir === undefined ? path.join(belugaHome(), 'history') : this.deps.historyDir;
     const state = this.deps.store.getState();
-    if (!state.selfId) return;
+    // Not yet who you are or what your projects are (just started): read next time, not marked read with nothing found.
+    if (!state.selfId || !state.projects.length) return;
     // Counted on its own, then added: live counting goes on while the files are read.
     let found = emptyStats(this.data.startedAt);
     if (dir) {
@@ -201,18 +234,21 @@ export class StatsCounter {
     this.change({ ...addStats(this.data, found), history: true });
   }
 
-  private async readPrs(): Promise<void> {
+  /** Each project's pull requests, at most every few hours; `only`: just these projects, now. */
+  private async readPrs(only?: ReadonlySet<string>): Promise<void> {
     if (this.deps.listPrs === null) return;
     // No GitHub CLI signed in: nothing to ask (the Usage tab says why its pull requests are empty).
     this.noGitHub = !this.deps.listPrs && !(await hasGh());
     if (this.noGitHub) return;
     const list = this.deps.listPrs ?? defaultListPrs;
     for (const p of this.deps.store.getState().projects) {
-      if (this.stopped || !p.root) return;
-      if (this.now() - (this.data.prsAt[p.root] ?? 0) < PRS_EVERY_MS) continue;
+      if (this.stopped) return;
+      // Chats (always listed first) has no folder and no pull requests: skipped, never the end of the list.
+      if (!p.root) continue;
+      if (only ? !only.has(p.root) : this.now() - (this.data.prsAt[p.root] ?? 0) < PRS_EVERY_MS) continue;
       const branches = belugaBranches(p, this.agentOf);
       try {
-        const prs = parseGhPrs(await list(p.root));
+        const prs = parseGhPrs(await list(p.root, this.data.prsAt[p.root] === undefined ? PR_FIRST_LIMIT : PR_LIMIT));
         this.change(withPrs(this.data, p, prs, branches, chosenAgent(this.deps.store.getState().prefs, p.name).runtime, this.now()));
       } catch {
         // No GitHub here (no remote, not signed in): asked again next time.

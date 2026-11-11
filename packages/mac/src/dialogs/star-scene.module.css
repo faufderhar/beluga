@@ -1,0 +1,157 @@
+/* The Star sheet's picture (StarScene.tsx): a paper-cut ocean in blues, the whale rising out of it. */
+.scene {
+  --paper-shadow: rgba(8, 52, 110, 0.34);
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+:global([data-theme='dark']) .scene {
+  --paper-shadow: rgba(0, 0, 0, 0.7);
+}
+
+/* Back (light, far) to front (deep, near). */
+.sky {
+  fill: #f4faff;
+}
+.l0 {
+  fill: #e3f2ff;
+}
+.l1 {
+  fill: #cde8fe;
+}
+.l2 {
+  fill: #b4dcfc;
+}
+.l3 {
+  fill: #97cdf8;
+}
+.l4 {
+  fill: #77bbf2;
+}
+.l5 {
+  fill: #56a5ea;
+}
+.l6 {
+  fill: #388ddc;
+}
+.l7 {
+  fill: #1f74c8;
+}
+.l8 {
+  fill: #0f5aa8;
+}
+.whale {
+  fill: #ffffff;
+}
+:global([data-theme='dark']) .sky {
+  fill: #0c1a2c;
+}
+:global([data-theme='dark']) .l0 {
+  fill: #0f2238;
+}
+:global([data-theme='dark']) .l1 {
+  fill: #132a45;
+}
+:global([data-theme='dark']) .l2 {
+  fill: #173253;
+}
+:global([data-theme='dark']) .l3 {
+  fill: #1b3b62;
+}
+:global([data-theme='dark']) .l4 {
+  fill: #204570;
+}
+:global([data-theme='dark']) .l5 {
+  fill: #1c3f69;
+}
+:global([data-theme='dark']) .l6 {
+  fill: #173660;
+}
+:global([data-theme='dark']) .l7 {
+  fill: #112c52;
+}
+:global([data-theme='dark']) .l8 {
+  fill: #0b2142;
+}
+:global([data-theme='dark']) .whale {
+  fill: #eef2f8;
+}
+
+/* ---- slow movement: the nearer a layer, the further it drifts; the whale rises and settles */
+.layer {
+  animation: drift 9s ease-in-out infinite alternate;
+}
+.layer[data-depth='0'],
+.layer[data-depth='1'] {
+  animation: none;
+}
+.layer[data-depth='2'] {
+  --reach: 3px;
+  animation-duration: 11s;
+}
+.layer[data-depth='3'] {
+  --reach: -4px;
+  animation-duration: 10s;
+}
+.layer[data-depth='4'] {
+  --reach: 5px;
+  animation-duration: 9s;
+}
+.layer[data-depth='5'] {
+  --reach: -6px;
+  animation-duration: 8s;
+}
+.layer[data-depth='6'] {
+  --reach: 8px;
+  animation-duration: 7s;
+}
+.layer[data-depth='7'] {
+  --reach: -9px;
+  animation-duration: 6.5s;
+}
+.layer[data-depth='8'] {
+  --reach: 10px;
+  animation-duration: 6s;
+}
+@keyframes drift {
+  from {
+    transform: translateX(calc(var(--reach, 0px) * -1));
+  }
+  to {
+    transform: translateX(var(--reach, 0px));
+  }
+}
+.rise {
+  transform-box: fill-box;
+  transform-origin: 30% 90%;
+  animation:
+    emerge 1.1s cubic-bezier(0.2, 0.8, 0.3, 1) both,
+    breathe 5.5s ease-in-out 1.1s infinite;
+}
+@keyframes emerge {
+  from {
+    transform: translateY(46px) rotate(-6deg);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(1.5deg);
+  }
+}
+
+:global([data-motion='reduce']) .scene *,
+:global([data-motion='reduce']) .scene {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene,
+  .scene * {
+    animation: none !important;
+  }
+}

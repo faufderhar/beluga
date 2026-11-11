@@ -12,7 +12,7 @@ import { ViewShelf } from '../../view-tools.js';
 import { clampEffort } from '../codex/runner.js';
 import type { ConfigOption, ContentBlock, PermissionRequest, PromptResponse, SessionResponse, SessionUpdate } from '../opencode/acp.js';
 import { permissionAnswer } from '../opencode/acp.js';
-import { type EventsDialect, OpenCodeEvents, type TurnSink, contextEvent } from '../opencode/events.js';
+import { type AcpDialect, OpenCodeEvents, type TurnSink, contextEvent } from '../opencode/events.js';
 import { acpServers, promptBlocks } from '../opencode/runner.js';
 import { mapOpenCodeSlash } from '../opencode/skills.js';
 import { INTERRUPT_TIMEOUT_MS } from '../types.js';
@@ -47,15 +47,23 @@ const TICKS_PER_USD = 10_000_000_000;
 let sharedHost: ToolHost | undefined;
 const toolHost = (): ToolHost => (sharedHost ??= new ToolHost());
 
+/**
+ * Fields that say what a Grok call is for. They arrive in the `tool_call` itself (often still
+ * pending, with no `in_progress`), so the step begins as soon as one of them is present.
+ */
+const GROK_INPUT_KEYS = new Set(['command', 'file_path', 'path', 'target_file', 'target_directory', 'pattern', 'url', 'query', 'tool_name', 'prompt', 'content', 'old_string', 'todos']);
+
 /** Beluga's Bash, Read and so on in place of Grok's: the shared event layer's table for it. */
-export const GROK_DIALECT: EventsDialect = {
+export const GROK_DIALECT: AcpDialect = {
   toolOf: grokToolOf,
-  calls: (tool, raw, cwd) => grokCalls(tool, raw, cwd),
-  result: grokResultText,
+  // Each call's input is in its `tool_call`, before its permission request, so judging it does not wait.
+  inputOf: (call) => (call.rawInput && typeof call.rawInput === 'object' ? call.rawInput : {}),
+  callsOf: (tool, raw, cwd) => grokCalls(tool, raw, cwd),
+  needsInput: new Set(),
+  inputKeys: GROK_INPUT_KEYS,
   writes: GROK_WRITES,
-  subAgent: GROK_SUBAGENT,
-  // Each call's input is in its `tool_call`, before its permission request.
-  needsInput: () => false,
+  subTool: GROK_SUBAGENT,
+  result: grokResultText,
 };
 
 interface GrokTurnMeta {

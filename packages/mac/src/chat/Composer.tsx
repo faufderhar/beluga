@@ -5,6 +5,7 @@ import { type AppState, type View, channelOf, peerName } from '@beluga/core/stor
 import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
 import { composeState, queueIn } from '@beluga/ui/compose.js';
+import { isRunning } from '@beluga/ui/format.js';
 import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
 import { worktreeMode } from '@beluga/ui/submit.js';
 import { roomAgentTags } from '@beluga/shared/agent-tags.js';
@@ -26,6 +27,7 @@ import { cmdReturn, returnName, thisComputer, upFirst, yourComputer } from '../l
 import { ModelPicker, myRuntime, shownEffort } from './ModelPicker.js';
 import { ContextMeter } from './ContextMeter.js';
 import { McpChip } from './McpChip.js';
+import { plainWorktrees, worktreeNamesOf } from './worktree-box.js';
 import { RunsOnLabel, RunsOnPicker } from './RunsOn.js';
 import { sendToComputer, useStartDeps } from '../machines/start-there.js';
 import { QueueTray } from './QueueTray.js';
@@ -34,6 +36,9 @@ import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { sendSteerNow, stopClaude } from '../lib/commands.js';
 import { useAttachments } from './use-attachments.js';
+import { CommentCards } from './CommentCards.js';
+import { useWaitingComments } from '../views/DiffComment.js';
+import { takeComments, withComments } from '../views/diff-comments.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
 import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
@@ -197,6 +202,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // Images pasted, dropped or named by their path wait as thumbnails above the text, with an
   // "[image N]" where they go; other pasted files as chips (see use-attachments). They wait with
   // the words, so a new chat or worktree page keeps its own too.
+  // Comments on the changes waiting above the box (CommentCards): enough to send on their own.
+  const commentsWaiting = useWaitingComments(draftKey).length > 0;
+  const ready = !!buffer.trim() || commentsWaiting;
   const att = useAttachments({ channel: draftKey, box: ref, text: () => ui.get().buffer, setText: (buffer, cursor) => ui.patch({ buffer, cursor }) });
   // A plan or a question waiting above the box: what you type answers it (the turn is waiting on you, not working).
   const answering = state.answering;
@@ -302,6 +310,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
 
   // Your agents (which run on this Mac), for the room's "@codex" (BLG-520).
   const runtimes = useApp((st) => st.runtimes);
+  // In a friend's worktree, "@claude" is yours (reading theirs from here, or in your copy) and "@claude:<them>" theirs.
+  const sharedOwner = shared ? state.shared.find((w) => w.id === (state.view as { id: string }).id)?.owner : undefined;
+  const ownerName = sharedOwner ? peerName({ ...state, network: { friends: state.friends } }, sharedOwner) : undefined;
+  const claudeHere = !ownerName
+    ? undefined
+    : runOn === 'here'
+      ? { hint: 'ask your agent, in your copy' }
+      : { hint: `ask your agent: it reads ${ownerName}’s worktree from here`, owner: { name: ownerName, hint: `ask ${ownerName}’s agent, in their worktree` } };
   // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
     () =>
@@ -322,8 +338,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             skills,
             skillsOn,
             ...(canBtw ? {} : { without: ['btw'] }),
+            ...(claudeHere ? { claudeHere } : {}),
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills, skillsOn, canBtw, runtimes],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills, skillsOn, canBtw, runtimes, claudeHere?.hint],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 
@@ -440,7 +457,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     const typed = buffer.trim();
     if (aside) {
       if (!typed) return;
-      askBtw(client, api, channel, typed);
+      askBtw(client, api, channel, plainWorktrees(typed, worktreeNamesOf(client.store.getState().projects)));
       setAsideIn(undefined);
       ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, `/btw ${typed}`].slice(-200), historyIndex: -1 });
       return;
@@ -454,7 +471,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     secretWarned.current = undefined;
     // Images stay where you referenced them in the words; any you took the reference out of go after them.
-    const { text, images, shown, putBack } = att.take(typed);
+    const { text: words, images, shown, putBack: putFilesBack } = att.take(typed);
+    // Comments on the changes waiting above the box go after the words (views/diff-comments.ts).
+    const notes = typed.startsWith('/') ? undefined : takeComments(draftKey);
+    const text = withComments(words, notes?.comments ?? []);
+    const putBack = (): void => {
+      putFilesBack();
+      notes?.putBack();
+    };
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
       return;
@@ -462,7 +486,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (!text && draftProject) return createWorktree(draftProject, '');
     // The words fly from the box into the chat (or into the queue while Claude works): see flight.ts.
     if (typed && !typed.startsWith('/') && !draftProject && !pending) {
-      launchFlight({ channel, target: queueing && compose.typing && !urgent ? 'queue' : 'chat', text: typed, from: ref.current });
+      const live = state.log.some((l) => l.type === 'agent' && l.channel === channel && isRunning(l.status));
+      launchFlight({ channel, target: queueing && compose.typing && !urgent ? 'queue' : 'chat', text: typed, from: ref.current, live });
       // Steering joins the turn Claude is on (no new card to wait for).
       if (compose.typing && !compose.busy) expectClaude(channel, state.log.filter((l) => l.type === 'agent' && l.channel === channel).length);
     }
@@ -646,6 +671,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           </div>
         ) : null}
         {att.waiting}
+        <CommentCards box={draftKey} />
         <MentionedTasks text={buffer} world={mentionWorld} />
         <DictationStrip box={ref} />
         <div className={s.inputWrap}>
@@ -734,7 +760,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </Tip>
           ) : answering ? (
             <Tip label={answerSend(answering, agentHere).tip} keys={sendKeys}>
-              <button type="button" className={cx(s.split, s.answer, buffer.trim() && s.splitReady)} onClick={() => send(false)} disabled={!buffer.trim()}>
+              <button type="button" className={cx(s.split, s.answer, ready && s.splitReady)} onClick={() => send(false)} disabled={!ready}>
                 <Icon name="send" size={12} />
                 <span className={s.chipLabel}>{answerSend(answering, agentHere).label}</span>
               </button>
@@ -742,20 +768,20 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : queueing ? (
             <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label={`${agentHere} is working`}>
               <Tip label={actionTip(mainAction)} keys={sendKeys}>
-                <button type="button" className={s.splitMain} aria-label={upFirst(mainAction)} onClick={() => send(false)} disabled={!buffer.trim()}>
+                <button type="button" className={s.splitMain} aria-label={upFirst(mainAction)} onClick={() => send(false)} disabled={!ready}>
                   <Icon name={mainAction === 'steer' ? 'send' : 'clock'} size={12} />
                   <span className={s.chipLabel}>{upFirst(mainAction)}</span>
                 </button>
               </Tip>
               {canSteer ? <Tip label={actionTip(otherAction)} keys={shortcutKeys('composer-steer')}>
-                <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!buffer.trim()}>
+                <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!ready}>
                   {upFirst(otherAction)}
                 </button>
               </Tip> : null}
             </div>
           ) : (
             <Tip label={prefs.sendWith === 'enter' ? `Send · Shift+${returnName()} for a new line` : `Send · ${cmdReturn()}`} keys={prefs.sendWith === 'enter' ? '↩' : chordLabel('Cmd+Enter')}>
-              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
+              <button type="button" className={cx(s.send, ready && s.sendReady)} onClick={() => send(false)} aria-label="Send" disabled={!ready}>
                 <Icon name="send" size={14} />
               </button>
             </Tip>

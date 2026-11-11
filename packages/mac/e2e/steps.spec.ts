@@ -187,6 +187,8 @@ test('with reduced motion, the step Claude is on reads as plain text in light an
 
 test('a sent message flies from the box into the chat and lands in place', async ({ page }) => {
   await openWorkspace(page, 'new-hero', 'landing');
+  // The turn the test before stopped is over first: a message said during one lands above it, in place.
+  await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 30_000 });
   await countFlights(page);
   await send(page, 'Summarize the hero section copy');
   const row = page.locator('[data-mine="true"]', { hasText: 'Summarize the hero section copy' }).last();

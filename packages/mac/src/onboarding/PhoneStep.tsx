@@ -19,7 +19,7 @@ import s from './onboarding.module.css';
  */
 
 /** Where the Android app is published: each Mac release carries its APK. */
-export const ANDROID_APP_URL = 'https://github.com/kayraucklnc/beluga/releases/latest';
+export const ANDROID_APP_URL = 'https://github.com/beluga-labs/beluga/releases/latest';
 
 /**
  * The phone app's real Home, from its own demo (a pretend Mac: an approval waiting, a plan and a

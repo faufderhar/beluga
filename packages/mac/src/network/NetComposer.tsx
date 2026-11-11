@@ -17,6 +17,7 @@ import { useDictationTarget } from '../lib/dictation.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
 import { useSuggestions } from '../chat/Suggestions.js';
 import { usePastePaths } from '../chat/paste-paths.js';
+import { plainWorktrees, worktreeNamesOf } from '../chat/worktree-box.js';
 import { PendingTray } from './ChatFiles.js';
 import { addBlobs, addPaths, restorePending, takePending, usePending } from './attachments.js';
 import { type Ask, type ChannelSuggestion, askLabel, askTo, channelSuggestions, channelTasks, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
@@ -191,7 +192,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
     const to = me ? mergeAsk(ask ? askTo(ask, me.peerId) : undefined, mentionedAsk(body, me.peerId, people)) : undefined;
     setText('');
     setAsk(undefined);
-    send({ text: body, files, ...(to ? { ask: to } : {}) }).catch(() => {
+    // Worktrees' links written short in the box go out whole ("worktree:wt-…", BLG-887).
+    send({ text: plainWorktrees(body, worktreeNamesOf(client.store.getState().projects)), files, ...(to ? { ask: to } : {}) }).catch(() => {
       // Nothing is lost: the words and files come back (ahead of anything new).
       setText((t) => (t.trim() ? `${body}\n${t}` : body));
       restorePending(id, files);

@@ -119,7 +119,7 @@ export function launchBoard(host: BoardHost): () => void {
     plans,
     board: work,
     ...(session.workspaces ? { controller: session.workspaces } : {}),
-    askClaude: (prompt, channel, echo) => session.askOwnClaude(prompt, channel, false, echo),
+    askClaude: (prompt, channel, echo) => session.askForPlan(prompt, channel, echo),
     intend: (intent) => session.intend(intent),
     // A task whose Claude stopped: is its process there, and taking over to wake it.
     alive: (channel) => session.host.runningIn(channel),

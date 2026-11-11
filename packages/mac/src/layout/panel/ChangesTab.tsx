@@ -17,6 +17,7 @@ import { useWsBusy, whileBusy } from '../../lib/ws-busy.js';
 import { STATE, UnifiedDiff, useCommitItems, useFileItems } from '../../views/DiffView.js';
 import { type ChangeLook, ChangedFileView, canShowFile, changeLocation, fileLookLabel, onlyAsFile, useChangeLocation } from '../../views/ChangedFile.js';
 import { aheadOnHover, readAhead } from '../../views/reader/streamed.js';
+import { useDiffComments } from '../../views/DiffComment.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
 import { showGitTrouble } from '../../lib/git-trouble.js';
@@ -204,6 +205,7 @@ function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose
   // Picked a moment ago and read ahead: drawn now, while the pick goes to where it runs (BLG-853).
   const diff = current ?? (last.current?.path === path ? last.current.diff : undefined) ?? (review?.data ? peekDiff(wsId, path, review.data) : undefined);
   const lines = useMemo(() => (diff ? parseDiff(diff) : []), [diff]);
+  const comments = useDiffComments(path, lines);
   useFirstPaintMark('beluga:diff-shown', path, lines.length > 0);
   const name = path.split('/').pop() ?? path;
   const mine = file?.path === path ? file : undefined;
@@ -249,7 +251,7 @@ function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose
           <ChangedFileView at={at} variant="panel" />
         </div>
       ) : (
-        <div className={cx(s.previewBody, d.code, 'selectable')} tabIndex={0}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
+        <div className={cx(s.previewBody, d.code, 'selectable')} tabIndex={0}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact comments={comments} /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
       )}
     </section>
   );

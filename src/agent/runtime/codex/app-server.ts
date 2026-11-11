@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { RunProcess } from '../../types.js';
@@ -89,7 +89,8 @@ export const appServerArgs = (extra: readonly string[] = []): string[] => [...ex
 export const spawnAppServer: CodexConnect = async ({ cwd, env, bin, args }) => {
   const command = bin ?? findCodex(env ?? process.env);
   if (!command) throw new Error(`Codex isn’t installed on this ${process.platform === 'darwin' ? 'Mac' : 'computer'}. Install the Codex app or \`npm i -g @openai/codex\`, then try again.`);
-  const how = codexCommand(command, appServerArgs(args));
+  // The real file, not a link to it: Codex runs itself again under the sandbox by this path, and a link in your home would be out of reach below full.
+  const how = codexCommand(realPathOf(command), appServerArgs(args));
   const child = spawn(how.command, [...how.args], { cwd, env: { ...(env ?? process.env) }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: how.shell });
   const lines: string[] = [];
   child.stderr.setEncoding('utf8');
@@ -112,3 +113,11 @@ export const spawnAppServer: CodexConnect = async ({ cwd, env, bin, args }) => {
   }
   return { rpc, proc, stderr: () => lines };
 };
+
+function realPathOf(file: string): string {
+  try {
+    return realpathSync(file);
+  } catch {
+    return file;
+  }
+}

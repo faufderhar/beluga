@@ -11,7 +11,7 @@ import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
 import { MILESTONE_STATE, type MilestoneJoin, type PlanGraphShape, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, milestoneNowWords, startingMilestones, taskNodeId, taskWords } from './plans-model.js';
-import { COMPACT_STATES, FOLDS_KEY, type Folds, MILESTONE, type MilestoneFrame, PLAN_GAPS, arrowHead, isFolded, labelAt, milestoneAnchors, milestoneFrame, milestoneRoute, placeMilestones, readFolds, taskSize, withFold } from './plan-layout.js';
+import { COMPACT_STATES, FOLDS_KEY, type Folds, MILESTONE, type MilestoneFrame, PLAN_GAPS, arrowHead, isFolded, joinAt, labelAt, milestoneAnchors, milestoneFrame, milestoneRoute, placeMilestones, readFolds, taskSize, withFold } from './plan-layout.js';
 import { useCheckerChat, useClock, usePlanActions } from './use-plans.js';
 import { useGlide } from './use-glide.js';
 import { LiveDot, LockMark, TaskChatMark, TaskStateIcon } from './marks.js';
@@ -84,8 +84,6 @@ interface LineData extends Record<string, unknown> {
   readonly join?: MilestoneJoin & { readonly stem: readonly Point[] };
 }
 
-/** How far above a milestone's lock the lines from several meet. */
-const JOIN_STEM = 30;
 type PlanEdge = Edge<LineData, 'line'>;
 
 export interface PlanCanvasProps {
@@ -114,6 +112,8 @@ interface Laid {
   readonly places: ReadonlyMap<string, Placed>;
   readonly frames: ReadonlyMap<string, MilestoneFrame>;
   readonly routes: ReadonlyMap<string, Route>;
+  /** Each line between milestones: the height it runs across above the one it leads into (where lines into it meet). */
+  readonly meets: ReadonlyMap<string, number>;
 }
 
 /** ELK's options for a milestone's inside: its tasks left to right by what waits on what. */
@@ -228,6 +228,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
 
     const places = new Map<string, Placed>();
     const routes = new Map<string, Route>();
+    const meets = new Map<string, number>();
     for (const m of shape.milestones) {
       const box = boxes.get(m.id);
       // Folded, its cards and gate stay where they sit open (hidden), so opening it fades them in in place.
@@ -258,8 +259,9 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       const exitY = b.y - (a.y + a.height) <= PLAN_GAPS.row ? enterY : a.y + a.height + PLAN_GAPS.row / 2;
       const obstacles = [...boxes].filter(([id]) => id !== e.from && id !== e.to).map(([, box]) => box);
       routes.set(e.id, { points: milestoneRoute(milestoneAnchors(a, fa.gate).out, milestoneAnchors(b).in, exitY, enterY, obstacles) });
+      meets.set(e.id, enterY);
     }
-    return { places, frames, routes };
+    return { places, frames, routes, meets };
   }, [inner, foldKey]);
 
   const lane = useMemo(() => new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const))), [shape]);
@@ -356,18 +358,16 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         let route = laid.routes.get(e.id);
         const siblings = into.get(e.to) ?? [];
         let join: LineData['join'];
-        if (siblings.length > 1 && route && route.points.length >= 2) {
-          // Where it turns down into the lock (the run across above the row), else straight above it.
-          const end = route.points[route.points.length - 1]!;
-          const turn = route.points[route.points.length - 2]!;
-          const knot = route.points.length > 2 && Math.abs(turn.x - end.x) < 0.5 && end.y - turn.y > JOIN_STEM / 2 ? turn : { x: end.x, y: end.y - JOIN_STEM };
-          const head = route.points.slice(0, -1);
-          route = { ...route, points: head[head.length - 1] === knot ? head : [...head, knot] };
+        const meet = laid.meets.get(e.id);
+        const cut = siblings.length > 1 && route && meet !== undefined ? joinAt(route.points, meet) : undefined;
+        if (route && cut) {
+          // Every line in stops where they meet, on the run across above its lock (however its lane ran down).
+          route = { ...route, points: cut.line };
           // The first line in carries the join and its stem (so they're drawn once).
           if (siblings[0] === e.id) {
             const parents = shown.filter((x) => x.kind === 'next' && x.to === e.to).map((x) => byMs.get(x.from.replace(/^gate:/, '')));
             const j = milestoneJoin(parents, view.plan.branch);
-            if (j) join = { ...j, stem: [knot, end] };
+            if (j) join = { ...j, stem: cut.stem };
           }
         }
         return { id: e.id, source: e.from, target: e.to, ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}`, type: 'line', data: { kind: 'next', state: link.state, current: now(e), ...(route ? { route } : {}), ...(label ? { label } : {}), ...(siblings.length > 1 ? { joined: true } : {}), ...(join ? { join } : {}) } };

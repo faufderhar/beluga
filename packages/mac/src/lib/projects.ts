@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { BelugaClient } from '@beluga/ipc/client.js';
 import { inApp, webServed } from './boot.js';
 import { useBeluga } from './beluga.js';
+import { t } from '../i18n/index.js';
 
 /** A project's icon as an image URL, or null when it has none (it gets its initial instead). */
 type Icon = string | null;
@@ -72,7 +73,7 @@ export async function pickFolders(title: string, opts: { machine?: string | unde
     return picked ? [picked] : undefined;
   }
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const picked = await open({ directory: true, multiple: true, title });
+  const picked = await open({ directory: true, multiple: true, title: t(title) });
   if (!picked) return undefined;
   return Array.isArray(picked) ? picked : [picked];
 }
@@ -86,6 +87,6 @@ export async function pickImage(title: string): Promise<string | undefined> {
     return file ? (await uploadFile(file)).path : undefined;
   }
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const picked = await open({ multiple: false, title, filters: [{ name: 'Images', extensions: ['png', 'svg', 'jpg', 'jpeg', 'webp', 'ico'] }] });
+  const picked = await open({ multiple: false, title: t(title), filters: [{ name: 'Images', extensions: ['png', 'svg', 'jpg', 'jpeg', 'webp', 'ico'] }] });
   return typeof picked === 'string' ? picked : undefined;
 }

@@ -179,6 +179,19 @@ describe('running a command on a friend', () => {
     expect(bob.state().inbox[0]?.title).toContain('kay ran');
   });
 
+  it('a command from an agent\'s run says so on the friend\'s card', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const done = kay.session.runOnPeer('bob', 'echo labelled', { viaAgent: true, via: { id: 'g1', name: 'GrokBot', creationSource: 'mcp' } });
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(bob.state().approvals[0]!.title).toContain("kay");
+    expect(bob.state().approvals[0]!.title).toContain('(via GrokBot)');
+    bob.session.answerApproval('no');
+    await done.catch(() => undefined);
+  });
+
   // Not on Windows: sh syntax (sleep): Windows runs these in cmd.
   it.skipIf(process.platform === 'win32')('shows "running" once they approve, before the output arrives', async () => {
     hub = await startHub({ keys });

@@ -4,7 +4,7 @@ import { TALK_READ_ONLY_REASON } from '../../src/agent/dialogue-tools.js';
 import type { Dialogue } from '../../src/core/dialogues/model.js';
 import { Dialogues } from '../../src/core/dialogues/service.js';
 import type { AgentRef } from '../../src/protocol.js';
-import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
+import { type Crowd, LOSES_A_MESSAGE_ON_WINDOWS, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Node, node } from './helpers.js';
 
 /**
@@ -130,7 +130,7 @@ describe('a dialogue across owners', () => {
     expect(texts(dialogueOf(kay, id))).toHaveLength(3);
   }, 60_000);
 
-  it('blocked means the dialogue ends with a clear note', async () => {
+  it.skipIf(LOSES_A_MESSAGE_ON_WINDOWS)('blocked means the dialogue ends with a clear note', async () => {
     const [kay, bob] = await pair('dlgD1', 'dlgD2');
     bob.n.trust(kay.n.id, 'blocked');
     kay.d.fromComposer('@my:claude @dlgD2:codex talk about anything', 'room');

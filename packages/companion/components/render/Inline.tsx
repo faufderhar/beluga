@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { ArrowDownRight, ArrowRight, ArrowUpRight, GitBranch, Shield, Workflow } from 'lucide-react-native';
+import { useMemo } from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 import { useSupports, useView } from '../../lib/hooks';
@@ -117,6 +118,15 @@ export function InlineThing({ el }: { readonly el: InlineElement }) {
     case 'sentinel':
       return <SentinelChip id={el.id} />;
   }
+}
+
+/**
+ * The worktrees Work knows, by id (`on`: only then, so other screens don't ask for Work): a pasted
+ * "worktree:wt-…" naming one is drawn as its chip (BLG-878).
+ */
+export function useWorktreeIds(on: boolean): ReadonlySet<string> {
+  const work = useView<WorkView>(on ? 'work' : undefined);
+  return useMemo(() => new Set(work?.data.projects.flatMap((p) => p.conversations.flatMap((c) => (c.topic.startsWith('conv:ws:') ? [c.topic.slice('conv:ws:'.length)] : []))) ?? []), [work]);
 }
 
 /** A worktree Your Mac started (`worktree:<id>`): its name from Work (live); a tap opens its conversation. */

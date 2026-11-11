@@ -13,6 +13,7 @@ Inviting someone exposes your agent, with your permissions, to other people. Bel
 - **A friend's request can't run on and on.** It stops after 20 minutes or 50 turns, after asking you to approve 8 steps, or when you decline 2 in a row, and the friend is told why. It takes at most 4 screenshots, commands like `screencapture` included.
 - **Secrets stay put unless you send one yourself.** `.env` files, keys, `.ssh`, `.aws` and similar are never shared or readable by friends' requests, and commands or asks to their agent that touch them are refused, whatever the trust level. A friend can only ask for one secret file at a time (`get_file`): you then get a separate approval that says what it is ("kay's agent wants your private SSH key id_ed25519"), every time, with only **Allow once** and **Decline**. Trust, rules and Always never cover it. If you allow it, Beluga sends that one file (no agent reads it), and their agent is told you approved it. Beluga's own private files in `~/.beluga` (your identity, settings, rules) and the keychains are never sent, whoever approves.
 - **Your own `.env` files are yours.** You see and edit them in Files (friends never see even their names). Your own agent asks before it reads or changes one, even when it asks you nothing else: allow once, always for that project, or always. Take it back in Settings › Environment › Your agent. Keys, `.ssh`, `.aws` and Beluga's own files stay refused. Templates (`.env.example`, `.env.sample`…) hold no secrets and are ordinary files.
+- **Commands that name Beluga's private files are refused, but this check is not a fence.** A shell command, your own agent's too, is refused when it names `daemon.json`, `identity.json`, `env.json`, `devices.json` or `web-sessions.json` right under `~/.beluga` (`~`, `$HOME`, full paths and quoting count). A project's `.beluga` folder (reports, scratch) and the worktrees under `~/.beluga/workspaces` still work. This only reads the words of the command, and the command runs as you, so it does not stop a command that does not spell the name: `cat ~/.bel*`, `cd ~/.beluga && cat daemon.json`, `cat ~/.beluga/{daemon,env}.json`, a name built from variables or encoded, a script written earlier that reads the file when it runs, or a Beluga home moved by `BELUGA_HOME`. Treat a run that may execute commands without asking as able to read what you can read. Keep approvals on when that matters.
 - **Files are sent one at a time.** When you approve sending a file, only a copy of that file is shared, with only that person, for 15 minutes.
 - **Your task board, as far as you trust them.** A friend's request to your agent in one of your projects (a shared worktree's chat, or a request by DM naming the project) can use that project's board: Full trust freely, like you; Trusted reads it freely and asks you before each change; Ask me each time asks for every look too. Only that project's board: never another one, never a private task, never a new board, and every change shows in the task's activity as your agent's, for them. Guests invited by link and blocked people get none.
 - **Your trust follows them everywhere.** The level you pick for someone counts wherever they reach you (the room, a shared worktree's chat, a DM), not only while they're in your room.
@@ -23,7 +24,9 @@ Inviting someone exposes your agent, with your permissions, to other people. Bel
 
 ## Codex runs
 
-Claude Code asks Beluga before every step it takes, so the rules above are checked one step at a time. Codex runs its own commands and edits without asking first, so on Codex the same rules are kept by **Codex's own sandbox** instead: a permissions profile Beluga sets for each run, enforced by macOS.
+Claude Code asks Beluga before every step it takes, so the rules above are checked one step at a time. Codex runs its own commands and edits without asking first, so on Codex the same rules are kept by **Codex's own sandbox** instead: a permissions profile Beluga sets for each run, enforced by the operating system.
+
+On Linux, runs that keep your home private (a friend's task below Full trust, an external agent below Full trust, and quick side calls) start with Codex's minimal system-tool reads and explicit grants for the run's folders and your git config. Other user folders stay unreadable. This also keeps read-only shared folders usable: Codex 0.164's Linux sandbox cannot reopen them beneath a denied home directory. Beluga omits redundant nested masks while retaining secret denials inside readable shared folders. Tool-free side calls skip project instruction files, using only the instructions supplied with the call. Your own runs and other platforms keep their existing baseline.
 
 - Writes go only to the run's own folders. A project's main folder, and a plan while it's being made, are read only.
 - `.env` files, keys and credential stores (`.ssh`, `.aws`, the GitHub CLI's token, the keychains, Beluga's own files in `~/.beluga`, Codex's and Claude's logins) can't be read at all, so no command reaches them however it's written. Templates like `.env.example` are hidden too: the sandbox can't tell them apart.
@@ -33,15 +36,73 @@ Claude Code asks Beluga before every step it takes, so the rules above are check
 - Guests can't use Codex.
 - Quick side calls on Codex (answering in a chat, naming a worktree, drafting a task) run as tightly as a friend's task, whoever asked: read only, your home and `.env` files out of reach, none of your own Codex tools, and no network unless the call runs commands (a pull request's review). A call given no tools can't read the folder either.
 - A talk or cross-reference between agents only looks: a Codex speaker's sandbox writes nowhere, whatever the worktree allows.
+- On Windows, Codex's unelevated sandbox (a standard account without MXC or Codex's elevated sandbox) fences writes but can't hide a file, and refuses a profile that does. There your own run still works in its folders, but it can read `.env` files and credential stores, and its card says so. Anyone else's run (a friend's task, an external agent below Full trust) is refused, because hiding those files is what keeps it out of your secrets. Codex's elevated sandbox, or MXC where Windows supports it, puts the denials back.
 
 <!-- codex-trust-table -->
 | Who asks | Trust | Files | Rest of your home | Network | `.env`, keys, credential stores | Going past the sandbox | Your Codex tools |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Your own run | — | write the run's folders | read | on | denied by the sandbox | asks you | on |
+| An external agent's run | An external agent below Full trust (Ask me each time needs Claude) | write the run's folders | denied | on | denied by the sandbox | asks you | off |
 | A friend's task | Ask me each time, Trusted | write the run's folders | denied | off | denied by the sandbox | not possible | off |
 | A friend's task | Full trust | write the run's folders | read | off | denied by the sandbox | not possible | off |
 | A guest | invited into one project | refused | | | | | |
 <!-- /codex-trust-table -->
+
+**An external agent is you, steering from another UI.** Its run has `from` = you, and the grant goes with it only as `via`, for the label, the audit log, Stop and Revoke. At Full trust the run has your tools, your variables, your MCP servers and your `.env` rule, with no friend limit, so a grant at Full is as strong as you are on this Mac, and it can reach Beluga's own token. Below Full trust each step reads the grant's level: a shell step, a step outside the run's folders and each Beluga tool ask you, and at Ask me each time every step asks you. A remote grant at Full gives this reach to whoever runs that service.
+
+Whatever an agent's tool call starts goes at its grant's level, by whatever path: a plan's task it starts, a message it edits, a fix it asks for, a friend's answer to a task it sent, a chat it moves to a worktree. A worktree a tool call opens stays that agent's, so what a plan asks there later keeps its level and ends with its grant. A task brief can't raise this.
+
+**Below Full trust, a Claude run has no path fence for a shell either.** Beluga refuses a read of its own files by name, and each shell step shows you a card, but a shell command can hide a path. If you say yes to it, or to the card that opens a terminal, it can reach Beluga's token. Read a shell card as you would read the command in your own terminal. Codex's sandbox holds this below Full trust, also after your yes.
+
+On Codex an agent's run at Full trust has the row "Your own run". Below Full trust it has its own row: it writes only in the run's folders, your home is denied, your Codex tools are off, and it gets only the core environment. The network stays on, because an agent's chat does normal work and with your home denied there is little to send. Codex does not stop at Beluga's gate before each step, so Beluga reads the level when the run starts, and a level you change counts at the next run. At Ask me each time an agent cannot use Codex. Below Full trust its commands that Codex does not count as read-only ask you.
+
+## External agents
+
+[External agents](external-agents.md) control Beluga through its MCP server. Each one has a grant of its own, and you can stop or revoke it alone. Its chats run as your own runs. The server is off until you turn it on.
+
+**What this protects, stated plainly:**
+
+- **A remote agent is a real boundary.** It reaches only what its grant gives, through tools that check the grant at each call. A remote grant has Full trust only by your explicit choice for that one code. Tokens are bound to the address they were issued for, and plain http off this computer is refused. Through a tunnel or Tailscale Serve every request arrives from `127.0.0.1`, so Beluga never uses the socket address to tell local from remote. It uses the Host and the proxies' headers, and it refuses a name it does not know.
+- **A local agent with a shell is not contained.** It runs as the same OS user as you, so it can read `~/.beluga` by itself, the daemon's token included. For it a grant gives identity, audit and stop, not containment, unless you sandbox the client yourself.
+- **Full trust on a Claude run has no path fence.** It can reach anything you can, the daemon's token included.
+- **Remote Full trust gives that to a hosted service.** It has your full power on this Mac, with no card. It can reach Beluga's own token, and anyone who runs that service gets it. With that token, it is no longer held by the rules on this page. It takes an explicit choice for one code (`--allow-remote-full`, or a second confirmation on the Mac), and a confirmation on the sign-in page that shows this warning. A full code made for this computer gets 403 through a route and makes no grant. You get a notice when such a grant is made, and the agent list marks it. Limits, suspension and the refused operations stay.
+- **A hosted agent's service holds the access.** Whoever runs that service, or steals from it, can do what you gave it. The sign-in page says so. Limits, suspension and the audit log bound the damage. They do not prevent it.
+- **Cloudflare carries the traffic of a public address** and can see it. Tailscale Serve stays on your tailnet.
+
+**What each level allows.** A person answers `ask`. `ask-once` is the same, with no Always. Everything also needs the project or chat to be in the grant. The table is the same on every route.
+
+<!-- external-decision-table -->
+| Operation | Blocked | Ask each time | Trusted | Full trust |
+| --- | --- | --- | --- | --- |
+| Read chats, board, status | deny | ask | allow | allow |
+| Stop its own work | deny | allow | allow | allow |
+| Launch a chat, or send in one | deny | ask | allow | allow |
+| A file step inside shared folders | deny | ask | allow | allow |
+| A file step outside them, or a shell command | deny | ask | ask | allow |
+| Change a file that runs code later | deny | ask-once | ask-once | allow |
+| Board, sentinel, dashboard or plan changes | deny | ask | ask | allow |
+| Reach people | deny | ask | ask | allow |
+| Delete, archive or merge | deny | ask-once | ask-once | ask-once |
+| What was only a person's: trust, invites, settings, approving a plan, turning a sentinel on | deny | ask-once | ask-once | ask-once |
+| Secret files (`.env`, keys) | deny | deny | deny | deny |
+| Human-only operations | deny | deny | deny | deny |
+<!-- /external-decision-table -->
+
+**Human-only operations.** No tool exposes these, at any level. An agent can see that an approval waits, and it cannot answer it.
+
+- Answering approvals, and friends' requests that wait on you
+- Reading or changing a grant: pairing codes, tokens, levels, stop, revoke, resume, pause, and turning the server or a route on
+- Secret values: environment variables, API keys, a webhook's secret
+- Signing in, and pairing a phone with the phone in hand
+- A browser's join link, the public address and the tailnet address that make one: a browser session can answer approvals and read secret values
+
+What was once a person's alone, such as trust, a plan's approval, the phone's actions and settings, is now a tool with one card at every level and no Always. Terminal input has a card to open the shell, which says that it can type anything there.
+
+**Stop and revoke.** Stop, Stop all, a suspension and a revoke end the agent's runs and its queue, close its cards, and drop each yes it has not used, so a retry asks you again. A spent refresh token or an authorization code that comes back ends the grant and its work in the same way. A retry with other arguments on the same target replaces its waiting card. A card shows the arguments as they will run, with values that look like secrets scrubbed.
+
+A new API method does not compile until it is classified in `src/external/coverage.ts`.
+
+**What is kept.** Tokens as hashes only, in `~/.beluga/external-agents.json` (0600). Access tokens last 1 hour and stay in memory. Refresh tokens rotate, and a spent one that comes back ends the grant. `~/.beluga/external-audit.jsonl` (0600) has one record per call and decision: agent, tool, class, target, decision, who decided, result, a hash of the arguments and a short summary, never argument values. Beluga has no outside monitoring, so this log is the monitoring.
 
 ## Web access
 
@@ -123,6 +184,17 @@ OpenCode asks before each step it takes, the way Claude Code does, once Beluga h
 - Beluga always answers "allow once" or "reject", never "always", so nothing it allows is kept in OpenCode.
 - Friends' tasks and guests don't run on OpenCode. Your OpenCode plugins, and in newer OpenCode the rules you saved with "Always allow" in its own app, can answer a step before Beluga is asked, and OpenCode has no sandbox to fall back on. A friend's task goes to Claude (or Codex) instead, and their card says why. Guests are turned away, with the reason on the Invite People sheet.
 - Quick side calls on OpenCode (answering in a chat, naming a worktree) and side questions (/btw) run without your plugins. Every tool still asks, and Beluga allows only the ones the call was given: none for a side question.
+
+## Copilot runs
+
+Copilot CLI asks before some of its steps, not all of them: before an edit, a command that changes something, a file outside the run's folder, and an MCP tool. Those come to Beluga and are checked by the same rules as Claude's, one step at a time. It reads files in the folder and runs commands that only look (`ls`, `git status`, `cat`) without asking anyone.
+
+- Its reads of `.env` files, keys and credential folders are turned down on its command line for every run (`--deny-tool`, the list is `SECRET_READS` in `src/agent/runtime/copilot/connection.ts`), so they never reach it through its file tools. A command that only looks isn't asked about, so a command naming one of those files isn't caught: this is why friends' tasks and guests don't run on Copilot.
+- A project's main folder stays read only, and a plan while it's being made edits nothing (Copilot's own Plan mode, and Beluga turns its edits down too).
+- Beluga's own tools (the room, the board) reach Copilot over HTTP on 127.0.0.1, each run with its own token, and check each call where they run.
+- Beluga always answers "allow once" or "deny", never "always", so nothing it allows is kept in Copilot.
+- Friends' tasks and guests don't run on Copilot. A friend's task goes to Claude (or Codex) instead, and their card says why. Guests are turned away, with the reason on the Invite People sheet.
+- Quick side calls on Copilot (answering in a chat, naming a worktree) run without your instruction files. Beluga allows only the tools the call was given.
 
 ## Grok Build runs
 

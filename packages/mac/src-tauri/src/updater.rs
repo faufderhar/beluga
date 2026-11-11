@@ -679,13 +679,23 @@ fn ready_update(app: &AppHandle) -> Option<(Update, Pending)> {
 ///
 /// On Windows the installer takes over and this process ends inside `install`, so what a
 /// finished install leaves behind ("what's new", no download waiting) is saved first, and put
-/// back if the installer doesn't start.
-fn install_files(app: &AppHandle, update: &Update, pending: &Pending) -> Result<(), String> {
+/// back if the installer doesn't start. `reopen`: the Windows installer opens the new Beluga
+/// when it's done (Restart Now, Update When Idle), never after you quit (#426).
+fn install_files(
+    app: &AppHandle,
+    update: &Update,
+    pending: &Pending,
+    reopen: bool,
+) -> Result<(), String> {
     let bytes = std::fs::read(&pending.file).map_err(|e| e.to_string())?;
     if cfg!(windows) {
         record_install(app, pending, true);
     }
-    let result = update.install(bytes).map_err(|e| e.to_string());
+    let result = update
+        .clone()
+        .restart_after_install(reopen)
+        .install(bytes)
+        .map_err(|e| e.to_string());
     record_install(app, pending, result.is_ok());
     result
 }
@@ -728,11 +738,12 @@ async fn install_and_relaunch(app: &AppHandle, background: bool) -> Result<(), S
     #[cfg(windows)]
     crate::daemon::stop_for_update(app).await;
     let handle = app.clone();
-    let result =
-        tauri::async_runtime::spawn_blocking(move || install_files(&handle, &update, &pending))
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|r| r);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        install_files(&handle, &update, &pending, true)
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
     if let Err(e) = result {
         change(app, |i| {
             i.phase = Phase::Error;
@@ -816,7 +827,9 @@ pub fn on_exit(app: &AppHandle) {
         return;
     }
     if let Some((update, pending)) = ready_update(app) {
-        if let Err(e) = install_files(app, &update, &pending) {
+        crate::quit::at(app, crate::quit::Stage::InstallingUpdate);
+        // Quit means quit: the new version opens the next time you open Beluga.
+        if let Err(e) = install_files(app, &update, &pending, false) {
             eprintln!("beluga: installing the update on quit failed: {e}");
         }
     }

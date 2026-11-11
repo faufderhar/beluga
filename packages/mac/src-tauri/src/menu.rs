@@ -178,7 +178,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Go",
         true,
         &[
-            // The places' order (⌘1…7 in the window too; see lib/go.ts. Never ⌥ and a digit: ⌥3 types # on many keyboards).
+            // The places' order (⌘1…7 in the window too, ⌘3 free since the room's Chat went (BLG-871); see lib/go.ts. Never ⌥ and a digit: ⌥3 types # on many keyboards).
             &item(app, "go-overview", "Overview", Some("CmdOrCtrl+1"))?,
             &item(app, "go-tasks", "Tasks", Some("CmdOrCtrl+2"))?,
             // A project's GitHub issues (no ⌘ key: the places keep theirs).
@@ -189,7 +189,6 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "go-sentinel", "Sentinel", None)?,
             // Its Dashboard: the numbers sentinels keep (docs/sentinel.md §10).
             &item(app, "go-dashboard", "Dashboard", None)?,
-            &item(app, "go-room", "Chat", Some("CmdOrCtrl+3"))?,
             &item(app, "go-search", "Search", Some("CmdOrCtrl+4"))?,
             &item(app, "go-usage", "Usage", Some("CmdOrCtrl+5"))?,
             &item(app, "go-terminal", "Terminal", Some("CmdOrCtrl+6"))?,
@@ -384,9 +383,65 @@ pub fn apply_keys<R: Runtime>(menu: &Menu<R>, keys: &HashMap<String, Option<Stri
     }
 }
 
+/// Take every key off a menu that's about to be replaced, submenus included, while its items are
+/// still in their windows. GTK tears a menu's items down before their keys when the menu comes off
+/// a window, then warns once per key it can no longer find ("no accelerator … installed in accel
+/// group"); a menu with no keys left comes off quietly. The built-in items (Undo, Hide, Minimize…)
+/// can't lose their keys, so they leave the old menu one by one, which GTK takes quietly.
+/// Linux only: the other systems don't mind.
+#[cfg(target_os = "linux")]
+pub fn clear_keys<R: Runtime>(items: Vec<MenuItemKind<R>>) {
+    for item in items {
+        match item {
+            MenuItemKind::MenuItem(i) => {
+                let _ = i.set_accelerator(None::<&str>);
+            }
+            MenuItemKind::Check(i) => {
+                let _ = i.set_accelerator(None::<&str>);
+            }
+            MenuItemKind::Icon(i) => {
+                let _ = i.set_accelerator(None::<&str>);
+            }
+            MenuItemKind::Submenu(s) => {
+                if let Ok(inner) = s.items() {
+                    for built_in in inner.iter().filter_map(|k| k.as_predefined_menuitem()) {
+                        let _ = s.remove(built_in);
+                    }
+                    clear_keys(inner);
+                }
+            }
+            MenuItemKind::Predefined(_) => {}
+        }
+    }
+}
+
+/// A small window of ours (the request card, the call card, the call overlay) with no menu bar.
+/// Windows and Linux give every new window the app's menu bar unless it brings its own, and it's
+/// taken off once the window is made (`drop_menu_bar`). On Linux the window brings an empty one:
+/// taking the app's menu off a GTK window makes GTK warn once per key (see `clear_keys`).
+pub fn without_menu_bar<'a, R: Runtime, M: Manager<R>>(
+    app: &AppHandle<R>,
+    builder: tauri::WebviewWindowBuilder<'a, R, M>,
+) -> tauri::WebviewWindowBuilder<'a, R, M> {
+    #[cfg(target_os = "linux")]
+    if let Ok(empty) = Menu::new(app) {
+        return builder.menu(empty);
+    }
+    let _ = app;
+    builder
+}
+
+/// The menu bar off a small window made with `without_menu_bar` (macOS has none in a window).
+pub fn drop_menu_bar<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    #[cfg(not(target_os = "macos"))]
+    let _ = window.remove_menu();
+    #[cfg(target_os = "macos")]
+    let _ = window;
+}
+
 pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
-        "quit" => app.exit(0),
+        "quit" => crate::quit::quit(app),
         "show" => {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
@@ -489,9 +544,9 @@ pub fn tray_menu<R: Runtime>(
     let menu = Menu::new(app)?;
     if !requests.is_empty() {
         let head = if requests.len() == 1 {
-            "1 Request Waiting for You".to_string()
+            crate::i18n::tr("1 Request Waiting for You")
         } else {
-            format!("{} Requests Waiting for You", requests.len())
+            crate::i18n::tr_fmt("{0} Requests Waiting for You", &[&requests.len().to_string()])
         };
         menu.append(&MenuItem::with_id(
             app,
@@ -517,6 +572,9 @@ pub fn tray_menu<R: Runtime>(
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&item(app, "quit", "Quit Beluga", None)?)?;
+    if let Ok(items) = menu.items() {
+        crate::i18n::localize_items(items);
+    }
     Ok(menu)
 }
 

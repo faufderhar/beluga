@@ -107,6 +107,12 @@ describe("Beluga's tools on Codex", () => {
     await codexComplete({ system: 'Name it.', prompt: 'name this', cwd }, { connect: side.connect });
     expect((side.sent('thread/start')[0]!.config as Record<string, unknown>)['features.multi_agent']).toBe(false);
   });
+
+  it("a side call's instructions are its system alone: no project docs, so none to load under Codex's sandbox (#425)", async () => {
+    const side = new FakeCodex();
+    await codexComplete({ system: 'Name it.', prompt: 'name this', cwd }, { connect: side.connect });
+    expect((side.sent('thread/start')[0]!.config as Record<string, unknown>).project_doc_max_bytes).toBe(0);
+  });
 });
 
 describe("Codex's context meter", () => {

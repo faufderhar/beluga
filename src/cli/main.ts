@@ -84,6 +84,14 @@ export async function run(cmd: ParsedCommand, io: Io): Promise<Exit> {
       await daemon(cmd.positionals);
       return 0;
     }
+    case 'mcp': {
+      const { runMcp } = await import('./mcp.js');
+      return (await runMcp(cmd.positionals)) as Exit;
+    }
+    case 'chat': {
+      const { runChat } = await import('./chat.js');
+      return (await runChat(cmd.positionals)) as Exit;
+    }
     case 'mcp-serve': {
       // Started by an agent's runtime with its run's token, never by hand (agent/tool-host.ts).
       const url = belugaEnv('TOOLS_URL');

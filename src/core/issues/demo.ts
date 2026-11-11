@@ -66,7 +66,8 @@ const SEEDS: Readonly<Record<string, readonly Seed[]>> = {
       author: 'jules',
       labels: [FEATURE],
       ago: 5 * D,
-      body: 'For our dashboards we want keys that can only `GET`. Today every key can create charges.\n\nSomething like a `scope: "read"` on the key would do.',
+      // Pasted from a rich editor, as HTML (GitHub draws it, and so does the issue's page).
+      body: '<html>\n<body>\n<!--StartFragment--><p><span>For our dashboards we want keys that can only </span><code><span>GET</span></code><span>. Today every key can create charges.</span></p><ul><li><p><strong><span>Read:</span></strong><span> list and fetch</span></p></li><li><p><strong><span>Write:</span></strong><span> everything else</span></p></li></ul><p><span>Something like a </span><code><span>scope: "read"</span></code><span> on the key would do.</span></p><!--EndFragment-->\n</body>\n</html>',
       said: [
         ['bob', 'Makes sense. Would you also want per-resource scopes, or is read/write enough?', 4 * D],
         ['jules', 'Read/write is plenty for now.', 4 * D - 2 * H],

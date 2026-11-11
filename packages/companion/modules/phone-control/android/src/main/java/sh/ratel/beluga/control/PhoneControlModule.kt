@@ -134,7 +134,7 @@ class PhoneControlModule : Module() {
     const val NOTE_ID = 4208
     const val CHANNEL = "mac-using-phone"
     /** Where Beluga Link is downloaded: it's attached to each release beside the app. */
-    const val ADDON_URL = "https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk"
+    const val ADDON_URL = "https://github.com/beluga-labs/beluga/releases/latest/download/Beluga-Link.apk"
     @Volatile private var current: PhoneControlModule? = null
     @Volatile private var adbPort: Int? = null
     @Volatile private var pairPort: Int? = null

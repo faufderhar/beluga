@@ -117,7 +117,7 @@ export interface PhoneControlDeps {
 export const LINK_PACKAGE = 'sh.ratel.beluga.control';
 export const LINK_SERVICE = `${LINK_PACKAGE}/sh.ratel.beluga.addon.BelugaAccessibilityService`;
 /** Each release carries Beluga Link under this name (BLG-391). */
-export const LINK_APK_URL = 'https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk';
+export const LINK_APK_URL = 'https://github.com/beluga-labs/beluga/releases/latest/download/Beluga-Link.apk';
 
 /** The app itself: Link only works signed with the same key (BLG-430). */
 export const APP_PACKAGE = 'sh.ratel.beluga';

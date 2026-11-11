@@ -59,7 +59,7 @@ function monitor(): IntervalHistogram {
 const ms = (ns: number): number => Math.max(0, ns / 1e6 - RESOLUTION_MS);
 
 /** What a histogram measured since its last reset, then reset it; nothing when it took no samples. */
-function take(h: IntervalHistogram): LagStats | undefined {
+export function take(h: Pick<IntervalHistogram, 'count' | 'percentile' | 'max' | 'reset'>): LagStats | undefined {
   const stats = h.count ? { p50: ms(h.percentile(50)), p95: ms(h.percentile(95)), max: ms(h.max) } : undefined;
   h.reset();
   return stats;

@@ -79,6 +79,8 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('team'), p: z.unknown() }),
   /** Calls in a conversation (core/calls, BLG-706): ringing, who's in, and WebRTC setup; a frame it checks itself, between people in that conversation. */
   z.object({ t: z.literal('call'), p: z.unknown() }),
+  /** The leaderboard (core/leaderboard, BLG-904): a friend's day sums; a frame it checks itself, between friends only. Older Macs ignore it. */
+  z.object({ t: z.literal('stats'), p: z.unknown() }),
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

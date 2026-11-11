@@ -277,6 +277,7 @@ describe('whether a page is still there', () => {
     board: { enabled: true, issues: [{ id: 't1' }] },
     plans: { plans: [{ id: 'plan1' }] },
     sentinel: { items: [{ id: 's1' }] },
+    peers: [{ peerId: 'me' }],
     ...over,
   });
 
@@ -284,6 +285,11 @@ describe('whether a page is still there', () => {
     expect(pageAlive(state(), ws('w1'))).toBe(true);
     expect(pageAlive(state(), ws('old'))).toBe(false);
     expect(pageAlive(state(), ws('nope'))).toBe(false);
+  });
+
+  it("the room's group chat: only while someone else is in the room (BLG-871)", () => {
+    expect(pageAlive(state(), { kind: 'room' })).toBe(false);
+    expect(pageAlive(state({ peers: [{ peerId: 'me' }, { peerId: 'bob' }] }), { kind: 'room' })).toBe(true);
   });
 
   it('a project, and the pages of a project', () => {
@@ -310,7 +316,7 @@ describe('whether a page is still there', () => {
   });
 
   it('places that are always there', () => {
-    for (const v of [overview, tasks, search, { kind: 'room' }, { kind: 'usage' }] as View[]) expect(pageAlive(state(), v)).toBe(true);
+    for (const v of [overview, tasks, search, { kind: 'usage' }] as View[]) expect(pageAlive(state(), v)).toBe(true);
   });
 });
 

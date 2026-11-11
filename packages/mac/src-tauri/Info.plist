@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- English and Simplified Chinese (src/i18n): macOS shows its own menu items, permission
+       prompts and panels in the language Beluga has. -->
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>zh-Hans</string>
+  </array>
   <!-- Merged into the app's Info.plist by Tauri. macOS shows these words when it asks. -->
   <key>NSAppleEventsUsageDescription</key>
   <string>Claude can work with your other apps for you, such as Finder or Safari, when you ask it to.</string>

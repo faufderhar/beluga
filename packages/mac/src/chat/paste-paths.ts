@@ -1,8 +1,9 @@
 import { type RefObject, useRef } from 'react';
 import type { PathInfo } from '@beluga/core/attachments.js';
 import { inApp } from '../lib/boot.js';
-import { useApi } from '../lib/beluga.js';
+import { useApi, useBeluga } from '../lib/beluga.js';
 import { candidatePaths, imagePathsIn, pathsInPaste, pickPaths } from './paste-paths-model.js';
+import { toBox, worktreeNamesOf } from './worktree-box.js';
 
 /**
  * A pasted file path becomes the file: "/Users/…/CleanShot … .png" (quoted, with escaped
@@ -73,6 +74,7 @@ export function usePastePaths(
   onText?: (text: string, images: readonly ImageInText[], at: { start: number; end: number }) => void,
 ): (e: React.ClipboardEvent<HTMLTextAreaElement>) => boolean {
   const api = useApi();
+  const { client } = useBeluga();
   const latest = useRef(onFiles);
   latest.current = onFiles;
   const latestText = useRef(onText);
@@ -93,6 +95,14 @@ export function usePastePaths(
     const paths = text ? pathsInPaste(text) : undefined;
     const el = ref.current;
     const spots = !paths && text && latestText.current ? imagePathsIn(text) : [];
+    if (el && !paths && !spots.length) {
+      // A worktree's link (Copy Link): written short, so its chip is as wide as its name (BLG-887).
+      const boxed = text.includes('worktree:') ? toBox(text, worktreeNamesOf(client.store.getState().projects)) : text;
+      if (boxed === text) return false;
+      e.preventDefault();
+      insertText(el, boxed, { start: el.selectionStart, end: el.selectionEnd });
+      return true;
+    }
     if (!el || (!paths && !spots.length)) return false;
     e.preventDefault();
     const at = { start: el.selectionStart, end: el.selectionEnd };

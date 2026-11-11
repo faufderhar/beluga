@@ -6,6 +6,7 @@ import { macViewFor, needView } from '../../../../src/companion/open-on-mac.js';
 import { planTitle } from '../../../../src/core/plans/model.js';
 import { ASSISTANT_TITLE } from '../../../../src/shared/assistant.js';
 import { findWorkspace } from '../../../../src/ui/workspace-models.js';
+import { sameDeep } from '../lib/stable.js';
 
 /**
  * The bell's "Waiting for you" (BLG-255): everything that waits on you, from the same list the
@@ -119,6 +120,15 @@ export function waitingList(state: DomainState): readonly Waiting[] {
       return { item, ...(view ? { view } : {}), ...(place ? { place } : {}), ...splitActions(item.actions) };
     });
 }
+
+/**
+ * How deep a waiting list goes, and some: list › row › request › its actions › one › its args › an
+ * answer › its picks. sameDeep's usual six levels stop at an answer and call it changed every time.
+ */
+const WAITING_DEPTH = 16;
+
+/** Two waiting lists say the same (to the bottom of every answer: BLG-905), so the bell redraws only when one changes. */
+export const sameWaiting = (a: readonly Waiting[], b: readonly Waiting[]): boolean => sameDeep(a, b, WAITING_DEPTH);
 
 /** The request a notice is about: its `need`, or the approval or question it names (`ref`). */
 export function noticeNeed(n: Pick<Notice, 'need' | 'ref' | 'tag'>): string | undefined {

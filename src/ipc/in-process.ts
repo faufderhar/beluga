@@ -6,7 +6,7 @@ import type { Session } from '../core/session.js';
 import type { ScreenState } from '../core/store.js';
 import { type PtyLink, localLink } from '../terminal/emulator.js';
 import { type Args, type Method, isMethod, parseArgs } from './api.js';
-import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, apiProxy, toastsFailure } from './client.js';
 import { HANDLERS, type Handlers, type Result } from './handlers.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -69,7 +69,7 @@ export class InProcessClient implements BelugaClient {
       promise = Promise.reject(err);
     }
     // A failure shows on this screen; callers that wait for the result still get the error.
-    promise.catch((err: unknown) => this.store.dispatch({ type: 'toast', text: `Something went wrong: ${errorText(err)}`.slice(0, 200), level: 'error' }));
+    if (toastsFailure(method)) promise.catch((err: unknown) => this.store.dispatch({ type: 'toast', text: `Something went wrong: ${errorText(err)}`.slice(0, 200), level: 'error' }));
     return promise;
   }
 

@@ -10,7 +10,12 @@
  * - `wiggle`: a new number gives the card a small wiggle by itself (Usage on opening: it's there to play with);
  * - `anchor` can be a number (0–1 across), so a layer can reach past its place and keep the card where it was;
  * - the shine: the environment turns to face the card at rest, its bright stripes cross the card's
- *   upper right instead of its middle, and the face's own gloss is softer (FACE_GLOSS).
+ *   upper right instead of its middle, and the face's own gloss is softer (FACE_GLOSS);
+ * - smooth from the first frame: shaders compile and textures upload (warmUp) before the card
+ *   moves, not halfway through its drop; the card moving under a still pointer reuses the canvas's
+ *   place instead of measuring the page every frame; and where the GPU can't keep up (a software
+ *   renderer, or frames that stay slow while the card moves) it draws at fewer pixels (keepPace)
+ *   rather than crawling. A machine that keeps up draws it exactly as before.
  * Beluga draws the card it holds (views/usage/YourCard.tsx).
  */
 // @ts-nocheck
@@ -59,6 +64,27 @@ const STRIPE_NEAR = [0.35, 0.6, 9];
 const STRIPE_FAR = [0.85, 1.05, 9];
 const STRIPE_TURN = Math.PI / 5;
 const FACE_GLOSS = 0.5;
+// Beluga: keeping pace on a slow GPU. Over PACE_WINDOW ms of motion (after the first PACE_SETTLE
+// ms, when the whole tab is still opening), twice in a row, if most frames take longer than SLOW_FRAME_MS, the card
+// draws at the next lower pixel ratio (PIXEL_RATIOS). Gaps over STALL_MS are a stall, not a pace.
+const PIXEL_RATIOS = [2, 1.5, 1];
+const SLOW_FRAME_MS = 26;
+const PACE_WINDOW = 600;
+const PACE_MIN_FRAMES = 6;
+const PACE_SETTLE = 1000;
+const STALL_MS = 1000;
+const SOFTWARE_GL = /llvmpipe|softpipe|lavapipe|swiftshader|software|basic render/i;
+
+/** Beluga: whether WebGL is drawn by the CPU (no GPU, or the webview couldn't reach it). */
+const isSoftwareGl = renderer => {
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    return SOFTWARE_GL.test(String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)));
+  } catch {
+    return false;
+  }
+};
 
 const FOIL_VERTEX_HEAD = `
 varying vec2 vFoilUv;
@@ -918,6 +944,13 @@ const Lanyard = ({
     let hovering = false;
     let press = null;
     let imageToken = 0;
+    // Beluga: nothing draws or moves until warmUp has compiled and uploaded everything; the
+    // images it waits for; the pixel ratio the GPU keeps up with; how the last frames went.
+    let ready = false;
+    let readyAt = 0;
+    let imagesLoaded = Promise.resolve();
+    let pixelCap = isSoftwareGl(renderer) ? 1 : PIXEL_RATIOS[0];
+    const pace = { frames: 0, slow: 0, time: 0, strikes: 0 };
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
     const paintFaces = () => {
@@ -1012,7 +1045,7 @@ const Lanyard = ({
       const imageKey = `${s.frontImage}|${s.backImage}|${s.strapImage}`;
       if (imageKey !== applied.imageKey) {
         const token = ++imageToken;
-        Promise.all([
+        imagesLoaded = Promise.all([
           loadImage(imageCache, s.frontImage),
           loadImage(imageCache, s.backImage),
           loadImage(imageCache, s.strapImage)
@@ -1139,11 +1172,44 @@ const Lanyard = ({
       clampGroup.position.copy(hang);
     };
 
-    const render = () => {
+    const pose = () => {
       cardGroup.position.copy(sim.body.position);
       cardGroup.quaternion.copy(sim.body.quaternion);
       updateBand();
+    };
+
+    const render = () => {
+      // Beluga: before warmUp, a render would compile every shader at once, mid-drop.
+      if (!ready) return;
+      pose();
       renderer.render(scene, camera);
+    };
+
+    // Beluga: the card's pixel ratio, at most what the GPU keeps up with.
+    const applyPixelRatio = () => {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelCap));
+      renderer.setSize(view.width, view.height, false);
+    };
+
+    // Beluga: most frames slow while the card moves, after the tab has opened: one step fewer pixels.
+    const keepPace = (now, gap) => {
+      if (now - readyAt < PACE_SETTLE || gap > STALL_MS || document.hidden) return;
+      if (renderer.getPixelRatio() <= PIXEL_RATIOS[PIXEL_RATIOS.length - 1]) return;
+      pace.frames += 1;
+      pace.time += gap;
+      if (gap > SLOW_FRAME_MS) pace.slow += 1;
+      if (pace.time < PACE_WINDOW || pace.frames < PACE_MIN_FRAMES) return;
+      // Two slow windows in a row: a busy moment elsewhere on the page isn't the GPU.
+      pace.strikes = pace.slow > pace.frames * 0.6 ? pace.strikes + 1 : 0;
+      if (pace.strikes >= 2) {
+        pace.strikes = 0;
+        const current = renderer.getPixelRatio();
+        pixelCap = PIXEL_RATIOS.find(ratio => ratio < current) ?? PIXEL_RATIOS[PIXEL_RATIOS.length - 1];
+        applyPixelRatio();
+      }
+      pace.frames = 0;
+      pace.slow = 0;
+      pace.time = 0;
     };
 
     const physics = () => {
@@ -1176,8 +1242,10 @@ const Lanyard = ({
     const tick = now => {
       raf = 0;
       if (!alive) return;
-      const dt = Math.min(1 / 30, Math.max(1 / 240, (now - last) / 1000));
+      const gap = now - last;
+      const dt = Math.min(1 / 30, Math.max(1 / 240, gap / 1000));
       last = now;
+      keepPace(now, gap);
       time += dt;
       const current = physics();
       stepSimulation(sim, dt, current, time);
@@ -1188,13 +1256,13 @@ const Lanyard = ({
       }
       render();
       // Beluga: the card moved under a still pointer: whether it's over the card now.
-      if (lastPoint && !sim.grab && settingsRef.current.passThrough) passThroughAt(lastPoint);
+      if (lastPoint && !sim.grab && settingsRef.current.passThrough) passThroughAt(lastPoint, false);
       const resting = sim.calm > 1.2 && !sim.grab && current.breeze === 0;
       if (visible && !resting) raf = requestAnimationFrame(tick);
     };
 
     const start = () => {
-      if (raf || !visible || !alive) return;
+      if (raf || !visible || !alive || !ready) return;
       sim.calm = 0;
       last = performance.now();
       raf = requestAnimationFrame(tick);
@@ -1203,8 +1271,15 @@ const Lanyard = ({
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
-    const toPointer = event => {
-      const rect = canvas.getBoundingClientRect();
+    // Beluga: where the canvas is, measured on pointer events and kept for the frames between them
+    // (measuring every frame forces the page's layout); a scroll or resize measures it again.
+    let canvasRect = null;
+    const forgetRect = () => {
+      canvasRect = null;
+    };
+    const toPointer = (event, fresh = true) => {
+      if (fresh || !canvasRect) canvasRect = canvas.getBoundingClientRect();
+      const rect = canvasRect;
       pointer.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1
@@ -1237,10 +1312,11 @@ const Lanyard = ({
     const passes = () => !!settingsRef.current.passThrough;
     // Beluga: where the pointer last was (passThrough), and whether the card is under it.
     let lastPoint = null;
-    const passThroughAt = point => {
-      toPointer(point);
+    const passThroughAt = (point, fresh = true) => {
+      toPointer(point, fresh);
       hovering = !!pickCard();
-      canvas.style.pointerEvents = hovering ? 'auto' : 'none';
+      const pointerEvents = hovering ? 'auto' : 'none';
+      if (canvas.style.pointerEvents !== pointerEvents) canvas.style.pointerEvents = pointerEvents;
       setCursor(hovering ? 'grab' : '');
     };
 
@@ -1311,6 +1387,8 @@ const Lanyard = ({
     };
     if (passes()) canvas.style.pointerEvents = 'none';
     window.addEventListener('pointermove', onPointerAnywhere, { passive: true });
+    window.addEventListener('scroll', forgetRect, { capture: true, passive: true });
+    window.addEventListener('resize', forgetRect);
 
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
@@ -1322,10 +1400,31 @@ const Lanyard = ({
     const resize = () => {
       view.width = Math.max(1, container.clientWidth);
       view.height = Math.max(1, container.clientHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      renderer.setSize(view.width, view.height, false);
+      forgetRect();
+      applyPixelRatio();
       apply();
       render();
+    };
+
+    // Beluga: compile every shader and upload every texture (the faces once their pictures are in)
+    // before the first frame, so the card's drop doesn't stall on them halfway; then it starts.
+    const warmUp = async () => {
+      await imagesLoaded;
+      if (!alive) return;
+      pose();
+      try {
+        // In the background where the webview can; else at once (three warns when it can't).
+        if (renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(scene, camera);
+        else renderer.compile(scene, camera);
+      } catch {
+        // It compiles on the first frame instead.
+      }
+      if (!alive) return;
+      [frontTexture, backTexture, strapTexture, grain, weave].forEach(texture => renderer.initTexture(texture));
+      ready = true;
+      readyAt = performance.now();
+      render();
+      start();
     };
 
     const resizeObserver = new ResizeObserver(resize);
@@ -1351,6 +1450,7 @@ const Lanyard = ({
       start();
     };
     resize();
+    warmUp();
 
     return () => {
       alive = false;
@@ -1361,6 +1461,8 @@ const Lanyard = ({
       intersectionObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pointermove', onPointerAnywhere);
+      window.removeEventListener('scroll', forgetRect, { capture: true });
+      window.removeEventListener('resize', forgetRect);
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);

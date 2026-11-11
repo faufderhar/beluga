@@ -3,14 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import { mentionsSecret } from '../agent/policy.js';
-import { type BodyInput, type BodyOf, MAX_SHELL_OUTPUT, MAX_SHELL_SECONDS } from '../protocol.js';
+import { type BodyInput, type BodyOf, MAX_SHELL_OUTPUT, MAX_SHELL_SECONDS, type MessageVia } from '../protocol.js';
 import { ATTACHMENT_SHARE } from './attachments.js';
 import { tilde } from './paths.js';
 import { posixSh } from '../terminal/pty.js';
 import { killTree, ownGroup } from './process-tree.js';
 import { expandPath } from './remote-work.js';
 import { type ShareService, isSecretPath } from './shares.js';
-import { type ShellItem, type Store, clean, peerName } from './store.js';
+import { type ShellItem, type Store, clean, peerName, viaName } from './store.js';
 import type { AccessDecision, Decision, RequestFacts } from './gateway/access.js';
 import { declineReason } from './gateway/access.js';
 import { type TrustLevel, reachOf, shellGate, trustOf } from './trust.js';
@@ -239,7 +239,7 @@ export class PeerRun {
    * Run a command on a friend's computer and show it (with its output) in `channel`.
    * Resolves with their answer; rejects only when it couldn't be asked at all.
    */
-  async run(peerId: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent: boolean; channel: string }): Promise<BodyOf<'shell_result'>> {
+  async run(peerId: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent: boolean; channel: string; via?: MessageVia }): Promise<BodyOf<'shell_result'>> {
     const reqId = randomUUID();
     const timeoutSec = Math.min(MAX_SHELL_SECONDS, Math.max(1, Math.round(opts.timeoutSec ?? DEFAULT_SHELL_SECONDS)));
     const item: ShellItem = {
@@ -270,6 +270,7 @@ export class PeerRun {
       command: item.command,
       timeoutSec,
       viaAgent: opts.viaAgent,
+      ...(opts.via ? { via: opts.via } : {}),
       why: (opts.why ?? '').slice(0, 500),
       ...(opts.cwd ? { cwd: opts.cwd.slice(0, 4096) } : {}),
       ...(opts.project ? { project: opts.project.slice(0, 80) } : {}),
@@ -414,7 +415,7 @@ export class PeerRun {
     const state = this.state;
     const cwd = await this.where(from, body, level === 'full');
     const name = peerName(state, from);
-    const who = `${name}${body.viaAgent ? "'s agent" : ''}`;
+    const who = `${name}${body.viaAgent ? "'s agent" : ''}${body.via ? ` (via ${viaName(body.via)})` : ''}`;
     const facts: RequestFacts = { peerId: from, kind: 'command', needs: ['shell'], command: body.command, folder: cwd, ...(body.project ? { project: body.project } : {}) };
     // The gateway decided already; otherwise your rules and capabilities decide (when attached), else trust alone.
     if (hooks.approved) gate = 'run';
@@ -426,7 +427,7 @@ export class PeerRun {
     if (gate === 'ask' && (this.access || !this.always.has(from))) {
       hooks.asking?.();
       const answer = await this.deps.approve(
-        `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s agent" : ''} wants to run a command on your computer`,
+        `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s agent" : ''}${body.via ? ` (via ${viaName(body.via)})` : ''} wants to run a command on your computer`,
         `in ${tilde(cwd, this.home)}\n$ ${clean(body.command)}\nstops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\n${this.access ? `Always = run this command from ${name} in this folder without asking (a rule you can change in Settings › People & access)` : `Always = run ${name}'s commands without asking until Beluga quits`}`,
         from,
       );

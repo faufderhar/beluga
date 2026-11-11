@@ -106,8 +106,8 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await lookAgain(page);
     await expect(toolbar(page)).toContainText('add-auth');
 
-    // Once the PR is known, the branch pill at the top ("Checks running #7") opens its sheet.
-    const known = toolbar(page).getByRole('group', { name: /^Branch:/ }).getByRole('button', { name: /#7$/ });
+    // Once the PR is known, the branch pill beside the worktree's name ("Checks running #7") opens its sheet.
+    const known = toolbar(page).getByRole('button', { name: /#7$/ });
     await known.click();
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
     await expect(sheet).toContainText('#7');

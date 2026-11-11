@@ -6,6 +6,7 @@ import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp, webServed } from './boot.js';
 import { runsWhenOpened } from './runs-when-opened.js';
 import { openThere } from './remote-open.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Files you see in Beluga, the Mac way: where one is on this Mac (to show it in Finder or copy
@@ -91,7 +92,7 @@ export async function saveFile(client: SocketClient, at: Location): Promise<void
     }
     const [{ save }, { downloadDir }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/api/path')]);
     const dir = await downloadDir().catch(() => '');
-    const to = await save({ title: `Save ${name}`, defaultPath: dir ? joinPath(dir, name) : name });
+    const to = await save({ title: t(`Save ${name}`), defaultPath: dir ? joinPath(dir, name) : name });
     if (to) await client.api.files.download(at, { to });
   } catch (err) {
     client.store.dispatch({ type: 'toast', text: `Couldn't save ${name}: ${errorText(err)}`, level: 'error' });

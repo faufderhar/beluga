@@ -21,6 +21,8 @@ export const GIT_LOCAL_ENV = [
   'GIT_PREFIX',
   'GIT_SHALLOW_FILE',
   'GIT_COMMON_DIR',
+  // Git before 2.40 (Debian 12's 2.39, say) still lists it.
+  'GIT_INTERNAL_SUPER_PREFIX',
 ] as const;
 
 /** Drop them from `env` (this process's own, by default: everything it starts inherits it) → the ones that were set. */

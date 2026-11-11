@@ -19,6 +19,7 @@ import { WEB_API } from './web-api.js';
 import { DIAGNOSTICS_API } from './diagnostics-api.js';
 import { CLAUDE_CODE_API } from './claude-code-api.js';
 import { STEPS_API } from './steps-api.js';
+import { EXTERNAL_API } from './external-api.js';
 import { GATEWAY_API } from './gateway-api.js';
 import { BOARD_API } from './board-api.js';
 import { CI_API } from './ci-api.js';
@@ -498,8 +499,13 @@ export const API = {
   'projects.suggest': args(),
   // Start a new project: a folder (name, in this folder or your code folder), git and a first commit → { id, path }.
   'projects.create': args(z.string().max(100), opt(path)),
+  // A project from its git address (https or ssh), cloned into this folder or your code folder, then added → { id, path, existed? }
+  // (existed: a project of that repository was here already, so nothing was cloned).
+  'projects.clone': args(z.string().min(1).max(500), opt(path)),
   // Where a new project goes unless you pick somewhere.
   'projects.newHome': args(),
+  // Your GitHub repositories (through gh's sign-in), most recently pushed first, for the Clone tab → { gh, repos: [{ fullName, url, private, pushedAt, here? }] }.
+  'projects.myRepos': args(),
   // The icon of a folder that isn't a project yet (one of the suggestions).
   'projects.iconAt': args(path),
 
@@ -526,6 +532,7 @@ export const API = {
   ...DIAGNOSTICS_API,
   ...CLAUDE_CODE_API,
   ...STEPS_API,
+  ...EXTERNAL_API,
   ...GATEWAY_API,
   // ---- tasks: the board, its tasks and their briefs (board-api.ts)
   ...BOARD_API,

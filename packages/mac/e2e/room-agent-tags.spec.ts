@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openGroupChat } from './helpers.js';
 
 /**
  * See and tag each person's agents in the room (BLG-520): "@" lists your Codex ("@codex") and each
@@ -16,7 +17,8 @@ test('the room lists each agent by name with its mark, and @bob:codex runs bobâ€
   test.setTimeout(90_000);
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
-  // The demo opens on the room.
+  // The window opens on the Overview; the room's group chat is under Channels (BLG-871).
+  await openGroupChat(page);
   await expect(page.getByText('hey! just pushed my API notes')).toBeVisible();
 
   await composer(page).click();

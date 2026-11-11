@@ -84,6 +84,11 @@ export function propsForAgent(name: string, file: string | undefined, values: Re
 /** How tall a component's frame is, from what it says it needs. */
 export const FRAME = { min: 96, initial: 180, max: 560, maxExpanded: 920 } as const;
 
+/** A problem shown over the last drawing (it still drew once); the others take the frame's place. */
+export function floatsOverFrame(problem: PreviewProblem): boolean {
+  return problem.kind === 'render' || problem.kind === 'provider';
+}
+
 export function frameHeight(reported: number | undefined, expanded: boolean): number {
   if (reported === undefined) return FRAME.initial;
   return Math.max(FRAME.min, Math.min(Math.ceil(reported), expanded ? FRAME.maxExpanded : FRAME.max));

@@ -5,6 +5,7 @@ import { type SettingsPane, useApp } from '../lib/beluga.js';
 import { type PaneResults, SETTINGS_FIND_EVENT, type SettingHit, flatHits, hitAnchors, searchSettings } from '../lib/settings-search.js';
 import { PANES, SETTINGS, THREAD_LIMITS_GROUP } from './settings-index.js';
 import s from './settings.module.css';
+import { locale, t } from '../i18n/index.js';
 
 type Pane = (typeof PANES)[number];
 type Hit = SettingHit<SettingsPane>;
@@ -37,6 +38,12 @@ export interface SettingsSearch {
  * Settings' search (BLG-740): the words typed, the results, the one ↑/↓ is on, and the jump to a
  * row once one is picked (its pane opens, the row scrolls into view, lights up and takes focus).
  */
+/** In another language, a row is found by its words there too (src/i18n), as the page shows them. */
+function inLanguage<T extends { readonly label: string; readonly detail?: string | undefined; readonly keywords?: string | undefined }>(e: T): T {
+  if (locale() === 'en') return e;
+  return { ...e, keywords: [e.keywords ?? '', t(e.label), e.detail ? t(e.detail) : ''].join(' ') };
+}
+
 export function useSettingsSearch(panes: readonly Pane[], pane: SettingsPane, open: (pane: SettingsPane) => void, scroll: RefObject<HTMLElement | null>): SettingsSearch {
   const field = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
@@ -45,7 +52,10 @@ export function useSettingsSearch(panes: readonly Pane[], pane: SettingsPane, op
   const [jump, setJump] = useState<{ hit: Hit; at: number }>();
   // Thread limits show with agent threads on, in the pane and here.
   const threadsOn = useApp((st) => st.prefs.agentThreads ?? false);
-  const results = useMemo(() => searchSettings(query, threadsOn ? SETTINGS : SETTINGS.filter((e) => e.group !== THREAD_LIMITS_GROUP), panes), [query, panes, threadsOn]);
+  const results = useMemo(() => {
+    const entries = threadsOn ? SETTINGS : SETTINGS.filter((e) => e.group !== THREAD_LIMITS_GROUP);
+    return searchSettings(query, entries.map(inLanguage), panes.map(inLanguage));
+  }, [query, panes, threadsOn]);
   const hits = useMemo(() => flatHits(results), [results]);
   const matched = useMemo(() => new Set(results.map((r) => r.pane.id)), [results]);
 
@@ -103,6 +113,7 @@ export function revealSetting(container: HTMLElement, hit: Hit): () => void {
   const started = performance.now();
   let frame = 0;
   let unlight: ReturnType<typeof setTimeout> | undefined;
+  let settle: ResizeObserver | undefined;
   const find = (kinds: ReadonlyArray<'row' | 'group'>): HTMLElement | null => {
     for (const a of anchors) {
       if (!kinds.includes(a.kind)) continue;
@@ -119,7 +130,17 @@ export function revealSetting(container: HTMLElement, hit: Hit): () => void {
     const still = document.documentElement.dataset.motion === 'reduce';
     el.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
     el.setAttribute('data-found', '');
-    unlight = setTimeout(() => el.removeAttribute('data-found'), FOUND_MS);
+    // Rows above it that load late push it down: while it's lit, it's scrolled to again.
+    if (typeof ResizeObserver !== 'undefined') {
+      let first = true;
+      // (Its first call is only the sizes they have now: the scroll above is under way.)
+      settle = new ResizeObserver(() => (first ? (first = false) : el.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' })));
+      for (const part of container.children) settle.observe(part);
+    }
+    unlight = setTimeout(() => {
+      el.removeAttribute('data-found');
+      settle?.disconnect();
+    }, FOUND_MS);
     const control = el.matches('[data-setting]') ? el.querySelector<HTMLElement>('input:not([type="hidden"]):not([hidden]), button:not([disabled]), select, textarea, [tabindex="0"]') : null;
     if (control) control.focus({ preventScroll: true });
     else {
@@ -136,6 +157,7 @@ export function revealSetting(container: HTMLElement, hit: Hit): () => void {
   return () => {
     cancelAnimationFrame(frame);
     if (unlight) clearTimeout(unlight);
+    settle?.disconnect();
   };
 }
 

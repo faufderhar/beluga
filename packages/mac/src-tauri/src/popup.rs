@@ -101,15 +101,14 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .visible(false);
     #[cfg(target_os = "macos")]
     let builder = builder.accept_first_mouse(true);
-    let window = builder.build()?;
+    let window = crate::menu::without_menu_bar(app, builder).build()?;
     #[cfg(target_os = "macos")]
     {
         let w = window.clone();
         let _ = app.run_on_main_thread(move || float_over_everything(&w));
     }
     // Windows and Linux give every new window the app's menu bar: not this small card.
-    #[cfg(not(target_os = "macos"))]
-    let _ = window.remove_menu();
+    crate::menu::drop_menu_bar(&window);
     Ok(())
 }
 

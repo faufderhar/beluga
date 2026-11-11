@@ -143,6 +143,16 @@ export function ForkToMacButton({ owner, wsId }: { owner: string; wsId: string }
     );
   }
   if (fork?.state === 'copying') return <ForkProgress fork={fork} />;
+  if (fork?.state === 'preparing') {
+    const project = ws.project ?? 'the project';
+    return (
+      <Tip label={`${project} isn’t on ${thisComputer()} yet: it’s copied here first, then forked`}>
+        <Button variant="quiet" icon="download" disabled aria-busy="true">
+          {`Getting ${project}…`}
+        </Button>
+      </Tip>
+    );
+  }
   if (fork?.state === 'asking') {
     return (
       <Tip label={online ? `${ownerName}’s computer is packing it` : 'It goes as soon as their computer is back'}>

@@ -373,11 +373,12 @@ export function ProjectsAddMenu() {
   const items: ActionItem[] = [
     { label: 'Add Projects…', keys: shortcutKeys('add-project'), onSelect: () => actions.run({ type: 'add_project' }) },
     { label: 'New Project…', onSelect: () => ui.patch({ addProject: 'new' }) },
+    { label: 'Clone from Git…', onSelect: () => ui.patch({ addProject: 'clone' }) },
     { label: 'New Group', onSelect: () => newEmptyGroup() },
   ];
   return (
     <ActionsDropdown items={items}>
-      <IconButton icon="plus" label="Add a project, start one, or make a group" />
+      <IconButton icon="plus" label="Add a project, start one, clone one, or make a group" />
     </ActionsDropdown>
   );
 }

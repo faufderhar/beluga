@@ -16,7 +16,7 @@ test('your agent can be any runtime, and pickers show each one by its mark', asy
 
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Agent' }).click();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   const yours = settings.getByRole('combobox', { name: 'Your agent' });
   await expect(yours).toBeVisible();
   if (shots) await settings.screenshot({ path: `${shots}/01-settings-your-agent.png` });
@@ -29,7 +29,7 @@ test('your agent can be any runtime, and pickers show each one by its mark', asy
   await sidebar(page).getByRole('button', { name: 'bob-api' }).first().hover();
   await sidebar(page).getByRole('button', { name: 'New worktree in bob-api', exact: true }).click();
   await chip(page).click();
-  await page.getByRole('button', { name: 'Other agents' }).click();
+  await page.getByRole('tab', { name: 'Codex' }).click();
   await expect(page.getByRole('radiogroup', { name: 'Codex models' })).toBeVisible({ timeout: 15_000 });
   if (shots) await page.screenshot({ path: `${shots}/03-model-picker.png` });
 });

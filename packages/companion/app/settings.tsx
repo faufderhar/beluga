@@ -39,6 +39,7 @@ export default function Settings() {
   const { scrolled, onScroll } = useScrolled();
   const insets = useSafeAreaInsets();
   const link = useLink();
+  const supportsAgents = useSupports('externalAgents');
   const [p, setP] = useState<NotifyPrefs>(prefs());
   const [perm, setPerm] = useState<string>('');
   const [asleep, setAsleep] = useState(store.demo?.sleeping ?? false);
@@ -209,6 +210,7 @@ export default function Settings() {
             {update.release && update.phase !== 'current' ? (
               <Row Icon={ArrowDownToLine} tone="mint" label={`Update to Beluga ${update.release.version}`} sub={update.phase === 'downloading' ? `Downloading ${Math.round((update.progress ?? 0) * 100)}%` : update.phase === 'ready' ? 'Ready to install' : 'See what’s new'} onPress={() => setUpdateOpen(true)} />
             ) : null}
+            {supportsAgents ? <Row Icon={Cable} tone="lavender" label="External agents" sub="What they did, and stopping them" onPress={() => router.push('/agents')} /> : null}
             <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />
             <Row
               Icon={LogOut}

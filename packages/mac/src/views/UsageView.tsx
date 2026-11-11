@@ -11,6 +11,7 @@ import { PlanCard } from './usage/PlanCard.js';
 import { type PlanLimit, SessionsCard } from './usage/SessionsCard.js';
 import { usagesOf } from '@beluga/agent/usage.js';
 import type { AppState } from '@beluga/core/store.js';
+import { Leaderboard } from './usage/Leaderboard.js';
 import { StatsSection } from './usage/StatsSection.js';
 import { YourCard } from './usage/YourCard.js';
 import { Chapter } from './usage/parts.js';
@@ -67,7 +68,8 @@ function planLimits(state: AppState): PlanLimit[] {
 
 /**
  * Usage: your Claude plan's limits (and friends'), what Claude used this week, what connected
- * projects earned (Stripe), your stats (prompts, agent time, worktrees, PRs, by project or agent), and the disk your worktrees take, by project; then every project and worktree side by side, with what
+ * projects earned (Stripe), your stats (prompts, agent time, worktrees, PRs, by project or agent), the
+ * leaderboard with your friends, and the disk your worktrees take, by project; then every project and worktree side by side, with what
  * can be put away to free space.
  */
 export function UsageView() {
@@ -112,6 +114,7 @@ export function UsageView() {
           <CacheCard state={state} />
         </Chapter>
         <StatsSection state={state} got={got} />
+        <Leaderboard />
         <Chapter title="Your disk" sub="The room your worktrees take, what’s safe to put away, and every project side by side.">
           <StorageCard rows={rows} measuring={measuring} measured={measured} onMeasure={measure} />
           {measured ? <CleanupCard items={cleanups(state, rows, now)} state={state} onDone={measure} /> : null}

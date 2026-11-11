@@ -3,13 +3,13 @@
   "private": true,
   "version": "0.6.2",
   "description": "Beluga's engine: what the Mac app (packages/mac) runs in the background. Not published.",
-  "homepage": "https://github.com/kayraucklnc/beluga#readme",
+  "homepage": "https://github.com/beluga-labs/beluga#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kayraucklnc/beluga.git"
+    "url": "git+https://github.com/beluga-labs/beluga.git"
   },
   "bugs": {
-    "url": "https://github.com/kayraucklnc/beluga/issues"
+    "url": "https://github.com/beluga-labs/beluga/issues"
   },
   "author": "Kayra Uckilinc",
   "license": "MIT",

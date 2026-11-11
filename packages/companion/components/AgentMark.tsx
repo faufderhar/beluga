@@ -44,13 +44,14 @@ export function markIcon(mark: AgentMark): IconLike {
 
 /**
  * An agent's mark when all the phone has is its name ("Your Codex", "mia's Claude", "Codex"):
- * the name says Codex, OpenCode or Claude, else `fallback` (a runtime, when known), else a local model's.
+ * the name says Codex, OpenCode, Copilot or Claude, else `fallback` (a runtime, when known), else a local model's.
  * Only where the Mac sends no agent ref.
  */
 export function markOfName(name: string, fallback?: string): AgentMark {
   if (/\bcodex\b/i.test(name)) return 'codex';
   if (/\bopencode\b/i.test(name)) return 'opencode';
   if (/\bgrok\b/i.test(name)) return 'grok';
+  if (/\bcopilot\b/i.test(name)) return 'copilot';
   if (/\bclaude\b/i.test(name)) return 'claudeCode';
   if (/\blocal model\b/i.test(name)) return 'localModel';
   return fallback !== undefined ? runtimeMark(fallback) : 'localModel';

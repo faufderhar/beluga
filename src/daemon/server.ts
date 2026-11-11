@@ -42,6 +42,9 @@ const MAX_BUFFERED_BYTES = 64 * 1024 * 1024;
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const byteLength = (raw: Buffer | ArrayBuffer | Buffer[]): number => (Array.isArray(raw) ? raw.reduce((n, b) => n + b.length, 0) : raw.byteLength);
 
+/** Who may manage external agents: the Mac app and the command line. A browser's screen may not, whatever else it may do. */
+const EXTERNAL_MANAGERS: ReadonlySet<string> = new Set(['mac', 'cli', 'test']);
+export const mayCall = (kind: string, method: string): boolean => !method.startsWith('external.') || EXTERNAL_MANAGERS.has(kind);
 /** What only the Mac app and the command line may do: managing browsers' access (BLG-653). */
 export const WEB_ADMIN: ReadonlySet<string> = new Set(['web.link', 'web.sessions.revoke', 'web.stop', 'web.public', 'web.tailscale']);
 
@@ -397,6 +400,7 @@ export class DaemonServer {
   }
 
   private async call(client: ConnectedClient, id: string, method: string, raw: readonly unknown[]): Promise<DaemonFrame> {
+    if (!mayCall(client.kind, method)) return { t: 'result', id, ok: false, error: 'External agents are managed from the Mac app or `beluga mcp` on the computer Beluga runs on' };
     // A browser's session can't mint, revoke or move browser sessions: a stolen cookie can't outlive its revoke.
     if (client.kind === 'web' && WEB_ADMIN.has(method)) return { t: 'result', id, ok: false, error: 'Browsers are let in and revoked from the Mac app or `beluga web` on the computer Beluga runs on' };
     // Your app driving this computer: what src/machines/coverage.ts refuses it (BLG-776).

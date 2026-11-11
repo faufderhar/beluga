@@ -23,7 +23,7 @@ test('Codex sub-agents show as rows with their steps and report, and Stop stops 
   await sidebar(page).getByRole('button', { name: 'New worktree in bob-api', exact: true }).click();
   await page.getByLabel('Worktree name').fill('e2e-codex-subs');
   await chip(page).click();
-  await page.getByRole('button', { name: 'Other agents' }).click();
+  await page.getByRole('tab', { name: 'Codex' }).click();
   const codexModels = page.getByRole('radiogroup', { name: 'Codex models' });
   await expect(codexModels).toBeVisible({ timeout: 15_000 });
   await codexModels.getByRole('radio').first().click();

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from './fixtures.js';
+import { openGroupChat } from './helpers.js';
 
 /**
  * The message box is only for messages: confirmations are alerts with Cancel, names and commands
@@ -30,6 +31,8 @@ async function expectEmptyComposer(page: Page): Promise<void> {
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
+  // A message box on screen to watch: the room's group chat (the window opens on the Overview, BLG-871).
+  await openGroupChat(page);
 });
 
 test('archiving asks in an alert, and Cancel (or Esc) does nothing', async ({ page }) => {

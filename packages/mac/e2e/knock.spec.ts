@@ -50,7 +50,7 @@ test('knock on a teammate’s worktree, and a teammate knocking on yours', async
   // bob knocks on your worktree doing the webhook retries: the bell, and its card in the chat.
   await openTasks(page);
   // It's a sub-task, tucked under its epic.
-  const all = page.getByRole('button', { name: 'Show All' });
+  const all = page.getByRole('button', { name: 'Show All', exact: true });
   if (await all.isVisible()) await all.click();
   await list.getByRole('row', { name: /Idempotent webhook retries/ }).click();
   await page.getByRole('button', { name: 'Open Worktree' }).first().click();

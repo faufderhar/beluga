@@ -1,5 +1,6 @@
 import { animate, motion, useInView, useMotionValue, useReducedMotion, useTransform } from 'motion/react';
 import { type ReactNode, useEffect, useRef } from 'react';
+import { t } from '../i18n/index.js';
 
 /**
  * The onboarding's small motion pieces (in the spirit of Magic UI and React Bits, written for
@@ -14,9 +15,11 @@ export const SOFT_SPRING = { type: 'spring', stiffness: 140, damping: 22 } as co
 /** A headline that resolves word by word: each rises a little and comes out of a blur. */
 export function Words({ text, delay = 0, stagger = 0.055, className }: { readonly text: string; readonly delay?: number; readonly stagger?: number; readonly className?: string }) {
   const still = useReducedMotion() ?? false;
-  const words = text.split(' ');
+  // In another language (src/i18n) the line resolves phrase by phrase: its words aren't split by spaces.
+  const shown = t(text);
+  const words = shown === text ? text.split(' ') : (shown.match(/[^。，、！？\s]+[。，、！？]?\s?/g) ?? [shown]);
   return (
-    <span className={className} aria-label={text}>
+    <span className={className} aria-label={shown}>
       {words.map((word, i) => (
         <motion.span
           key={`${word}-${i}`}
@@ -27,7 +30,7 @@ export function Words({ text, delay = 0, stagger = 0.055, className }: { readonl
           transition={{ duration: 0.7, ease: EASE_OUT, delay: delay + i * stagger }}
         >
           {word}
-          {i < words.length - 1 ? ' ' : ''}
+          {i < words.length - 1 && shown === text ? ' ' : ''}
         </motion.span>
       ))}
     </span>

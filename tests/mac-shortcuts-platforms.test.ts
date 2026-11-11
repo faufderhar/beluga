@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { MAC_SHORTCUTS_FOR_TESTS, OFF_MAC_KEYS, type Bindings, chordLabel, chordsOf, clashes, heldLabel, keysOn, menuAccel, primaryKey, refusal, setKeyPlatform } from '../packages/mac/src/lib/shortcuts-model.js';
+import { MAC_SHORTCUTS_FOR_TESTS, OFF_MAC_KEYS, type Bindings, chordLabel, chordsOf, clashes, heldLabel, keysOn, menuAccel, primaryKey, refusal, setKeyPlatform, shortcutFor } from '../packages/mac/src/lib/shortcuts-model.js';
 
 const press = (key: string, code: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) => ({ key, code, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
 
@@ -14,6 +14,13 @@ describe('shortcuts on Linux and Windows (BLG-525)', () => {
     setKeyPlatform('mac');
     expect(chordsOf(press('k', 'KeyK', { metaKey: true }))[0]).toBe('Cmd+K');
     expect(primaryKey({ metaKey: false, ctrlKey: true })).toBe(false);
+  });
+
+  it('leaves Ctrl+V to paste on a Windows Dvorak keyboard, where V sits on the "." key', () => {
+    setKeyPlatform('windows');
+    const b: Bindings = { 'conv-stop': ['Cmd+.'] };
+    expect(shortcutFor(b, press('v', 'Period', { ctrlKey: true }), ['conv-stop'])).toBeUndefined();
+    expect(shortcutFor(b, press('.', 'KeyE', { ctrlKey: true }), ['conv-stop'])).toBe('conv-stop');
   });
 
   it('shows keys in words there, and glyphs on a Mac', () => {

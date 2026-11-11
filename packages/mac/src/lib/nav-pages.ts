@@ -1,4 +1,5 @@
 import type { View } from '../../../../src/core/store.js';
+import { groupChatOpen } from './group-chat.js';
 import type { PanelSnapshot } from './nav-history.js';
 import { type PanelTab, drawerFits, paneKey, panelFits, rememberTab } from './panel-model.js';
 
@@ -14,6 +15,8 @@ export interface AliveState {
   readonly board: { readonly enabled: boolean; readonly issues: ReadonlyArray<{ readonly id: string }> };
   readonly plans: { readonly plans: ReadonlyArray<{ readonly id: string }> };
   readonly sentinel: { readonly items: ReadonlyArray<{ readonly id: string }> };
+  /** Who's in the room, you included: its group chat is a page only while someone else is (BLG-871). */
+  readonly peers: ReadonlyArray<unknown>;
 }
 
 /** Sentinel's "Your Mac" (sentinel-model's MAC_SCOPE): a scope, not a project. */
@@ -55,6 +58,8 @@ export function pageAlive(state: AliveState, view: View): boolean {
       return state.plans.plans.some((p) => p.id === view.id);
     case 'sentinel_page':
       return state.sentinel.items.some((s) => s.id === view.id);
+    case 'room':
+      return groupChatOpen(state);
     default:
       return true;
   }

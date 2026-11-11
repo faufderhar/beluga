@@ -86,6 +86,15 @@ milliseconds), through `src/preview/plugins.ts`:
 - **Next.js**: `next/image`, `next/link`, `next/font/*`, `next/navigation`, `next/router`,
   `next/head`, `next/script` and `next/dynamic` have small stand-ins, so a Next component draws on
   its own; following a link or a router push shows as an event.
+- **React Native** (Expo and the like): when `react-native-web` is installed for the component, it
+  is built as the app's web build would be. `react-native` is react-native-web, with do-nothing
+  stand-ins for native-only names like `TurboModuleRegistry` and `codegenNativeComponent`. A
+  package's `.web.js` file wins over its `.ios.js` and `.android.js` ones. React Native's own
+  internals (`react-native/Libraries/…`, Flow source) are empty modules.
+- **Browser stand-ins, for every preview**: a Node built-in a package imports (`events`, `crypto`)
+  is the installed polyfill when there is one, otherwise a small stand-in (`events` is a working
+  EventEmitter, the others are empty). A file in a build step's output (`dist/`, `build/`, `out/`,
+  `generated/`) that hasn't been made yet is an empty module, so the component draws anyway.
 - **Vue and Svelte**: compiled with the project's own `vue/compiler-sfc` and `svelte/compiler`
   (each file's CSS in one `<style>`, replaced by a new build). Svelte 5 components draw inside a
   small host whose props are state, so a new prop changes them in place.

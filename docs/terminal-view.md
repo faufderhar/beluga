@@ -19,7 +19,7 @@ conversation yourself (the header's switch, ⇧⌘T) opens it at once.
 The terminal runs Claude Code's own terminal app (the copy Beluga downloaded) in the worktree, on
 the conversation the chat has: `--resume <session>`; a new conversation gets `--session-id` up
 front; a fork `--fork-session`. A local model runs in the same Claude Code, pointed at its
-endpoint, so its conversations get the same terminal. Codex's, OpenCode's and Grok Build's conversations stay in
+endpoint, so its conversations get the same terminal. Codex's, OpenCode's and Copilot's and Grok Build's conversations stay in
 the chat (the switch isn't offered there). The worktree is trusted in Claude Code first (as its own "Yes, I trust
 this folder" does), so the terminal opens straight on the conversation, its prompt at the bottom.
 

@@ -8,7 +8,7 @@ import { useDecoded } from '../components/use-decoded.js';
 import { type Size, type ZoomView, clampView, doubleClickScale, fitScale, fitView, isZoomed, panBy, transformOf, zoomAt } from '../components/zoom-model.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { openWithDefaultApp } from '../lib/files.js';
-import { type ChatImage, closeLightbox, copyImage, loadImage, openLightbox, stepLightbox, useImage, useLightbox } from './images.js';
+import { type ChatImage, closeLightbox, copyImage, imageGone, loadImage, openLightbox, stepLightbox, unavailableText, useImage, useLightbox } from './images.js';
 import s from './images.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -19,10 +19,11 @@ export function Thumb({ image, all, index, tiled }: { image: ChatImage; all: rea
   const state = useImage(api, image);
   const name = `${image.label}${image.detail ? ` (${image.detail})` : ''}`;
   if (state.status === 'error') {
+    const why = unavailableText(state.error);
     return (
-      <div className={cx(s.thumb, s.failed, tiled && s.tile)} role="img" aria-label={`${name}: unavailable`} title={state.error}>
-        <Icon name="alert" size={14} />
-        <span>Image unavailable</span>
+      <div className={cx(s.thumb, s.failed, tiled && s.tile)} role="img" aria-label={`${name}: ${why.text}`} title={why.detail}>
+        <Icon name={imageGone(state.error) ? 'image' : 'alert'} size={14} />
+        <span>{why.text}</span>
       </div>
     );
   }
@@ -232,7 +233,7 @@ function Full({ image }: { image: ChatImage }) {
           }}
         />
       ) : (
-        <div className={cx(s.fullPending, state.status === 'error' && s.failed)}>{state.status === 'error' ? `Image unavailable: ${state.error}` : null}</div>
+        <div className={cx(s.fullPending, state.status === 'error' && s.failed)}>{state.status === 'error' ? unavailableText(state.error).text : null}</div>
       )}
     </div>
   );

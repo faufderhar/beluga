@@ -46,7 +46,7 @@ const words = (max: number) => z.string().max(max);
 export const ActorSchema = z.union([
   z.object({ kind: z.literal('person'), id: peerId, name: words(80) }),
   // BLG-498: which agent (an older Mac leaves it out: Claude; a bad one is dropped, not the line).
-  z.object({ kind: z.literal('claude'), owner: peerId, ownerName: words(80), agent: AgentRef.optional().catch(undefined), for: z.object({ id: peerId, name: words(64) }).optional().catch(undefined) }),
+  z.object({ kind: z.literal('claude'), owner: peerId, ownerName: words(80), agent: AgentRef.optional().catch(undefined), external: z.object({ id: words(80), name: words(80) }).optional().catch(undefined), for: z.object({ id: peerId, name: words(64) }).optional().catch(undefined) }),
   z.object({ kind: z.literal('beluga') }),
 ]);
 export const AssigneeSchema = z.union([z.object({ kind: z.literal('person'), id: peerId, name: words(80) }), z.object({ kind: z.literal('claude'), owner: peerId, ownerName: words(80) })]);

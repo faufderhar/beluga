@@ -1,20 +1,22 @@
 .wrap {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   margin-right: 6px;
 }
 
-/* Soft pastel: the tone's colour as text on a light wash of itself, never a glow. */
+/* Soft pastel: the tone's colour as text on a light wash of itself, never a glow. Small, as it sits
+   beside the worktree's name: it says where the branch stands, the buttons on the right say what to do. */
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 9px;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
   border-radius: 999px;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  flex: none;
   white-space: nowrap;
   color: var(--pill);
   background: color-mix(in srgb, var(--pill) 13%, transparent);
@@ -48,6 +50,7 @@
 }
 .pillButton {
   display: inline-flex;
+  flex: none;
   padding: 0;
   border: 0;
   background: none;
@@ -56,10 +59,6 @@
 }
 .pillButton:hover .pill {
   background: color-mix(in srgb, var(--pill) 22%, transparent);
-}
-
-.split {
-  display: inline-flex;
 }
 .main {
   height: 26px;

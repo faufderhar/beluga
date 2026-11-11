@@ -13,10 +13,12 @@ async function openBoard(page: Page) {
   await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
-  // The demo's task is a sub-task, tucked under its epic until opened out.
-  const showAll = page.getByRole('button', { name: 'Show All' });
+  const board = page.getByRole('list', { name: 'Board' });
+  await expect(board).toBeVisible();
+  // The demo's task is a sub-task, tucked under its epic until opened out (exactly: the sidebar's Sentinel has a "Show all 10…").
+  const showAll = page.getByRole('button', { name: 'Show All', exact: true });
   if (await showAll.isVisible()) await showAll.click();
-  return page.getByRole('list', { name: 'Board' }).getByRole('listitem', { name: /^In Progress/ });
+  return board.getByRole('listitem', { name: /^In Progress/ });
 }
 
 test('a card says who is on it, and moves while their Claude works', async ({ page }) => {

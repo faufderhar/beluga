@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openGroupChat } from './helpers.js';
 
 /**
  * Someone's profile from where you see them (BLG-395): their name or picture in a chat opens their
@@ -34,6 +35,7 @@ test('a friend’s avatar opens their profile, and their picture opens large', a
   await expect(sidebar(page)).toBeVisible();
   const turnOn = sidebar(page).getByRole('group', { name: 'Talk with friends' });
   if (await turnOn.isVisible()) await turnOn.getByRole('button', { name: 'Turn On' }).click();
+  await openGroupChat(page);
   // mia's friend row (the demo gives her a picture): its avatar opens her profile.
   const avatar = sidebar(page).locator('[data-friend-row]').getByRole('button', { name: 'mia’s profile' });
   await expect(avatar).toBeVisible({ timeout: 40_000 });

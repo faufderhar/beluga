@@ -64,7 +64,7 @@ export function Outline({ article, version }: { article: RefObject<HTMLElement |
   return (
     <nav className={m.outline} aria-label="Outline">
       <div className={m.outlineTitle}>On this page</div>
-      <ul className={m.outlineList}>
+      <ul className={m.outlineList} translate="no">
         {heads.map((h) => (
           <li key={h.id}>
             <a

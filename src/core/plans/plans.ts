@@ -567,4 +567,4 @@ function milestoneName(plan: Plan, id: string): string {
   return m ? `“${m.title}”` : 'a milestone';
 }
 
-const sameActor = (a: Actor, b: Actor): boolean => a.kind === b.kind && (a.kind === 'person' ? a.id === (b as typeof a).id : a.kind === 'claude' ? a.owner === (b as typeof a).owner : true);
+const sameActor = (a: Actor, b: Actor): boolean => a.kind === b.kind && (a.kind === 'person' ? a.id === (b as typeof a).id : a.kind === 'claude' ? a.owner === (b as typeof a).owner && a.external?.id === (b as typeof a).external?.id : true);

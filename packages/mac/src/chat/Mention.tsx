@@ -16,8 +16,8 @@ import s from './mention.module.css';
  * project, the worktree, the file, the task).
  */
 
-const ICON: Readonly<Record<MentionKind, IconName>> = { friend: 'person', claude: 'claude', project: 'grid', workspace: 'branch', folder: 'folder', file: 'file', task: 'task', image: 'image' };
-const WHAT: Readonly<Record<MentionKind, string>> = { friend: 'Friend', claude: 'Agent', project: 'Project', workspace: 'Worktree', folder: 'Folder', file: 'File', task: 'Task', image: 'Image' };
+const ICON: Readonly<Record<MentionKind, IconName>> = { friend: 'person', claude: 'claude', project: 'grid', workspace: 'branch', folder: 'folder', file: 'file', task: 'task', image: 'image', worktree: 'branch' };
+const WHAT: Readonly<Record<MentionKind, string>> = { friend: 'Friend', claude: 'Agent', project: 'Project', workspace: 'Worktree', folder: 'Folder', file: 'File', task: 'Task', image: 'Image', worktree: 'Worktree' };
 
 /** The worktree a conversation is in ("ws:<id>"), if it is one. */
 export const worktreeOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);

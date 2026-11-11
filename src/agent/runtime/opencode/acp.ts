@@ -36,6 +36,14 @@ export interface AcpMcpServer {
   readonly env: ReadonlyArray<{ readonly name: string; readonly value: string }>;
 }
 
+/** One MCP server over HTTP, as session/new takes it (Copilot takes only these from a client). */
+export interface AcpHttpMcpServer {
+  readonly type: 'http';
+  readonly name: string;
+  readonly url: string;
+  readonly headers: ReadonlyArray<{ readonly name: string; readonly value: string }>;
+}
+
 export type ContentBlock = { readonly type: 'text'; readonly text: string } | { readonly type: 'image'; readonly mimeType: string; readonly data: string };
 
 export type StopReason = 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'refusal' | 'cancelled';

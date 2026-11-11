@@ -1,0 +1,4 @@
+/* What macOS shows when Beluga asks for access (Info.plist), in Simplified Chinese. */
+"NSAppleEventsUsageDescription" = "当你提出请求时，Claude 可以替你使用其他应用，例如“访达”或 Safari。";
+"NSMicrophoneUsageDescription" = "Beluga 会在这台 Mac 上把你说的话转写成文字，让你可以对 Claude 说话而不用打字，并在与好友通话时传送你的声音。录音只在这里转写，绝不会离开你的 Mac。";
+"NSCameraUsageDescription" = "Beluga 会把你的摄像头画面直接从这台 Mac 发送给与你通话的好友。";

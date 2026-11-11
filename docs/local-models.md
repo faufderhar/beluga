@@ -11,7 +11,7 @@ How good the answers are depends on that model, and the picker says so.
    instructions: `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`. With Ollama's default (a few thousand
    tokens) those get cut off, and the model ignores the task and its tools.
 2. Pull a model that is good with tools, for example `ollama pull qwen3-coder`.
-3. In Beluga, open the agent box you type in, then **Other agents › Local model**. Ollama on this
+3. In Beluga, open the agent box you type in, then pick **Local model** on its left. Ollama on this
    Mac shows up by itself, with the models it has. Pick one.
 
 That worktree now runs on that model. Nothing is sent to Anthropic for its runs.

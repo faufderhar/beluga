@@ -5,6 +5,8 @@ import { createOpenCodeRuntime } from '../src/agent/runtime/opencode/index.js';
 import { ScriptedOpenCode } from '../src/agent/runtime/opencode/scripted.js';
 import { createGrokRuntime } from '../src/agent/runtime/grok/index.js';
 import { ScriptedGrok } from '../src/agent/runtime/grok/scripted.js';
+import { createCopilotRuntime } from '../src/agent/runtime/copilot/index.js';
+import { ScriptedCopilot } from '../src/agent/runtime/copilot/scripted.js';
 import type { AgentRuntime, RuntimeCapabilities } from '../src/agent/runtime/types.js';
 import type { AgentRunInput } from '../src/agent/types.js';
 import { FakeClaude } from './fake-claude.js';
@@ -18,8 +20,8 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({ ...(await origi
 claude.query = new FakeClaude().query as (args: unknown) => unknown;
 
 // The same suite for every runtime: the in-memory reference, Claude through its SDK, Codex over
-// a scripted app-server, and OpenCode over a scripted `opencode acp`. Live runs (a signed-in
-// Claude Code or Codex, an installed OpenCode) are waived (BLG-475).
+// a scripted app-server, OpenCode over a scripted `opencode acp` and Copilot over a scripted
+// `copilot --acp`. Live runs (a signed-in Claude Code, Codex or Copilot, an installed OpenCode) are waived (BLG-475).
 runtimeConformance('fake', createFakeRuntime);
 runtimeConformance('claude', () => claudeRuntime);
 const codex = new FakeCodex();
@@ -28,6 +30,8 @@ const opencode = new ScriptedOpenCode();
 runtimeConformance('opencode', () => createOpenCodeRuntime({ connect: opencode.connect, resolve: async () => undefined }));
 const grok = new ScriptedGrok();
 runtimeConformance('grok', () => createGrokRuntime({ connect: grok.connect }));
+const copilot = new ScriptedCopilot();
+runtimeConformance('copilot', () => createCopilotRuntime({ connect: copilot.connect }));
 
 /** The fake runtime, changed: its capabilities patched, and its runs' inputs or answers bent. */
 function mutant(caps: Partial<RuntimeCapabilities>, bend: { input?: (i: AgentRunInput) => AgentRunInput; answer?: (a: string) => string } = {}): () => AgentRuntime {

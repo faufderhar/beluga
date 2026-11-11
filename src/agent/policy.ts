@@ -85,12 +85,19 @@ export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set(['mcp__beluga_sentine
 const DOTENV_IN_COMMAND = /(?<![\w.-])\.env(?!\.(?:example|sample|template|dist|defaults)(?![\w-]))(\.[\w-]+)?(?![\w-])/;
 const CREDENTIAL_IN_COMMAND = /(?<![\w.-])(id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)(?![\w-])/;
 export const SECRET_IN_COMMAND = new RegExp(`${DOTENV_IN_COMMAND.source}|${CREDENTIAL_IN_COMMAND.source}`);
+/**
+ * Beluga's private files by name, right under its home folder (daemon.json holds the token to the
+ * whole API). Only there: a project's .beluga holds reports and scratch, and worktrees live under
+ * ~/.beluga/workspaces. In any case, as the Mac's file system ignores it. Not a fence: see docs/security.md.
+ */
+const BELUGA_FILE_IN_COMMAND = /(?<![\w.-])\.(beluga|klaude?)[\\/]+(\.[\\/]+)*(daemon|identity|env|devices|web-sessions|cli-grant)\.json(?![\w-])/i;
 
 const mentions = (re: RegExp, command: string): boolean => re.test(command) || re.test(command.replace(/['"\\]/g, ''));
+const mentionsCredential = (command: string): boolean => mentions(CREDENTIAL_IN_COMMAND, command) || mentions(BELUGA_FILE_IN_COMMAND, command);
 /** True when a shell command touches secrets, also through quoting tricks like `".e"nv` or `\.env`. */
-export const mentionsSecret = (command: string): boolean => mentions(SECRET_IN_COMMAND, command);
+export const mentionsSecret = (command: string): boolean => mentions(DOTENV_IN_COMMAND, command) || mentionsCredential(command);
 /** The only secret a shell command touches is a .env file. */
-export const mentionsOnlyDotenv = (command: string): boolean => mentions(DOTENV_IN_COMMAND, command) && !mentions(CREDENTIAL_IN_COMMAND, command);
+export const mentionsOnlyDotenv = (command: string): boolean => mentions(DOTENV_IN_COMMAND, command) && !mentionsCredential(command);
 
 /** 'secret': your own Claude wants a .env file; you're asked even when nothing else asks (see AgentRunInput.canUseSecret). */
 export type Decision = 'allow' | 'deny' | 'ask' | 'secret';

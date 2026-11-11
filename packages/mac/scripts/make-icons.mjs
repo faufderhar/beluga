@@ -2,7 +2,7 @@
 // from assets/beluga-source.png). Writes the app icon (assets/logo.svg, and every size in
 // src-tauri/icons via `tauri icon`), its light twin (assets/logo-light.svg), the menu-bar
 // template (src-tauri/icons/tray.png), the README banners, the path the app draws
-// (src/components/beluga-path.ts) and the DMG background (dmg/*.png).
+// (src/shared/beluga-path.ts at the root: the app and the sign-in page draw it) and the DMG background (dmg/*.png).
 //
 //   node scripts/make-icons.mjs
 import { execFileSync } from 'node:child_process';
@@ -79,8 +79,8 @@ const tray = `<svg xmlns="http://www.w3.org/2000/svg" width="45" height="36" vie
 writeFileSync(path.join(here, 'src-tauri/icons/tray.png'), new Resvg(tray, { fitTo: { mode: 'height', value: 36 } }).render().asPng());
 
 writeFileSync(
-  path.join(here, 'src/components/beluga-path.ts'),
-  `// Made by scripts/make-icons.mjs from assets/beluga.svg: don't edit by hand.\n\n/** The beluga, one even-odd path (eye, mouth and flipper lines cut out), centered in a 1024 box. */\nexport const BELUGA = '${beluga}';\n`,
+  path.join(root, 'src/shared/beluga-path.ts'),
+  `// Made by packages/mac/scripts/make-icons.mjs from assets/beluga.svg: don't edit by hand.\n\n/** The beluga, one even-odd path (eye, mouth and flipper lines cut out), centered in a 1024 box. */\nexport const BELUGA = '${beluga}';\n`,
 );
 
 // The install window's background, at both resolutions (it shows the app icon by the name).

@@ -51,6 +51,33 @@ describe('the compilers’ process', () => {
     expect(compilersRunning()).toBe(1);
   });
 
+  it('runs Tailwind 4, which registers an import hook (a worker the process may not start) as it loads', async () => {
+    const v4 = path.join(root, 'v4');
+    const v4pkg = (name: string, main: string): void => {
+      const dir = path.join(v4, 'node_modules', name);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: '4.1.17', main: 'index.cjs' }));
+      writeFileSync(path.join(dir, 'index.cjs'), main);
+    };
+    v4pkg('@tailwindcss/node', "require('node:module').register?.(require('node:url').pathToFileURL(__filename));\nexports.compile = async () => ({ root: 'none', sources: [], build: () => '/* tailwind 4 */' });");
+    v4pkg('@tailwindcss/oxide', 'exports.Scanner = class { scan() { return []; } };');
+    writeFileSync(path.join(v4, 'index.css'), '@import "tailwindcss";');
+    const out = await compileIn(v4, { kind: 'tailwind', file: path.join(v4, 'index.css'), major: 4 });
+    expect(out.errors).toBeUndefined();
+    expect(out.contents).toBe('/* tailwind 4 */');
+  });
+
+  it('says why when Tailwind is there but can’t be loaded, never that it isn’t installed', async () => {
+    const broken = path.join(root, 'broken');
+    mkdirSync(path.join(broken, 'node_modules', '@tailwindcss', 'node'), { recursive: true });
+    writeFileSync(path.join(broken, 'node_modules', '@tailwindcss', 'node', 'package.json'), JSON.stringify({ name: '@tailwindcss/node', version: '4.1.17', main: 'index.cjs' }));
+    writeFileSync(path.join(broken, 'node_modules', '@tailwindcss', 'node', 'index.cjs'), "throw new Error('boom');");
+    writeFileSync(path.join(broken, 'index.css'), '@import "tailwindcss";');
+    const out = await compileIn(broken, { kind: 'tailwind', file: path.join(broken, 'index.css'), major: 4 });
+    expect(out.skip).toBeUndefined();
+    expect(out.errors?.[0]?.text).toMatch(/Tailwind.*@tailwindcss\/node.*boom/);
+  });
+
   it('stops when told (no preview left)', () => {
     stopCompilers();
     expect(compilersRunning()).toBe(0);

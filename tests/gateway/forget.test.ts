@@ -47,7 +47,7 @@ describe('a request that never ends', () => {
     expect(() => ria.gw.forget(back.id)).toThrow(/you sent/);
   }, 90_000);
 
-  it('a day without word from their Mac: it failed, and stops showing as running', async () => {
+  it.skipIf(LOSES_A_MESSAGE_ON_WINDOWS)('a day without word from their Mac: it failed, and stops showing as running', async () => {
     let clock = Date.now();
     const [tao, uma] = await pair('tao', 'uma', { now: () => clock });
     tao.trust(uma.id, 'trusted');

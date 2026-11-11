@@ -228,7 +228,7 @@ function Confirmations() {
   const shown = useShownConversation();
   const api = client.api.network;
   const leaveView = (id: string): void => {
-    if (shown === id) client.store.dispatch({ type: 'view', view: { kind: 'room' } });
+    if (shown === id) client.store.dispatch({ type: 'view', view: { kind: 'overview' } });
   };
   if (sheet?.kind === 'remove_friend') {
     const f = net.friends.find((x) => x.peerId === sheet.peerId);

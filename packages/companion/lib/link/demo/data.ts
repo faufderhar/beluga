@@ -306,7 +306,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     working: false,
     needsYou: [],
     turns: [
-      { id: 'r1', who: 'you', name: 'You', ts: now - 3 * HOUR, prose: { text: 'The radar flickers when I pinch. Fix it and show me.', code: [] } },
+      { id: 'r1', who: 'you', name: 'You', via: 'GrokBot', ts: now - 3 * HOUR, prose: { text: 'The radar flickers when I pinch. Fix it and show me.', code: [] } },
       {
         id: 'r2',
         who: 'claude',

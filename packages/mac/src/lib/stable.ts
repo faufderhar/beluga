@@ -61,3 +61,24 @@ export function keepSameLists<K, V>(prev: ReadonlyMap<K, readonly V[]> | undefin
   }
   return out;
 }
+
+/** What a store read returned last: for the state it read, and the pick that read it. */
+export interface Snapshot<S, T> {
+  readonly state: S;
+  readonly pick: (state: S) => T;
+  readonly value: T;
+}
+
+/**
+ * A store read that holds still (BLG-905): the same value while the state and the pick are the
+ * same ones, whatever `equal` says, and the last value when `equal` finds the new one the same.
+ * React's useSyncExternalStore reads again and again, and redraws for good when two reads of an
+ * unchanged store differ: a list deeper than `equal` could see to the bottom of (the bell's
+ * "Waiting for you" with one of Claude's questions in it) froze the window grey.
+ */
+export function readSnapshot<S, T>(last: Snapshot<S, T> | undefined, state: S, pick: (state: S) => T, equal?: (a: T, b: T) => boolean): Snapshot<S, T> {
+  if (last && last.state === state && last.pick === pick) return last;
+  const next = pick(state);
+  const value = last && equal?.(last.value, next) ? last.value : next;
+  return { state, pick, value };
+}

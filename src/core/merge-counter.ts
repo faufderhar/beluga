@@ -2,21 +2,22 @@
  * Counting the work made in Beluga that got merged: worktrees Beluga made (never another tool's)
  * whose branch was merged here (Merge into main), through a GitHub pull request (the workbench
  * follows those), or by git some other way (a merge in a terminal, a pull request merged after the
- * worktree was archived). Each branch counts once, kept in ~/.beluga/support.json, so the asks in
- * core/support-store.ts come at the right merge and only once. Nothing here leaves this computer.
+ * worktree was archived). Each branch counts once, kept in ~/.beluga/support.json, so the ask in
+ * core/support-store.ts comes at the right merge and only once. Nothing here leaves this computer.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { isAncestor, tryGit } from '../workspaces/git.js';
+import { fetchStars } from './github-stars.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { belugaHome } from './home.js';
 import type { Action, Store } from './store.js';
-import { EMPTY_SUPPORT, type SupportAnswer, type SupportAsk, type SupportRecord, answerAsk, mergeKey, supportView } from './support-store.js';
+import { EMPTY_SUPPORT, STAR_AT, type SupportAnswer, type SupportAsk, type SupportRecord, answerAsk, mergeKey, supportView } from './support-store.js';
 import type { WorkspaceController, WorktreeEvent } from './workspace-controller.js';
 
 const AnsweredSchema = z.object({ merges: z.number().int().min(0), answer: z.enum(['yes', 'later', 'never']), times: z.number().int().min(1), at: z.number() });
-export const SupportFileSchema = z.object({ counted: z.array(z.string()).default([]), star: AnsweredSchema.optional(), coffee: AnsweredSchema.optional() });
+export const SupportFileSchema = z.object({ counted: z.array(z.string()).default([]), star: AnsweredSchema.optional() });
 
 export const supportPath = (): string => path.join(belugaHome(), 'support.json');
 
@@ -77,16 +78,21 @@ export interface MergeCounterDeps {
   /** How often to look for work merged outside Beluga's own buttons (0: only when asked). */
   readonly sweepMs?: number;
   readonly now?: () => number;
+  /** How many people starred Beluga, for the Star sheet (core/github-stars.ts); none: no number. */
+  readonly stars?: () => Promise<number | undefined>;
 }
 
 /** Looking for merges git knows of: soon after start, then every half hour. */
 const SWEEP_FIRST_MS = 45_000;
 const SWEEP_MS = 30 * 60_000;
+/** Looking up Beluga's star count: once a day. */
+const STARS_MS = 24 * 60 * 60_000;
 
 export class MergeCounter {
   private record: SupportRecord;
   private readonly offs: Array<() => void> = [];
   private sweeping?: Promise<void>;
+  private stars?: number;
 
   constructor(private readonly deps: MergeCounterDeps) {
     this.record = deps.file === null ? (deps.seed ?? EMPTY_SUPPORT) : loadSupportFile(deps.file);
@@ -151,7 +157,21 @@ export class MergeCounter {
     return counted;
   }
 
+  /** Look up the star count again (the daily timer, tests). */
+  async refreshStars(): Promise<void> {
+    const stars = await this.deps.stars?.().catch(() => undefined);
+    if (stars === undefined || stars === this.stars) return;
+    this.stars = stars;
+    this.publish();
+  }
+
   start(): void {
+    if (this.deps.stars) {
+      void this.refreshStars();
+      const daily = setInterval(() => void this.refreshStars(), STARS_MS);
+      daily.unref?.();
+      this.offs.push(() => clearInterval(daily));
+    }
     const every = this.deps.sweepMs ?? SWEEP_MS;
     if (every <= 0) return;
     const first = setTimeout(() => void this.sweep(), Math.min(SWEEP_FIRST_MS, every));
@@ -194,7 +214,7 @@ export class MergeCounter {
   }
 
   private publish(): void {
-    this.deps.store.dispatch({ type: 'support', support: supportView(this.record) });
+    this.deps.store.dispatch({ type: 'support', support: supportView(this.record, this.stars) });
   }
 }
 
@@ -210,17 +230,17 @@ export function supportOf(session: object): MergeCounter {
 }
 
 /**
- * Start counting for the daemon. The demo keeps its record in memory and has both asks behind it
- * (so its pretend merges never ask a pretend you for anything), unless BELUGA_DEMO_ASKS is `star`
- * or `coffee`: then that ask is due right away (screenshots of the sheets).
+ * Start counting for the daemon. The demo keeps its record in memory with the star already answered
+ * (so its pretend merges never ask a pretend you for anything), unless BELUGA_DEMO_ASKS is `star`:
+ * then it's due right away (screenshots of the sheet).
  */
 export function launchSupport(host: { readonly session: { readonly workspaces?: WorkspaceController }; readonly store: Store; readonly demo: boolean; readonly asks?: string }): () => void {
   const fake = (n: number): string[] => Array.from({ length: n }, (_, i) => mergeKey('/demo', `demo-${i + 1}`));
   const done = { merges: 0, answer: 'never', times: 1, at: 0 } as const;
-  const seed: SupportRecord = host.asks === 'star' ? { counted: fake(1) } : host.asks === 'coffee' ? { counted: fake(5), star: { ...done, answer: 'yes' } } : { counted: [], star: done, coffee: done };
+  const seed: SupportRecord = host.asks === 'star' ? { counted: fake(STAR_AT) } : { counted: [], star: done };
   const counter = new MergeCounter({
     store: host.store,
-    ...(host.demo ? { file: null, seed } : {}),
+    ...(host.demo ? { file: null, seed, stars: async () => 491 } : { stars: () => fetchStars() }),
     ...(host.session.workspaces ? { controller: host.session.workspaces } : {}),
   });
   attachSupport(host.session, counter);

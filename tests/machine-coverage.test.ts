@@ -53,6 +53,11 @@ describe('the table of what your app may do on a computer', () => {
         'machines.secrets',
         // Your identity moves only from your app's own Settings (BLG-796).
         'machines.alwaysOn',
+        // An external agent is let in from the computer itself.
+        'external.pairingCode',
+        'external.localToken',
+        'external.setEnabled',
+        'external.setRoute',
         'session.quit',
         'daemon.stop',
       ].sort(),

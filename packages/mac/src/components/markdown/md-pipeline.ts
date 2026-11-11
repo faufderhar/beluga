@@ -14,5 +14,7 @@ import { DOC_SCHEMA } from './md-schema.js';
  */
 export const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkAlerts];
 export const REHYPE_PLUGINS: PluggableList = [rehypeRaw, [rehypeSanitize, DOC_SCHEMA], rehypeSlug];
+/** GitHub's own words in the app (an issue, a PR comment): their HTML read and cut down as GitHub does. */
+export const GITHUB_REHYPE: PluggableList = [rehypeRaw, [rehypeSanitize, DOC_SCHEMA]];
 /** Ids from the document get one `user-content-` prefix, from the sanitizer (footnotes included). */
 export const TO_HTML = { clobberPrefix: '' } as const;

@@ -95,6 +95,9 @@ export interface TaskView {
   /** file: the file asked for. */
   readonly path?: string;
   readonly by: 'agent' | 'person';
+  /** An external agent asked through the sender's Beluga: its name, and (sent) its id. */
+  readonly via?: string;
+  readonly viaId?: string;
   /** Sent: the conversation your Claude asked from (its answer continues there). */
   readonly conversation?: string;
   /** The chat both people see its card in (BLG-208): your DM with them (`dm:<peerId>`), or the channel it was asked from. */
@@ -227,8 +230,8 @@ export const oneLine = (text: string, max = 120): string => {
 };
 
 /** The approval card's title for a request that reached you (screens find the card by it). */
-export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary' | 'secret'>>): string => {
-  const who = `${t.peerName}${t.by === 'agent' ? "'s agent" : ''}`;
+export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary' | 'secret' | 'via'>>): string => {
+  const who = `${t.peerName}${t.by === 'agent' ? "'s agent" : ''}${t.via ? ` (via ${oneLine(t.via)})` : ''}`;
   if (t.kind === 'file' && t.secret) return `${who} wants ${t.secret.label}`;
   if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
   if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;

@@ -5,7 +5,7 @@ import type { Plan } from '../src/core/plans/model.js';
 import { PlanPilot, plansByChannel } from '../src/core/plans/pilot.js';
 import type { Plans } from '../src/core/plans/plans.js';
 import { Store, initialState } from '../src/core/store.js';
-import { isSlow, lagLine, summaryLine, watchEventLoop } from '../src/daemon/lag.js';
+import { isSlow, lagLine, summaryLine, take, watchEventLoop } from '../src/daemon/lag.js';
 
 const plan = (id: string, home: string, issueIds: string[] = []): Plan =>
   ({ id, home, status: 'draft', body: { title: id, milestones: [{ id: 'm', title: 'm', tasks: issueIds.map((issueId, i) => ({ id: `t${i}`, title: issueId, issueId })) }] } }) as unknown as Plan;
@@ -97,13 +97,34 @@ describe('event-loop delay', () => {
     expect(lines[0]).toMatch(/^event loop delay: p50 [\d.]+ ms, p95 [\d.]+ ms/);
   });
 
-  it('reads how late the loop ran, not the sampling interval (an idle loop is near 0)', async () => {
+  it('reads how late the loop ran, not the sampling interval (an idle loop is 0)', () => {
+    // A histogram of tick intervals in nanoseconds, sampled every 20 ms. Not a live loop: how idle
+    // one reads depends on the machine (Windows' timers tick every 15.6 ms).
+    let resets = 0;
+    const histogram = (p50: number, p95: number, max: number, count = 10) => ({
+      count,
+      percentile: (p: number) => (p === 50 ? p50 : p95) * 1e6,
+      max: max * 1e6,
+      reset: () => void resets++,
+    });
+    expect(take(histogram(20, 20, 20))).toEqual({ p50: 0, p95: 0, max: 0 });
+    expect(take(histogram(21.5, 32, 1020))).toEqual({ p50: 1.5, p95: 12, max: 1000 });
+    // A tick that came early never reads as negative.
+    expect(take(histogram(19, 19, 19))).toEqual({ p50: 0, p95: 0, max: 0 });
+    // No samples: nothing to say, and it starts over all the same.
+    expect(take(histogram(0, 0, 0, 0))).toBeUndefined();
+    expect(resets).toBe(4);
+  });
+
+  it('reads a live idle loop far below its sampling interval', async () => {
     const lines: string[] = [];
     const stop = watchEventLoop((l) => void lines.push(l), { everyMs: 300, all: true });
     await wait(350);
     stop();
     const p50 = Number(/p50 ([\d.]+) ms/.exec(lines[0] ?? '')?.[1]);
-    expect(p50).toBeLessThan(15);
+    // Far below the 300 ms period, on any machine: not how idle it is (Windows' timers alone read
+    // ~16-32 ms, a busy runner more), which the test above checks on fixed numbers.
+    expect(p50).toBeLessThan(100);
   });
 
   it('counts a period as slow when its p95 or one stall is long', () => {

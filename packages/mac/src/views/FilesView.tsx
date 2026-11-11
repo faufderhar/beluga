@@ -15,6 +15,7 @@ import { SearchField, SearchResults } from './SharedSearch.js';
 import s from './files.module.css';
 import { revealLabel } from '../lib/os-words.js';
 import { useRevealFileLabel, useRevealLabel } from '../lib/remote-open.js';
+import { groupChatOpen } from '../lib/group-chat.js';
 import { ReaderContent } from './reader/reader-lazy.js';
 
 export { LANG, ext } from './reader/reader-model.js';
@@ -95,10 +96,11 @@ export function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionIt
     const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
     const mention = (): void => {
       const v = state.view;
-      // The conversation this folder belongs to (a workspace's own chat, else the room).
+      // The conversation this folder belongs to (a workspace's own chat, else the room's group chat, else a new chat).
       if (v.kind === 'workspace') actions.run({ type: 'open_ws', id: v.id, tab: 'chat' });
       else if (v.kind === 'shared') actions.run({ type: 'open_shared', owner: v.owner, id: v.id, tab: 'chat' });
-      else actions.run({ type: 'view', view: { kind: 'room' } });
+      else if (groupChatOpen(state)) actions.run({ type: 'view', view: { kind: 'room' } });
+      else actions.run({ type: 'new_chat', projectId: 'chats' });
       // Added to that chat's own words, once its box shows them.
       setTimeout(() => {
         const current = ui.get().buffer;

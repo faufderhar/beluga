@@ -133,9 +133,11 @@ describe('your settings on every computer', () => {
     await join(app, box);
     app.store.dispatch({ type: 'prefs', prefs: { effort: 'high' } });
     await waitFor(() => box.store.getState().prefs.effort === 'high', 20_000);
-    // Both before either sends (a change goes 100 ms after it's made): the Mac's is the newer.
+    // Both before either sends (a change goes 100 ms after it's made): the Mac's is the newer. A
+    // few ms apart without yielding, so no timer runs between them; a sleep there can stretch past
+    // those 100 ms on a busy machine, and the box's would arrive first.
     box.store.dispatch({ type: 'prefs', prefs: { theme: 'contrast' } });
-    await new Promise((r) => setTimeout(r, 5));
+    for (const t = Date.now(); Date.now() - t < 3; );
     app.store.dispatch({ type: 'prefs', prefs: { theme: 'light' } });
     await waitFor(() => app.machines.settingsSync().conflicts.some((c) => c.key === 'theme'), 10_000);
     await waitFor(() => box.store.getState().prefs.theme === 'light', 10_000);

@@ -148,6 +148,34 @@ daemon or the Mac app, check the phone too, in the same change:
 - Raise `android.versionCode` in `packages/companion/app.json` every release.
 - The first release with the new key (the one after 1.7.0) must tell phone users, once: uninstall Beluga and Beluga Link, install this version, pair again. More in `docs/updates.md` ("The phone app's signing key").
 
+## Tests that pass everywhere
+
+Your run is on a fast, quiet Mac. CI also runs every test on Linux and Windows, on shared runners
+that stall for seconds, and a PR then fails for a test it never touched. Most failed runs were that,
+not a real break. So a test you write or change:
+
+- **Waits for a condition, never for a time.** `waitFor(() => …)` (`tests/helpers.ts`), not
+  `setTimeout(r, 150)` then an `expect`. A step that needs two things at once holds until both
+  are there, not for a set time.
+- **Never asserts how long something took** or how idle the machine is (an event loop under
+  15 ms, a run within 5 s). Test the rule on fixed numbers, or with a clock passed in (`now`).
+- **Never races two changes through a sleep.** Two changes "before either sends" are made back to
+  back with no `await` between them, so no timer can run in between. A 5 ms sleep there can last
+  200 ms on a busy runner.
+- **Uses ports the system gives** (`listen(0)`). A port found free and used later can be taken by
+  then: when the code needs a set port, try another one on `EADDRINUSE`.
+- **Builds and compares paths with `path.join` and `realpathSync`**, never `/` in a regex or a
+  string. Windows paths use `\`, and its temp folder has a short and a long name.
+- **Stands in for a program with node, not `#!/bin/sh`** (Windows can't run a shell script by
+  name), or skips Windows with `it.skipIf(process.platform === 'win32')` and says why.
+- **Stops what it started before deleting its folder:** shells, git, servers, writes still in
+  flight. Windows won't delete a folder a process is still in.
+- **Gives slow setup room:** a `beforeAll` that builds a demo Mac (`createDemoWorkspaces`) or a
+  testnet takes its own timeout (`120_000`), as Windows can take 30 s for it.
+
+A test that fails on CI and not here is almost always one of these: find which, and fix that. A
+longer timeout alone only makes it fail less often.
+
 ## Checks
 
 `npm run typecheck`, `npx vitest run`, and in `packages/companion` and `packages/mac`: `npm run typecheck`.

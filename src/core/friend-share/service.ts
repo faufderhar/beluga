@@ -100,6 +100,8 @@ const ICON_MAX = 120_000;
 const wsOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const keyOf = (owner: string, id: string): string => `${owner}/${id}`;
+/** A repository's address as people say it: github.com/owner/repo. */
+const bareUrl = (url: string | undefined): string => (url ?? 'Its repository').replace(/^https:\/\//, '');
 const liveWorktrees = (p: Project) => p.workspaces.filter((w) => !w.archived && !w.pending && !w.external && w.kind !== 'main');
 
 export interface FriendSharesOptions {
@@ -139,6 +141,8 @@ export class FriendShares implements FriendSharing {
   private readonly checksIn = new Map<string, string>();
   /** The names you gave forks you asked for (their worktree's id → name). */
   private readonly forkNames = new Map<string, string>();
+  /** Forks waiting for their project to be on this Mac first (their worktree's id → the project's key). */
+  private readonly forksWaiting = new Map<string, string>();
 
   constructor(private readonly opts: FriendSharesOptions) {
     this.courier = new ShareCourier(opts.mesh, path.join(opts.dir, 'share-outbox.json'), (to, m) => this.acked(to, m));
@@ -609,12 +613,15 @@ export class FriendShares implements FriendSharing {
     }
     let author = from;
     if (m.as) {
-      // Only a worktree's owner passes on what others said in it.
-      if ((body.kind !== 'chat' && body.kind !== 'chat_react') || !theirs || m.as === this.opts.mesh.peerId) return;
+      // Only a worktree's owner passes on what others said in it (and what their own agents answered there).
+      if ((body.kind !== 'chat' && body.kind !== 'chat_react' && body.kind !== 'agent_event') || !theirs || m.as === this.opts.mesh.peerId) return;
       author = m.as;
     }
     if (body.kind === 'agent_request' && (!mine || body.project)) return;
-    if ((body.kind === 'agent_event' || body.kind === 'agent_question') && !theirs) return;
+    if (body.kind === 'agent_question' && !theirs) return;
+    // A contributor's own agent answering them in your worktree (their "@claude" there) writes in it too.
+    const guestAgent = body.kind === 'agent_event' && mine && !m.as && session.sharing.agentMayWrite(from, body.channel, body.requester);
+    if (body.kind === 'agent_event' && !theirs && !guestAgent) return;
     if (body.kind === 'fs_list' || body.kind === 'fs_read' || body.kind === 'fs_fetch' || body.kind === 'fs_search' || body.kind === 'ws_diff') {
       if (body.kind === 'ws_diff') {
         if (!mine) return;
@@ -632,6 +639,11 @@ export class FriendShares implements FriendSharing {
     const passOn = body.kind === 'chat' ? session.sharing.canPost(from, body.channel ?? '') : body.kind === 'chat_react' && session.sharing.canSee(from, body.channel);
     if (passOn && mine && !m.as) {
       for (const peer of Object.keys(session.sharing.members(ws!))) if (peer !== from) this.courier.send(peer, { k: 'body', b: body, as: from }, { reliable: true });
+    }
+    // Its steps as they stream go to who's linked now, as the owner's own agent's do.
+    if (guestAgent) {
+      const reliable = KEPT_EVENTS.has(body.event);
+      for (const peer of Object.keys(session.sharing.members(ws!))) if (peer !== from) this.courier.send(peer, { k: 'body', b: body, as: from }, { reliable });
     }
   }
 
@@ -683,14 +695,16 @@ export class FriendShares implements FriendSharing {
   // ---------------------------------------------------------------- your copy (BLG-258)
 
   /**
-   * Make your own copy of a project a friend shares with you whole: the one you already have when
-   * its repository is in your Projects, else a clone of it, else a bundle from their Mac.
+   * Make your own copy of a project a friend shares with you: the one you already have when its
+   * repository is in your Projects, else a clone of it, else (shared whole) a bundle from their Mac.
    */
   async makeCopy(owner: string, id: string): Promise<void> {
     const rec = this.received[keyOf(owner, id)];
-    if (!rec?.whole || rec.copy?.state === 'copying' || rec.copy?.state === 'ready') return;
+    // A copy you since took out of Projects is made again.
+    const made = rec?.copy?.state === 'ready' && this.state.projects.some((p) => p.id === rec.copy?.projectId);
+    if (!rec || !(rec.whole || rec.url) || rec.copy?.state === 'copying' || made) return;
     const manager = this.opts.session.workspaces?.manager;
-    if (!manager) return;
+    if (!manager) return this.setCopy(owner, id, { state: 'failed', error: 'Projects aren’t open on this Mac' });
     const have = rec.url ? await manager.projectForRemote(rec.url).catch(() => undefined) : undefined;
     if (have) return this.setCopy(owner, id, { state: 'ready', path: have.root, projectId: have.id });
     const dest = copyTarget(rec.ownerName, rec.name, this.opts.copies ?? copiesHome());
@@ -700,9 +714,11 @@ export class FriendShares implements FriendSharing {
         await cloneFrom(rec.url, dest);
         return void (await this.copied(owner, id, dest));
       } catch {
-        // Not one you can read (private, or no access): their Mac sends it instead.
+        // Not one you can read (private, or no access): their Mac sends it instead, when it's shared whole.
       }
     }
+    // Shared a worktree at a time: their Mac only sends what they chose to share.
+    if (!rec.whole) return this.setCopy(owner, id, { state: 'failed', error: `${bareUrl(rec.url)} couldn’t be cloned here (it may be private, or you don’t have access). Ask ${rec.ownerName} to share the whole project, and it’s copied from their Mac` });
     const why = cannotTake(rec.ownerName, this.opts.mesh.belugaOf(owner), 'share.copy', this.opts.mesh.isLinked(owner));
     if (why) return this.setCopy(owner, id, { state: 'failed', error: why });
     this.courier.send(owner, { k: 'copy_request', id }, { reliable: true });
@@ -782,15 +798,45 @@ export class FriendShares implements FriendSharing {
     if (!rec || rec.owner !== owner || !rec.worktrees.some((w) => w.id === wsId)) throw new Error('That worktree isn’t shared with you');
     if (rec.role !== 'contribute') throw new Error(`${rec.ownerName} shared it for you to follow along: forking it needs “Can work here”`);
     const now = this.state.forks[wsId]?.state;
-    if (now === 'asking' || now === 'copying') return;
+    if (now === 'preparing' || now === 'asking' || now === 'copying') return;
     const why = cannotTake(rec.ownerName, this.opts.mesh.belugaOf(owner), 'share.fork', this.opts.mesh.isLinked(owner));
     if (why) throw new Error(why);
     const project = await this.localProjectOf(rec);
-    if (!project) throw new Error(rec.url ? `Forking needs ${rec.name} on this Mac: add your clone of ${rec.url.replace(/^https:\/\//, '')} to Projects, then fork again` : `Forking needs ${rec.name} on this Mac: ask ${rec.ownerName} to share the whole project, and it’s copied here`);
+    if (!project && !rec.url && !rec.whole) throw new Error(`Forking needs ${rec.name} on this Mac: ask ${rec.ownerName} to share the whole project, and it’s copied here`);
     if (name?.trim()) this.forkNames.set(wsId, name.trim());
     else this.forkNames.delete(wsId);
+    if (project) return this.askFork(owner, wsId, project);
+    // Not on this Mac yet: it's got first (a clone, or their Mac sends it when it's shared whole), then forked.
+    this.forksWaiting.set(wsId, keyOf(owner, rec.id));
+    this.setFork(wsId, { state: 'preparing' });
+    void this.makeCopy(owner, rec.id);
+  }
+
+  private async askFork(owner: string, wsId: string, project: Project): Promise<void> {
     this.setFork(wsId, { state: 'asking' });
     this.courier.send(owner, { k: 'fork_request', ws: wsId, have: await haveOf(project.root) }, { reliable: true });
+  }
+
+  /** A project forks waited for is here (they go on), or couldn't come (they fail with why). */
+  private resumeForks(key: string, copy: SharedCopy): void {
+    if (copy.state === 'copying') return;
+    const waiting = [...this.forksWaiting].filter(([, k]) => k === key).map(([wsId]) => wsId);
+    for (const wsId of waiting) {
+      this.forksWaiting.delete(wsId);
+      if (copy.state === 'failed') {
+        this.forkFailed(wsId, copy.error ?? `${this.received[key]?.name ?? 'The project'} couldn’t be copied here`);
+        continue;
+      }
+      void this.forkNowHere(key, wsId).catch((err: unknown) => this.forkFailed(wsId, errorText(err)));
+    }
+  }
+
+  private async forkNowHere(key: string, wsId: string): Promise<void> {
+    const rec = this.received[key];
+    if (!rec) return this.forkFailed(wsId, 'That worktree isn’t shared with you any more');
+    const project = await this.localProjectOf(rec);
+    if (!project) return this.forkFailed(wsId, `${rec.name} isn’t on this Mac`);
+    await this.askFork(rec.owner, wsId, project);
   }
 
   /** Your own project for a friend's: your copy of it, else your clone of the same repository. */
@@ -906,7 +952,10 @@ export class FriendShares implements FriendSharing {
     this.received = { ...this.received, [key]: { ...rec, copy } };
     this.saveReceived();
     this.publishReceived(false);
-    if (copy.state === 'failed') this.opts.session.toast(`Couldn’t copy ${rec.name}: ${copy.error ?? 'it didn’t work'}`, 'warn');
+    // A fork waiting on it says so itself.
+    const forking = [...this.forksWaiting.values()].includes(key);
+    if (copy.state === 'failed' && !forking) this.opts.session.toast(`Couldn’t copy ${rec.name}: ${copy.error ?? 'it didn’t work'}`, 'warn');
+    this.resumeForks(key, copy);
   }
 
   private onUnshare(from: string, id: string): void {
@@ -933,7 +982,10 @@ export class FriendShares implements FriendSharing {
     const before = this.received[key];
     if (!before) return;
     this.received = Object.fromEntries(Object.entries(this.received).filter(([k]) => k !== key));
-    for (const w of before.worktrees) this.leaveWs(owner, w.id);
+    for (const w of before.worktrees) {
+      this.forksWaiting.delete(w.id);
+      this.leaveWs(owner, w.id);
+    }
     this.saveReceived();
     this.publishReceived(false);
   }

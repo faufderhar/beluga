@@ -3,6 +3,7 @@ import { ATTACHMENT_SCHEME } from '@beluga/core/attachment-share.js';
 import type { LinkedImage } from '@beluga/shared/attachment-links.js';
 import type { Location } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
+import { copyPng } from '../lib/copy.js';
 import { sourceTag } from '../machines/pane-model.js';
 
 /**
@@ -178,7 +179,14 @@ export function holdImage(api: Api, image: Loadable, size: ImageSize): { url: Pr
   };
 }
 
-export type ImageState = { readonly status: 'loading' } | { readonly status: 'ready'; readonly url: string } | { readonly status: 'error'; readonly error: string };
+/** Whether a failed read means the file is gone (an agent deleted or moved it since it linked it). */
+export const imageGone = (error: string): boolean => /ENOENT|no such file|is not there|is gone/i.test(error);
+
+/** What a picture that can't show says in its place: never the raw error for one that was deleted. */
+export const unavailableText = (error: string): { text: string; detail: string } =>
+  imageGone(error) ? { text: 'Image no longer here', detail: 'The file was moved or deleted since this was written' } : { text: 'Image unavailable', detail: error };
+
+export type ImageState ={ readonly status: 'loading' } | { readonly status: 'ready'; readonly url: string } | { readonly status: 'error'; readonly error: string };
 
 /** The image while it's on screen (kept that long): `thumb` in a message, `full` in the lightbox. */
 export function useImage(api: Api, image: ChatImage, size: ImageSize = 'thumb'): ImageState {
@@ -260,7 +268,7 @@ export function useLightbox(): Lightbox | undefined {
   );
 }
 
-/** Put the image on the clipboard (as PNG, which every app pastes). */
+/** Put the image on the clipboard as PNG, which every app pastes. */
 export async function copyImage(url: string): Promise<void> {
   const blob = await (await fetch(url)).blob();
   const png =
@@ -278,5 +286,5 @@ export async function copyImage(url: string): Promise<void> {
           img.onerror = () => reject(new Error("Couldn't read the image"));
           img.src = url;
         });
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+  await copyPng(png);
 }

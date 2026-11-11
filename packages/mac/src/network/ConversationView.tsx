@@ -240,6 +240,7 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
             </div>
             {chips}
             {edited ? <div className={s.under}>{edited}</div> : null}
+            {m.via ? <div className={s.under} data-sent-by={m.via.id}>Sent by {m.via.name}</div> : null}
             {askedChip}
           </div>
         </div>

@@ -54,6 +54,56 @@ describe('decideTool', () => {
     expect(decideTool('Write', { file_path: '/work/docs/x.md' }, rw)).toBe('ask'); // other share, not the primary
   });
 
+  describe("commands that name Beluga's private files (BLG-109)", () => {
+    const own = { ...rw, scope: 'full' as const, dotenv: true };
+    const files = ['daemon.json', 'identity.json', 'env.json', 'devices.json', 'web-sessions.json'];
+    const forms = (file: string): string[] => [
+      `cat ~/.beluga/${file}`,
+      `cat $HOME/.beluga/${file}`,
+      `cat \${HOME}/.beluga/${file}`,
+      `cat /Users/me/.beluga/${file}`,
+      `cat "$HOME/.beluga/${file}"`,
+      `cat '/Users/me/.beluga/${file}'`,
+      `cat ~/".beluga"/"${file}"`,
+      `cat ~/.be"lu"ga/${file}`,
+      `cat ~/.beluga/\\${file}`,
+      `cat ~/.beluga//./${file}`,
+      `cat ~/.BELUGA/${file.toUpperCase()}`,
+      `cat ~/.klaude/${file}`,
+      `python3 -c "print(open('$HOME/.beluga/${file}').read())"`,
+      `jq .token <~/.beluga/${file}|base64`,
+    ];
+
+    it('refuses each file in each form, also for your own Claude', () => {
+      for (const file of files) for (const command of forms(file)) expect(decideTool('Bash', { command }, own), command).toBe('deny');
+    });
+
+    it('stays refused when the same command also names a .env file', () => {
+      expect(decideTool('Bash', { command: 'cat .env ~/.beluga/daemon.json' }, own)).toBe('deny');
+    });
+
+    it('refuses them in commands for a friend and in a view', () => {
+      expect(decideTool('mcp__beluga__run_on', { command: 'cat ~/.beluga/daemon.json' }, ctx)).toBe('deny');
+      expect(decideTool('mcp__beluga_view__show', { view: { type: 'table', source: { kind: 'command', command: 'cat ~/.beluga/daemon.json' } } }, ctx)).toBe('deny');
+    });
+
+    it("leaves a project's .beluga and worktrees under ~/.beluga alone", () => {
+      for (const command of [
+        'ls .beluga/reports',
+        'cat .beluga/reports/summary.md',
+        'cp out.png .beluga/scratch/01-login.png',
+        'cat .beluga/scratch/env.json',
+        'cat .beluga/reports/daemon.json',
+        'cat /work/proj/.beluga/scratch/devices.json',
+        'cat ~/.beluga/workspaces/proj/task/.beluga/reports/summary.md',
+        'cat ~/.beluga/workspaces/proj/task/package.json',
+        'cat ~/.beluga/workspaces/proj/task/daemon.json',
+        'cat src/daemon.json env.json',
+        'cat my.beluga/daemon.json',
+      ]) expect(decideTool('Bash', { command }, own), command).toBe('ask');
+    });
+  });
+
   it('denies credential files anywhere, by path or in shell commands', () => {
     expect(decideTool('Read', { file_path: '.env' }, ctx)).toBe('deny');
     expect(decideTool('Read', { file_path: '/Users/me/.ssh/id_ed25519' }, ctx)).toBe('deny');

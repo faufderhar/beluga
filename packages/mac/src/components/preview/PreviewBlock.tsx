@@ -11,7 +11,7 @@ import { Button, IconButton, Segmented, Tip, cx } from '../ui.js';
 import { PropControls } from './PropControls.js';
 import { PreviewNotice, usePreviewHere } from './PreviewNotice.js';
 import { AuditPanel, EventsStrip, ProblemCard } from './PreviewParts.js';
-import { type ComponentWidth, COMPONENT_WIDTHS, askToFix, frameHeight, pageScale, propsForAgent, variantField } from './preview-model.js';
+import { type ComponentWidth, COMPONENT_WIDTHS, askToFix, floatsOverFrame, frameHeight, pageScale, propsForAgent, variantField } from './preview-model.js';
 import { PIN_STATES, type PinState, usePreview } from './use-preview.js';
 import s from './preview.module.css';
 
@@ -182,6 +182,8 @@ export function PreviewView({ ref_: ref, wsId, embedded = false }: { ref_: Previ
   const stageHeight = page ? (size === 'desktop' ? Math.min(pageHeight, Math.round(stageWidth * 0.62) || pageHeight) : pageHeight) : Math.round(contentHeight * scale);
   const frameStyle = page ? { width: deviceWidth, height: stageHeight / scale, transform: `scale(${scale})` } : deviceWidth ? { width: deviceWidth, height: contentHeight, transform: `scale(${scale})` } : undefined;
   const shown = p.drawn && !(p.result && !p.result.ok);
+  // Nothing to draw: the stage is just the note, at its own height, in the app's colours.
+  const blocked = !!p.problem && !floatsOverFrame(p.problem);
   const heading = (
     <button type="button" className={s.title} onClick={exports.length > 1 ? undefined : goTo}>
       {p.gallery ? `All components · ${file?.split('/').pop() ?? title}` : exports.length > 1 ? `${name} · ${file?.split('/').pop() ?? ''}` : title}
@@ -230,7 +232,7 @@ export function PreviewView({ ref_: ref, wsId, embedded = false }: { ref_: Previ
           {!embedded ? <IconButton icon="expand" label={expanded ? 'Smaller' : 'Bigger'} active={expanded} onClick={() => setExpanded((v) => !v)} /> : null}
         </figcaption>
         {ref.note ? <div className={s.note}>{ref.note}</div> : null}
-        <div ref={stage} className={cx(s.stage, page && s.pageStage, p.canvas === 'dark' && s.stageDark)} style={{ height: stageHeight }}>
+        <div ref={stage} className={cx(s.stage, page && s.pageStage, p.canvas === 'dark' && s.stageDark, blocked && s.stageBlocked)} style={{ height: blocked ? undefined : stageHeight }}>
           {p.src && p.ok && framed ? (
             <iframe
               ref={p.frame}

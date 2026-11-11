@@ -341,6 +341,20 @@ describe('Session', () => {
     await expect(kay.session.files.readImageFile({ owner: bob.session.selfId, share: 'nope', path: 'flow.svg' })).rejects.toThrow(/not shared with you/);
   });
 
+  it('a picture whose file was deleted raises no toast: the screen shows a placeholder instead', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { files: { 'shot.png': 'x' } });
+    await room(kay);
+    const at = { owner: kay.session.selfId, share: 'proj', path: 'gone.gif' };
+    await expect(kay.screen.api.files.version(at)).rejects.toThrow(/ENOENT/);
+    await expect(kay.screen.api.files.readImageFile(at)).rejects.toThrow(/ENOENT/);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kay.toasts.filter((t) => t.includes('Something went wrong'))).toEqual([]);
+    // Any other failed call still says so.
+    await expect(kay.screen.api.session.localLocation(42 as unknown as string, false)).rejects.toThrow();
+    await waitFor(() => kay.toasts.some((t) => t.startsWith('Something went wrong')));
+  });
+
   it('a picture a preview shows is watched: written again, its new time comes for the preview to read it again (BLG-670)', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');

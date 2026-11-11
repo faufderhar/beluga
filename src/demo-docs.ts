@@ -489,3 +489,11 @@ export function Stat({ value, caption }: { value: number; caption: string }) {
   );
 }
 `;
+
+/** A component whose import isn't there yet, for a preview that says why it can't draw. */
+export const DEMO_PRICE_TAG_TSX = `import { formatPrice } from './format-price';
+
+export function PriceTag({ cents }: { cents: number }) {
+  return <strong>{formatPrice(cents)}</strong>;
+}
+`;

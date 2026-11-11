@@ -113,7 +113,6 @@ const MAC_SHORTCUTS: readonly ShortcutDef[] = [
 
   def('go-overview', 'Overview', 'Go', ['Cmd+1']),
   def('go-tasks', 'Tasks', 'Go', ['Cmd+2']),
-  def('go-room', 'Chat', 'Go', ['Cmd+3']),
   def('go-search', 'Search', 'Go', ['Cmd+4']),
   def('go-usage', 'Usage', 'Go', ['Cmd+5']),
   def('go-terminal', 'Terminal', 'Go', ['Cmd+6']),
@@ -517,13 +516,26 @@ function tidy(o: Record<string, readonly string[]>): ShortcutOverrides {
 
 /* ---------- Pressing them ---------- */
 
+/**
+ * The press's other reading, when it may stand in: never for a Latin letter your layout typed or a
+ * key the system keeps (on Dvorak, ⌘V is where ⌘. is on a US keyboard: it pastes, never Stops).
+ * A layout that types other letters (Russian, Greek) still reaches shortcuts by the key.
+ */
+function otherReading(first: string | undefined, second: string | undefined): string | undefined {
+  if (!first || !second) return undefined;
+  const c = parseChord(first);
+  if (c && /^[A-Z]$/.test(c.key)) return undefined;
+  return (onMac() ? MAC_BUILT_IN : OTHER_BUILT_IN).some(([k]) => k === first) ? undefined : second;
+}
+
 /** Does this key press fire `id`? (Matching the way it's recorded first, then by the other reading.) */
 export function pressed(bindings: Bindings, id: string, e: KeyPress): boolean {
   const keys = bindings[id] ?? [];
   if (!keys.length) return false;
-  const [first, second] = chordsOf(e);
+  const [first, read] = chordsOf(e);
   if (first && keys.includes(first)) return true;
   // The other reading counts only when nothing else is this press the first way.
+  const second = otherReading(first, read);
   if (!second || !keys.includes(second)) return false;
   return !SHORTCUTS.some((d) => d.id !== id && (bindings[d.id] ?? []).includes(first!));
 }
@@ -531,8 +543,9 @@ export function pressed(bindings: Bindings, id: string, e: KeyPress): boolean {
 /** The first of these shortcuts this key press fires. */
 export function shortcutFor(bindings: Bindings, e: KeyPress, ids: Iterable<string>): string | undefined {
   const list = [...ids];
-  const [first, second] = chordsOf(e);
+  const [first, read] = chordsOf(e);
   if (!first) return undefined;
+  const second = otherReading(first, read);
   return list.find((id) => (bindings[id] ?? []).includes(first)) ?? (second ? list.find((id) => (bindings[id] ?? []).includes(second)) : undefined);
 }
 

@@ -75,6 +75,25 @@ describe('a worktree shared over the network', () => {
     expect(workView(kay.store.getState(), ctx).projects.some((p) => p.name === 'ata · bob-api')).toBe(true);
   }, 60_000 * SLOW);
 
+  it("a guest's @claude is their own agent: it reads the worktree over the link and everyone sees its answer", async () => {
+    const { ata, kay, mia, channel } = await sharedWorktree();
+    expect(kay.session.submit('@claude what changed here?', { channel })).toBe(true);
+    // Kay's own agent answers, on kay's Mac; ata's stays out of it.
+    await settle(() => agentDone(kay, channel, 'what changed here?'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['what changed here?']);
+    expect(ata.runs).toHaveLength(0);
+    // Ata sees it in her worktree, and passes it on to mia (not kay's friend), as kay's agent's.
+    await settle(() => agentDone(ata, channel, 'what changed here?') && agentDone(mia, channel, 'what changed here?'));
+    expect(agentDone(mia, channel, 'what changed here?')).toMatchObject({ owner: kay.id });
+    // Kay's agent reads the worktree over the link, ata named as in the conversation.
+    const share = kay.store.getState().shared.find((w) => `ws:${w.id}` === channel)!.share;
+    const files = await kay.session.bridge.listPeerFiles('ata', share, '');
+    expect(files.length).toBeGreaterThan(0);
+    // "@claude:ata" is still hers.
+    kay.session.submit('@claude:ata add a test', { channel });
+    await settle(() => ata.runs.some((r) => r.prompt === 'add a test'));
+  }, 60_000 * SLOW);
+
   it('reactions reach everyone in it, through its owner’s Mac for people who aren’t friends (BLG-702)', async () => {
     const { ata, kay, mia, channel } = await sharedWorktree();
     ata.session.sendChat('pushed the fix', false, channel);

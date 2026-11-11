@@ -1,5 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { type BtwRequest, btwPrompt } from '../../btw.js';
+import { claudeExecutable } from '../../claude-code.js';
 
 /** How long a side question may take before it's given up. */
 const BTW_TIMEOUT_MS = 3 * 60_000;
@@ -38,7 +39,7 @@ export async function askBtw(req: BtwRequest, opts: { claudePath?: string; env?:
         includePartialMessages: true,
         abortController,
         ...(req.model ? { model: req.model } : {}),
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
+        ...claudeExecutable(opts.claudePath),
         ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
       },
     });

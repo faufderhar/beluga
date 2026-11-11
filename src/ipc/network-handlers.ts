@@ -1,3 +1,4 @@
+import type { MessageVia } from '../protocol.js';
 import { chatOf } from '../core/chat/launch.js';
 import { answerFriendOffer, sendFriendOffer } from '../core/friend-offers.js';
 import { networkEnabled, networkOf, networkStatus, networkSwitchOf } from '../core/network.js';
@@ -49,13 +50,13 @@ function incoming(s: Session, list: readonly MessageView[]): MessageView[] {
   return list.map((m) => ({ ...m, text: localMentions(m.text, issues) }));
 }
 
-function post(s: Session, conversation: string, body: { text: string; files?: readonly ChatFile[] | undefined; ask?: 'all' | readonly string[] | undefined }) {
+export function post(s: Session, conversation: string, body: { text: string; files?: readonly ChatFile[] | undefined; ask?: 'all' | readonly string[] | undefined }, via?: MessageVia) {
   const chat = chatOf(s);
   const files = (body.files ?? []).map((f) => {
     if (!chat.files.store.has(f.sha)) throw new Error(`${f.name} isn’t ready to send: add it again`);
     return chat.files.info(f.sha) ?? f;
   });
-  const extras = { ...(files.length ? { files } : {}), ...(body.ask ? { ask: { to: body.ask } } : {}) };
+  const extras = { ...(files.length ? { files } : {}), ...(body.ask ? { ask: { to: body.ask } } : {}), ...(via ? { via } : {}) };
   return chat.mesh.post(conversation, outgoing(s, conversation, body.text), Object.keys(extras).length ? extras : undefined);
 }
 

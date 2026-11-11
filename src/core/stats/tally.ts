@@ -99,7 +99,7 @@ export function fromHistory(file: StatsFile, items: readonly LogItem[], self: st
   let out = file;
   for (const it of items) {
     if (it.ts >= before) continue;
-    if (it.type === 'chat' && it.from === self && !it.byAgent) out = countPrompt(out, it.ts, root, agent, it.text.length);
+    if (it.type === 'chat' && isYourPrompt(it, self)) out = countPrompt(out, it.ts, root, agent, it.text.length);
     if (it.type === 'agent' && it.owner === self && (it.requester ?? self) === self && it.endTs) {
       const ms = it.endTs - (it.queuedUntil ?? it.ts);
       // A run longer than a day is a clock or a lost "done": not counted as time.
@@ -107,6 +107,14 @@ export function fromHistory(file: StatsFile, items: readonly LogItem[], self: st
     }
   }
   return out;
+}
+
+/**
+ * A chat line you typed to your agent, by the rules the live count uses (StatsCounter.prompt): not
+ * your agent's words, not one another agent sent through you, not blank, not a /command.
+ */
+function isYourPrompt(it: Extract<LogItem, { type: 'chat' }>, self: string): boolean {
+  return it.from === self && !it.byAgent && !it.via && Boolean(it.text.trim()) && !it.text.startsWith('/');
 }
 
 /** A pull request as `gh pr list --json number,title,headRefName,createdAt,mergedAt,additions,deletions` gives it. */

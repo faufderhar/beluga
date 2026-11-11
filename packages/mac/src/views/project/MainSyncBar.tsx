@@ -210,7 +210,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
           <Tip label={`${sync.fetchError.message} Click to let your agent look into it.`}>
             <button type="button" className={cx(s.status, s.statusWarn, s.statusButton)} onClick={() => setDialog(fetchDialog(sync.fetchError!.message))}>
               <Icon name="alert" size={12} />
-              {sync.fetchError.reason === 'auth' ? 'Sign-in needed to fetch' : sync.fetchError.reason === 'offline' ? 'Couldn’t reach the remote' : 'Couldn’t fetch'}
+              {sync.fetchError.reason === 'auth' ? 'Sign-in needed to fetch' : sync.fetchError.reason === 'offline' ? 'Couldn’t reach the remote' : sync.fetchError.reason === 'https_broken' ? 'https doesn’t work here' : 'Couldn’t fetch'}
             </button>
           </Tip>
         ) : sync.upstream ? (

@@ -130,7 +130,7 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
         .focused(false)
         .focusable(false)
         .visible(false);
-    let window = builder.build()?;
+    let window = crate::menu::without_menu_bar(app, builder).build()?;
     // The mouse and keyboard go through to whatever is under it.
     let _ = window.set_ignore_cursor_events(true);
     #[cfg(target_os = "macos")]
@@ -141,8 +141,7 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
             leave_out_of_captures(&w);
         });
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = window.remove_menu();
+    crate::menu::drop_menu_bar(&window);
     Ok(true)
 }
 

@@ -817,6 +817,11 @@ export class Sentinels {
     return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined), brief: sentinelNote(), inRun: false };
   }
 
+  /** An external agent's sentinel and dashboard tools: the lists show only what `visible` holds. They have the same limits as your own agent's: never turning one on. */
+  toolsForAgent(visible: (sentinel: Sentinel) => boolean): { readonly tools: SentinelTools; readonly dashboard: DashboardTools } {
+    return { tools: this.toolsFor(undefined, undefined, undefined, visible), dashboard: this.dashboardTools(undefined, undefined, visible) };
+  }
+
   /** Where the Sentinel chat's Claude runs (its own folder and session), your runs only. */
   chatPlace(channel: string, from: string): AgentPlace | undefined {
     return isSentinelChat(channel) ? this.chats.place(channel, from) : undefined;
@@ -1833,11 +1838,11 @@ export class Sentinels {
   }
 
   /** metric_list: each sentinel's numbers, with their last value. */
-  private metricList(): string {
+  private metricList(visible: (sentinel: Sentinel) => boolean = () => true): string {
     const all = this.allMetrics();
     if (!all.length) return 'No numbers kept yet: a sentinel keeps them with a Keep the numbers step.';
     return this.items
-      .filter((i) => this.metrics[i.id])
+      .filter((i) => this.metrics[i.id] && visible(i))
       .map((i) => {
         const lines = Object.values(this.metrics[i.id]!).map((m) => {
           const last = m.points.at(-1);
@@ -2006,7 +2011,7 @@ export class Sentinels {
   }
 
   /** Dashboards and numbers as Claude's tools: sentinels by id or name; sentinel_measure inside a run only. */
-  private dashboardTools(active: ActiveRun | undefined, building?: string): DashboardTools {
+  private dashboardTools(active: ActiveRun | undefined, building?: string, visible?: (sentinel: Sentinel) => boolean): DashboardTools {
     const ref = (sentinel: string, metric: string): MetricRef => {
       const s = this.need(sentinel);
       const name = this.metrics[s.id]?.[metric] ? metric : (Object.values(this.metrics[s.id] ?? {}).find((m) => m.label.toLowerCase() === metric.trim().toLowerCase())?.name ?? metricName(metric));
@@ -2098,7 +2103,7 @@ export class Sentinels {
         const d = this.dashboards.removeTile(dashboard, tileId);
         return `Removed tile ${tileId} from “${d.name}”.`;
       },
-      metricList: () => this.metricList(),
+      metricList: () => this.metricList(visible),
       metricRead: (sentinel: string, name: string, since?: string) => {
         const from = since ? sinceOf(since, this.now()) : undefined;
         if (since && from === undefined) throw new Error('since is a date (2026-09-01) or a time back (7d, 4w, 3 months)');
@@ -2110,7 +2115,7 @@ export class Sentinels {
 
   // ------------------------------------------------------------------ Claude's tools
 
-  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void): SentinelTools {
+  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void, visible: (sentinel: Sentinel) => boolean = () => true): SentinelTools {
     const line = (s: Sentinel): string => {
       const last = lastRunOf(this.state(), s.id);
       const next = this.nextAtOf(s);
@@ -2126,7 +2131,7 @@ export class Sentinels {
             },
           }
         : {}),
-      list: () => describeSentinels(this.items, line),
+      list: () => describeSentinels(this.items.filter(visible), line),
       create: (d: ToolDraft) => {
         const { name: _n, ...refs } = this.fromToolPatch({ trigger: d.trigger, steps: d.steps });
         const draft: SentinelDraft = { ...fromToolDraft(d), ...refs };

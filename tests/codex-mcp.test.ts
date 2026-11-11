@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CodexConnect } from '../src/agent/runtime/codex/app-server.js';
 import { CodexMcp, shortMcpError, toCodexRow } from '../src/agent/runtime/codex/mcp.js';
 import { createCodexBackend } from '../src/agent/runtime/codex/runner.js';
 import { routedBackend } from '../src/agent/runtime/router.js';
@@ -70,6 +71,30 @@ describe('Codex MCP servers in Settings (BLG-518)', () => {
     const slow = mcpOf(codex, 30);
     expect(await slow.signIn(cwd, 'figma')).toHaveProperty('url');
     expect(await slow.signedIn('figma')).toBe(false);
+  });
+
+  it('checks your servers with the variables your runs get, so a token saved in Beluga counts (#442)', async () => {
+    const codex = new FakeCodex();
+    const seen: Array<Readonly<Record<string, string | undefined>> | undefined> = [];
+    const connect: CodexConnect = (o) => {
+      seen.push(o.env);
+      return codex.connect(o);
+    };
+    const asked: string[] = [];
+    const ownEnv = (dir: string): Record<string, string> => (asked.push(dir), { GITHUB_PAT_TOKEN: 'saved-token' });
+    const b = createCodexBackend({ cwd, autoEdit: true, additionalDirectories: [], bridge: room, connect, ownEnv });
+    await b.mcpServers!([]);
+    await b.mcpSignIn!([], 'figma');
+    await b.mcpSignedIn!('figma');
+    await b.mcpSetEnabled!([], 'github', true);
+    expect(seen).toHaveLength(3);
+    for (const env of seen) {
+      // Your saved variables over Beluga's own environment, as a run's: PATH still finds what servers start.
+      expect(env?.GITHUB_PAT_TOKEN).toBe('saved-token');
+      expect(env?.PATH).toBe(process.env.PATH);
+    }
+    // Asked for the folder the check starts in (a project there brings its own variables).
+    expect(new Set(asked)).toEqual(new Set([cwd]));
   });
 
   it("routes Settings' ask to the runtime named, and the default's without one", async () => {

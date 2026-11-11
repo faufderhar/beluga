@@ -20,3 +20,15 @@ export async function copyRich(html: string, text: string): Promise<void> {
     await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([text], { type: 'text/plain' }) })]);
   } else await copyText(text);
 }
+
+/**
+ * Put a PNG on the clipboard. The app writes it through its own clipboard: WebKit refuses a
+ * picture written after an await, once the click no longer counts. A browser gets the picture
+ * as a promise, so the write starts inside the click and the bytes follow.
+ */
+export async function copyPng(png: Blob | Promise<Blob>): Promise<void> {
+  if (inApp()) {
+    const { writeImage } = await import('@tauri-apps/plugin-clipboard-manager');
+    await writeImage(new Uint8Array(await (await png).arrayBuffer()));
+  } else await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+}

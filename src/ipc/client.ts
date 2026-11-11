@@ -83,6 +83,15 @@ export type ApiProxy = {
 
 export type Call = <M extends Method>(method: M, ...args: Args<M>) => Promise<Result<M>>;
 
+/**
+ * Calls whose failure the screen shows in place, so they raise no "Something went wrong" toast:
+ * a picture in an answer whose file an agent has since deleted shows a placeholder, not an error.
+ */
+const QUIET_METHODS: ReadonlySet<Method> = new Set<Method>(['files.version', 'files.readImageFile']);
+
+/** Whether a failed call should say so in a toast (the screen shows the rest itself). */
+export const toastsFailure = (method: Method): boolean => !QUIET_METHODS.has(method);
+
 /** Build the grouped API over a call function (calls are made lazily by name). */
 export function apiProxy(call: (method: Method, args: readonly unknown[]) => Promise<unknown>): ApiProxy {
   const groups = new Map<string, Record<string, unknown>>();

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { chmod, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -56,7 +56,66 @@ export const claudeCodeBinary = (pin: ClaudeCodePin, home = belugaHome()): strin
  */
 export function claudeCodePath(): string | undefined {
   const pin = claudeCodePin();
-  return pin ? claudeCodeBinary(pin) : undefined;
+  return pin ? claudeCodeBinary(currentClaudeCode(pin) ?? pin) : undefined;
+}
+
+/**
+ * What a call to the Agent SDK runs: `explicit` (BELUGA_CLAUDE_PATH), else the Claude Code that's
+ * current now (claudeCodePath), asked at each call so a newer one is used from the next run on
+ * without a restart; none: the SDK finds its own.
+ */
+export function claudeExecutable(explicit?: string): { readonly pathToClaudeCodeExecutable?: string } {
+  const bin = explicit ?? claudeCodePath();
+  return bin ? { pathToClaudeCodeExecutable: bin } : {};
+}
+
+/** Where the newer Claude Code Beluga moved to is written (its pin), and the versions that failed their check. */
+const CURRENT_FILE = 'current.json';
+const SKIPPED_FILE = 'skipped.json';
+
+/** `a` newer than `b`, both `major.minor.patch`. */
+export function newerVersion(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+  return false;
+}
+
+/** Same release line as the build's pin (its major and minor): the SDK this build carries speaks to it. */
+export const sameLine = (a: string, b: string): boolean => a.split('.').slice(0, 2).join('.') === b.split('.').slice(0, 2).join('.');
+
+/**
+ * The newer Claude Code this Mac moved to (claude-code-updates.ts), when there is one: same line as
+ * the build's pin, newer than it, downloaded and checked. Undefined: the pin's own.
+ */
+export function currentClaudeCode(pin: ClaudeCodePin, home = belugaHome()): ClaudeCodePin | undefined {
+  try {
+    const cur = JSON.parse(readFileSync(path.join(claudeCodeDir(home), CURRENT_FILE), 'utf8')) as Partial<ClaudeCodePin>;
+    if (typeof cur.version !== 'string' || typeof cur.url !== 'string' || typeof cur.integrity !== 'string') return undefined;
+    const it = cur as ClaudeCodePin;
+    if (!sameLine(it.version, pin.version) || !newerVersion(it.version, pin.version) || skippedClaudeCode(home).includes(it.version)) return undefined;
+    return existsSync(claudeCodeBinary(it, home)) ? it : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Versions that failed their check here: never tried again. */
+export function skippedClaudeCode(home = belugaHome()): string[] {
+  try {
+    const list = JSON.parse(readFileSync(path.join(claudeCodeDir(home), SKIPPED_FILE), 'utf8')) as unknown;
+    return Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Move to `to` (checked), or remember a version that failed its check. */
+export function recordClaudeCode(home: string, outcome: { readonly current: ClaudeCodePin } | { readonly skipped: string }): void {
+  const dir = claudeCodeDir(home);
+  mkdirSync(dir, { recursive: true });
+  if ('current' in outcome) writeFileSync(path.join(dir, CURRENT_FILE), JSON.stringify(outcome.current), { mode: 0o600 });
+  else writeFileSync(path.join(dir, SKIPPED_FILE), JSON.stringify([...new Set([...skippedClaudeCode(home), outcome.skipped])].slice(-20)), { mode: 0o600 });
 }
 
 /**
@@ -96,8 +155,11 @@ async function fetchTo(url: string, to: string, onBytes: (got: number, total?: n
   await pipeline(Readable.fromWeb(res.body as never), count, createWriteStream(to, { mode: 0o600 }));
 }
 
-/** Download, check and unpack the pinned Claude Code; other versions are removed. */
-export async function installClaudeCode(pin: ClaudeCodePin, opts: { home?: string; onProgress?: (p: ClaudeCodeProgress) => void; download?: typeof fetchTo } = {}): Promise<string> {
+/**
+ * Download, check and unpack a Claude Code; other versions are removed, but for `keep` (the build's
+ * pin and the one in use, when this is a newer one being fetched).
+ */
+export async function installClaudeCode(pin: ClaudeCodePin, opts: { home?: string; onProgress?: (p: ClaudeCodeProgress) => void; download?: typeof fetchTo; keep?: readonly string[] } = {}): Promise<string> {
   const dir = claudeCodeDir(opts.home);
   const bin = claudeCodeBinary(pin, opts.home);
   if (existsSync(bin)) return bin;
@@ -117,7 +179,8 @@ export async function installClaudeCode(pin: ClaudeCodePin, opts: { home?: strin
     await rm(tgz, { force: true });
     await rm(unpack, { recursive: true, force: true });
   }
-  for (const old of readdirSync(dir)) if (old !== pin.version) await rm(path.join(dir, old), { recursive: true, force: true });
+  const keep = new Set([pin.version, ...(opts.keep ?? []), CURRENT_FILE, SKIPPED_FILE]);
+  for (const old of readdirSync(dir)) if (!keep.has(old)) await rm(path.join(dir, old), { recursive: true, force: true });
   return bin;
 }
 
@@ -130,7 +193,7 @@ const watchers = new Set<(p: ClaudeCodeProgress) => void>();
  */
 export function claudeCodeReady(onProgress?: (p: ClaudeCodeProgress) => void): Promise<void> {
   const pin = claudeCodePin();
-  if (!pin || existsSync(claudeCodeBinary(pin))) return Promise.resolve();
+  if (!pin || existsSync(claudeCodeBinary(pin)) || currentClaudeCode(pin)) return Promise.resolve();
   if (onProgress) watchers.add(onProgress);
   pending ??= installClaudeCode(pin, { onProgress: (p) => watchers.forEach((w) => w(p)) })
     .then(() => undefined)

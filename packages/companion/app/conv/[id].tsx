@@ -420,6 +420,11 @@ function YourTurn({ t, onLongPress, chips }: { t: TurnView; onLongPress?: (() =>
   const waiting = t.steer?.waiting;
   return (
     <Press onLongPress={onLongPress} disabled={!onLongPress} scaleTo={0.99} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
+      {t.via ? (
+        <T v="caption" style={{ marginBottom: 4, marginRight: 4 }}>
+          {`Sent by ${t.via}`}
+        </T>
+      ) : null}
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: waiting ? 0.6 : 1 }}>
         <Prose prose={t.prose} size={15} tasks />
       </View>
@@ -507,6 +512,7 @@ function ClaudeTurn({ t, all, onAgent, topic, runtime, chips }: { t: TurnView; a
           {t.name}
         </T>
         <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
+          {t.via ? `Sent by ${t.via}${t.steps || mins ? ' · ' : ''}` : ''}
           {t.steps ? `${t.steps} ${t.steps === 1 ? 'step' : 'steps'}` : ''}
           {mins ? ` · ${mins} min` : ''}
         </T>

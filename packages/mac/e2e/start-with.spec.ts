@@ -103,7 +103,7 @@ test('a draft plan’s Approve ▾: approve it, worked by Codex; then Start ▾'
   await expect(page.getByRole('button', { name: 'Approve Plan' }).first()).toBeVisible({ timeout: 30_000 });
   await expect(main(page).locator('[data-ready]')).toHaveAttribute('data-ready', 'true', { timeout: 20_000 });
 
-  await page.getByRole('button', { name: 'Approve, worked by another agent' }).first().click();
+  await page.getByRole('button', { name: 'More ways to approve' }).first().click();
   const byCodex = menu(page).getByRole('menuitem', { name: 'Approve, worked by Codex', exact: true });
   await expect(byCodex).toBeVisible();
   await shot(page, '07-plan-approve-worked-by');

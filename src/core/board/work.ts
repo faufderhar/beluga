@@ -1,3 +1,4 @@
+import { actingVia } from '../acting-agent.js';
 import type { BoardTools, TaskDefinition } from '../../agent/types.js';
 import { type DraftContext, type TaskDraft, firstLineTitle } from '../../agent/task-drafter.js';
 import { personMentions } from '../person-mentions.js';
@@ -15,7 +16,7 @@ import { chosenAgent } from '../settings.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, alongPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, friendNote, gitHubLine, ownTaskPrompt, reposPrompt } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, boardName, boardOf, childrenOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, isStartable, issueForWorkspace, reposOf, titleFromName, worktreeDoing, worktreeOf } from './model.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type ExternalActor, type BriefSection, type Issue, STATUS_INFO, boardName, boardOf, childrenOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, isStartable, issueForWorkspace, reposOf, titleFromName, worktreeDoing, worktreeOf } from './model.js';
 
 /** How a name is written after "@" (as the message box completes it: src/ui/suggest.ts friendMention). */
 const handleOf = (name: string): string => `@${name.replace(/[^\p{L}\p{N}_.-]+/gu, '')}`;
@@ -349,7 +350,7 @@ export class BoardWork {
    * with `claude`, your Claude starts on the task there with its brief. → the workspace's id.
    * The worktree runs `opts.agent`, else the task's own agent, else your default (BLG-497).
    */
-  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; readonly agent?: AgentRef; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
+  async start(ref: string, opts: { /** Who started it from another screen: an external agent, with its own label. */ readonly by?: Actor; readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; readonly agent?: AgentRef; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
@@ -374,8 +375,9 @@ export class BoardWork {
       if (at >= 0) this.expecting.splice(at, 1);
     }
     if (!ws) throw new Error('Couldn’t create the worktree');
+    this.noteAgentStarted(ws.id);
     // (Linked as it opened; started here in case the event came from elsewhere.)
-    if (!this.board.need(issue.id).worktrees.includes(ws.id)) this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, this.me());
+    if (!this.board.need(issue.id).worktrees.includes(ws.id)) this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, opts.by ?? this.me());
     const now = this.board.need(issue.id);
     const patch: IssuePatch = {
       ...(now.status === 'backlog' || now.status === 'todo' ? { status: 'in_progress' as const } : {}),
@@ -383,12 +385,18 @@ export class BoardWork {
       // A plan's task stays no one's: the plan's Claude does it (one given to a person waits for them).
       ...((opts.claude || opts.prompt) && !now.assignee && !now.plan ? { assignee: this.me() } : {}),
     };
-    if (Object.keys(patch).length) this.board.update(issue.id, patch, this.me());
+    if (Object.keys(patch).length) this.board.update(issue.id, patch, opts.by ?? this.me());
     // An epic whose sub-tasks run in other repos: a worktree in each, and this one's Claude works in all of them.
     const along = await this.startAlong(this.board.need(issue.id), name, opts.agent ?? issue.agent);
     if (opts.prompt) this.deps.askClaude(opts.prompt(this.board.need(issue.id), ws), `${WS}${ws.id}`, opts.shown);
     else if (opts.claude) this.deps.askClaude(startPrompt(this.board.need(issue.id), along.map((w) => this.repoName(w.projectId) ?? w.name)), `${WS}${ws.id}`);
     return ws.id;
+  }
+
+  /** A worktree an external agent's call opened stays that agent's, so what a plan asks there later keeps its level. */
+  private noteAgentStarted(worktree: string): void {
+    const via = actingVia();
+    if (via) this.deps.controller?.manager.setStartedBy(worktree, { id: via.id, name: via.name });
   }
 
   /**
@@ -470,6 +478,7 @@ export class BoardWork {
       if (at >= 0) this.expecting.splice(at, 1);
     }
     if (!ws) throw new Error('Couldn’t create the worktree');
+    this.noteAgentStarted(ws.id);
     for (const issue of issues) this.linkShared(issue.id, ws);
     const now = this.board.need(first.id);
     if (now.status === 'backlog' || now.status === 'todo') this.board.update(first.id, { status: 'in_progress' }, this.me());
@@ -741,9 +750,22 @@ export class BoardWork {
 
   // ------------------------------------------------------------------ Claude's tools
 
-  private toolsFor(channel: string, current: Issue | undefined, planning = false, home?: FriendHome): BoardTools {
+  /**
+   * An external agent's task tools: its name in the history, and it sees only tasks in `visible`
+   * repos. A private task is the user's alone, so an agent never sees one.
+   */
+  toolsForAgent(agent: ExternalActor, visible: (projectId: string) => boolean): BoardTools {
+    return this.toolsFor('external', undefined, false, undefined, { by: this.agentActor(agent), name: agent.name, visible: (i) => !i.private && visible(i.projectId) });
+  }
+
+  /** An external agent as the board and plans record it. */
+  agentActor(agent: ExternalActor): Actor {
+    return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName(), agent: this.agentIn(undefined), external: agent };
+  }
+
+  private toolsFor(channel: string, current: Issue | undefined, planning = false, home?: FriendHome, external?: { readonly by: Actor; readonly name: string; readonly visible: (issue: Issue) => boolean }): BoardTools {
     const board = this.board;
-    const by = (): Actor => (home ? { ...this.myClaude(channel), for: { id: home.friend.id, name: home.friend.name.slice(0, 64) } } : this.myClaude(channel));
+    const by = (): Actor => external?.by ?? (home ? { ...this.myClaude(channel), for: { id: home.friend.id, name: home.friend.name.slice(0, 64) } } : this.myClaude(channel));
     const state = (): ReturnType<Board['state']> => board.state();
     // A friend's run (BLG-701) reaches its repo's board only, and never a private task.
     const reachable = (issue: Issue): boolean => !home || (!issue.private && (boardOf(issue) === home.boardId || issue.projectId === home.projectId));
@@ -820,7 +842,8 @@ export class BoardWork {
           ...(f.query ? { query: f.query } : {}),
         })
           .filter((i) => (!onBoard && !repo) || boardOf(i) === onBoard || (repo !== undefined && i.projectId === repo))
-          .filter(reachable);
+          .filter(reachable)
+          .filter((i) => external?.visible(i) ?? true);
         return describeList(f.scope === 'all' || f.scope === 'mine' ? found : found.filter((i) => isOpen(i.status)), state(), this.repoName);
       },
       create: (input) => {
@@ -870,7 +893,7 @@ export class BoardWork {
         if (taken && isOwnBoard(taken)) throw new Error(`There's already a board called ${boardName(state(), taken, this.repoName)}: put tasks on it with task_create (board: its name), or pick another name`);
         const id = board.createBoard({ name: input.name, repos, ...(input.prefix ? { prefix: input.prefix } : {}) });
         const made = state().projects[id]!;
-        this.deps.toast?.(`${this.agent()} made the ${made.name} board: Tasks › the board switcher`);
+        this.deps.toast?.(`${external?.name ?? this.agent()} made the ${made.name} board: Tasks › the board switcher`);
         return `Made the board "${made.name}" (keys ${made.prefix}-…), covering ${repos.map(named).join(', ')}. Put tasks on it with task_create (board: "${made.name}"), each with project: the repo it runs in. Name it in your answer for the user.`;
       },
       update: (key, patch) => {

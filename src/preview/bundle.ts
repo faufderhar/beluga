@@ -6,6 +6,7 @@ import { isSecretPath } from '../core/shares.js';
 import type { PreviewProblem } from '../shared/preview/opened.js';
 import { OUTSIDE, buildProblem } from './problems.js';
 import { nextPlugin, sveltePlugin, tailwindPlugin, vuePlugin } from './plugins.js';
+import { REACT_NATIVE_DEFINE, WEB_FIRST_EXTENSIONS, browserPlugin, reactNativePlugin, reactNativeWebOf } from './react-native.js';
 import type { Framework } from '../shared/preview/components.js';
 
 /**
@@ -157,6 +158,8 @@ export function fencePlugin(root: string): Plugin {
 export async function makeBundler(root: string, file: string, rel: string, entry: EntryOptions): Promise<Bundler> {
   const esbuild = await loadEsbuild();
   const loader = Object.fromEntries(ASSETS.map((ext) => [ext, 'dataurl' as const]));
+  // A React Native component is built as its own web build would (react-native-web).
+  const native = entry.framework === 'react' && reactNativeWebOf(file) !== undefined;
   // The context as it's made: a dispose during its making waits for it, so none is left behind.
   let ctx: Promise<BuildContext<{ write: false; metafile: true }>> | undefined;
   let disposed = false;
@@ -178,7 +181,8 @@ export async function makeBundler(root: string, file: string, rel: string, entry
       minifySyntax: true,
       outfile: path.join(os.tmpdir(), 'beluga-preview', 'bundle.js'),
       loader: { ...loader, '.js': 'jsx' },
-      define: { 'process.env.NODE_ENV': '"production"', global: 'globalThis', __VUE_OPTIONS_API__: 'true', __VUE_PROD_DEVTOOLS__: 'false', __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false' },
+      define: { 'process.env.NODE_ENV': '"production"', global: 'globalThis', __VUE_OPTIONS_API__: 'true', __VUE_PROD_DEVTOOLS__: 'false', __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false', ...(native ? REACT_NATIVE_DEFINE : {}) },
+      ...(native ? { resolveExtensions: WEB_FIRST_EXTENSIONS } : {}),
       // Svelte libraries publish their components under the "svelte" condition.
       conditions: entry.framework === 'svelte' ? ['svelte', 'browser', 'module'] : ['browser', 'module'],
       ...(entry.framework === 'svelte' ? { mainFields: ['svelte', 'browser', 'module', 'main'] } : {}),
@@ -186,7 +190,7 @@ export async function makeBundler(root: string, file: string, rel: string, entry
       legalComments: 'none',
       charset: 'utf8',
       // The fence first: nothing outside the worktree is read by the others either.
-      plugins: [fencePlugin(root), tailwindPlugin(root), nextPlugin(), ...(entry.framework === 'vue' ? [vuePlugin(root)] : []), ...(entry.framework === 'svelte' ? [sveltePlugin(root, entry.svelte ?? 5)] : [])],
+      plugins: [fencePlugin(root), browserPlugin(), ...(native ? [reactNativePlugin()] : []), tailwindPlugin(root), nextPlugin(), ...(entry.framework === 'vue' ? [vuePlugin(root)] : []), ...(entry.framework === 'svelte' ? [sveltePlugin(root, entry.svelte ?? 5)] : [])],
     }));
   return {
     async build(): Promise<BuildResult> {

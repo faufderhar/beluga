@@ -444,3 +444,7 @@
     background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 }
+
+.fullWarning {
+  color: var(--error, #b3261e);
+}

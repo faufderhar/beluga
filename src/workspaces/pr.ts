@@ -4,7 +4,8 @@ import path from 'node:path';
 import type { PrCheck, PullRequest } from '../core/work-store.js';
 import { belugaHome } from './store.js';
 import { belugaEnv } from '../core/beluga-env.js';
-import { type GitSetup, httpsRemoteOf } from '../shared/git-trouble.js';
+import { type GitSetup, type GitTroubleKind, classifyGitError, httpsRemoteOf } from '../shared/git-trouble.js';
+import { rememberSshRoute, sshArgsFor, withSshRoutes } from './ssh-routes.js';
 import { type GitHubRepo, PR_TARGET_KEY, ghRepoEnv, gitCommonDir, originRepo, originRepoEnv, prTargetOf, pullOfBranch, repoSlug } from './github.js';
 export { describePr } from '../shared/format.js';
 
@@ -113,7 +114,8 @@ const QUIET_ENV = { GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GH_NO_UPD
 
 const run = (cmd: string, args: readonly string[], cwd: string, timeoutMs = 20_000, extraEnv: Readonly<Record<string, string>> = {}): Promise<string> =>
   new Promise((resolve, reject) => {
-    execFile(cmd, [...args], { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, ...extraEnv, ...QUIET_ENV } }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
+    // git that reaches a remote goes over SSH where https was found not to work (ssh-routes.ts).
+    execFile(cmd, cmd === 'git' ? [...withSshRoutes(args)] : [...args], { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, ...extraEnv, ...QUIET_ENV } }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
   });
 
 /** Where Homebrew puts programs: a Mac app started from the Dock gets a PATH without them. */
@@ -347,11 +349,42 @@ export const PR_LIST_LIMIT = 60;
  * lost. Any other refusal says git's reason, not its first line ("To https://github.com/…").
  */
 export async function pushForPr(dir: string, head: string, opts: { readonly https?: boolean } = {}): Promise<'pushed' | 'replaced'> {
+  return opts.https ? pushOnce(dir, head, opts) : orOverSsh(dir, (pre) => pushOnce(dir, head, { pre }));
+}
+
+/** What says https couldn't get in, where SSH may: no login, a broken https helper, or the "not found" GitHub tells a private repository's visitor without one. */
+const SSH_MAY_HELP: ReadonlySet<GitTroubleKind> = new Set(['https_auth', 'https_broken', 'no_access']);
+
+/**
+ * `attempt`, and when it fails because https can't get into an https origin on GitHub, GitLab or
+ * Bitbucket, once more over SSH (someone who only uses SSH keys): when that works, every command
+ * that reaches origin goes over SSH from then on (ssh-routes.ts). SSH failing too throws the first
+ * failure, whose words (and card) are about https.
+ */
+async function orOverSsh<T>(dir: string, attempt: (pre: readonly string[]) => Promise<T>, remote = 'origin'): Promise<T> {
+  try {
+    return await attempt([]);
+  } catch (err) {
+    const raw = err instanceof PushError ? err.raw : err instanceof Error ? err.message : String(err);
+    const kind = classifyGitError(raw);
+    if (!kind || !SSH_MAY_HELP.has(kind)) throw err;
+    const url = (await run('git', ['remote', 'get-url', remote], dir, 5000).catch(() => '')).trim();
+    const ssh = sshArgsFor(url);
+    if (!ssh) throw err;
+    const out = await attempt(ssh).catch(() => {
+      throw err;
+    });
+    rememberSshRoute(url, kind === 'https_broken');
+    return out;
+  }
+}
+
+async function pushOnce(dir: string, head: string, opts: { readonly https?: boolean; readonly pre?: readonly string[] }): Promise<'pushed' | 'replaced'> {
   // Over HTTPS with gh's login, this once (the SSH key isn't working): to origin's HTTPS address, origin itself unchanged.
   const url = opts.https ? httpsRemoteOf((await run('git', ['remote', 'get-url', 'origin'], dir, 5000)).trim()) : undefined;
   if (opts.https && !url) throw new Error('origin isn’t an SSH address Beluga can push to over HTTPS');
   const to = url ?? 'origin';
-  const pre = url ? ghCredentials() : [];
+  const pre = url ? ghCredentials() : [...(opts.pre ?? [])];
   const push = (...args: string[]): Promise<string> => run('git', [...pre, 'push', ...(url ? [] : ['-u']), ...args, to, `${head}:${head}`], dir, 120_000);
   // Pushed to a URL, git doesn't move origin/<head> or set the upstream: do it, so the branch reads as pushed.
   const track = async (): Promise<void> => {
@@ -389,10 +422,14 @@ export type BaseMergeResult = { readonly ok: true; readonly how: 'fast_forward' 
  * ('moved') or a conflict leaves GitHub as it was.
  */
 export async function mergeToBase(dir: string, head: string, base: string, opts: { readonly https?: boolean } = {}): Promise<BaseMergeResult> {
+  return opts.https ? mergeToBaseOnce(dir, head, base, opts) : orOverSsh(dir, (pre) => mergeToBaseOnce(dir, head, base, { pre }));
+}
+
+async function mergeToBaseOnce(dir: string, head: string, base: string, opts: { readonly https?: boolean; readonly pre?: readonly string[] }): Promise<BaseMergeResult> {
   const url = opts.https ? httpsRemoteOf((await run('git', ['remote', 'get-url', 'origin'], dir, 5000)).trim()) : undefined;
   if (opts.https && !url) throw new Error('origin isn’t an SSH address Beluga can push to over HTTPS');
   const to = url ?? 'origin';
-  const pre = url ? ghCredentials() : [];
+  const pre = url ? ghCredentials() : [...(opts.pre ?? [])];
   const tracking = `refs/remotes/origin/${base}`;
   try {
     await run('git', [...pre, 'fetch', to, `+refs/heads/${base}:${tracking}`], dir, 120_000);
@@ -586,7 +623,7 @@ export async function prStep(dir: string, number: number, step: PrStepKind): Pro
  * and checks out the base, which a worktree can't (the base is checked out in the main folder).
  */
 export async function deleteRemoteBranch(dir: string, branch: string, remote = 'origin'): Promise<void> {
-  await run('git', ['push', remote, '--delete', branch], dir, 30_000);
+  await orOverSsh(dir, (pre) => run('git', [...pre, 'push', remote, '--delete', branch], dir, 30_000), remote);
 }
 
 /**

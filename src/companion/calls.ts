@@ -50,6 +50,12 @@ export const PhoneCalls = {
   'threads.stop': entry('threads.stop', z.object({ stopped: z.boolean(), returned: z.array(z.string()) }).partial().passthrough().optional()),
   'threads.stopAll': entry('threads.stopAll', z.object({ stopped: z.number() }).passthrough().optional()),
   'host.cancelQueued': entry('host.cancelQueued', done),
+  // 1.38: external agents: who holds a grant, what they did, and stopping them.
+  'external.agents': entry('external.agents', z.array(z.object({ id: z.string(), name: z.string(), level: z.string(), route: z.string(), lastSeen: z.number() }).passthrough())),
+  'external.revoke': entry('external.revoke', z.boolean()),
+  'external.stopAgent': entry('external.stopAgent', z.boolean()),
+  'external.stopAll': entry('external.stopAll', z.number()),
+  'external.activity': entry('external.activity', z.array(z.object({ ts: z.number(), agent: z.string(), tool: z.string(), target: z.string(), decidedBy: z.string(), kind: z.enum(['allowed', 'asked', 'refused']) }).passthrough())),
   'inbox.read': entry('inbox.read', done),
   'inbox.unread': entry('inbox.unread', done),
   'questions.answer': entry('questions.answer', done),

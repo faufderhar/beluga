@@ -24,6 +24,7 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (input.taskBrief ?? '') +
     (input.planBrief ?? '') +
     (input.macBrief ?? '') +
+    (input.sharedBrief ?? '') +
     (input.phoneBrief ?? '') +
     (input.terminal ? '' : (input.previewBrief ?? '')) +
     (input.sentinelBrief ?? '') +

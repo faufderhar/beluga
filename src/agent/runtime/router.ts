@@ -3,7 +3,7 @@ import type { AgentBackend, AgentRunInput, TerminalSink } from '../types.js';
 import type { Complete, RuntimeId } from './types.js';
 
 /** Runtimes' names, for the words a routed call says when one can't do something. */
-const RUNTIME_LABELS: Readonly<Record<string, string>> = { codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build' };
+const RUNTIME_LABELS: Readonly<Record<string, string>> = { codex: 'Codex', opencode: 'OpenCode', copilot: 'Copilot', grok: 'Grok Build' };
 
 /** The side calls a backend may offer (agent/side-calls.ts). */
 export type SideCallBackend = Pick<AgentBackend, 'nameTask' | 'titlePlan' | 'titleChat' | 'answerChat' | 'fixSetup' | 'fixRun' | 'workOutScripts' | 'draftTask' | 'describeProject' | 'reviewPr'>;

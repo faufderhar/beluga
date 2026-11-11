@@ -39,7 +39,8 @@ test('a thread on the usage limit waits, says when it goes on, and its chat has 
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
   const row = inspector.locator('[data-thread-row]').filter({ has: page.getByRole('button', { name: /^Open capped,/ }) });
   await expect(row).toHaveAttribute('data-state', 'waiting_limit', { timeout: 40_000 });
-  await expect(row).toContainText(/Waiting · \d\d:\d\d/);
+  // Today it is just the time; past midnight (an evening run) the day comes first: "Nov 11, 01:05".
+  await expect(row).toContainText(/Waiting · (?:\w+ \d{1,2}, )?\d\d:\d\d/);
   await expect(page.getByText(/child thread reported/)).toHaveCount(0);
   await shot(page, 'limit-01-panel-waiting');
 

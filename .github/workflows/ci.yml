@@ -1,14 +1,18 @@
 name: CI
 
 # Every pull request: the types check and the tests pass (the terminal UI and the core), on
-# Linux, macOS and Windows.
+# Linux, macOS and Windows. And every push to main: PRs merge once their tests pass on a Mac, so a
+# test that only fails on Linux or Windows shows on the commit that broke it, not on every PR after.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
+# A PR's newer push replaces its run; each commit on main keeps its own, so a red one says which.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'latest' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:

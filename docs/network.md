@@ -40,6 +40,12 @@ A profile (`PeerInfo`) may carry `agents` and `defaultAgent`: the agents that pe
 The proofs bind both cards to that one connection (no replay, no one in the middle without the
 secret), and the invitee must dial with the address on its card. Friend invitations are
 single-use and last 24 h; five bad proofs in a minute pause an invitation for the rest of it.
+Using an invitation that fails says why. A failed hole-punch (`HOLEPUNCH_*`) means the inviter answered
+(a hole-punch only starts after that), so it says the two networks couldn't connect directly, names the
+code, and that the invitation still works. Anything else is "Nobody is waiting for that invitation":
+`PEER_NOT_FOUND`, no answer at all, and `PEER_CONNECTION_FAILED` (an invitation that closed while the DHT
+still remembers it) (`pairFailure` in `src/net/mesh/pairing.ts`). Pairing has no relay yet: nobody is
+linked to both of you before you're friends.
 Group invitations (`beluga://join#…`, `beluga://join?code=…`) work the same, are multi-use (the
 link for 7 days, the code for an hour), and either let people in at once (`auto`) or leave a
 request for an admin (`network.groups.approve`). Someone who was removed always needs an admin.
@@ -178,6 +184,18 @@ changes. Someone who doesn't have that picture yet asks once (`av_get { sha }`) 
 if it's the checksum that person announced, it hashes to it, and it is a small picture. Views carry the
 checksum (`PersonView.avatar`, `NetworkSelf.avatar`) and screens get the bytes with `network.avatar.get`,
 so a picture crosses the network once per change and still shows while its owner is away.
+
+## The leaderboard (BLG-904)
+
+Being friends means sharing three numbers a day with each other, for Usage › Leaderboard: the
+characters you wrote to your agents, the pull requests merged, and your agents' working time (the
+run's whole time, tests and waits included). Nothing else goes: no projects, prompts or agents.
+`src/core/leaderboard/` sends your last 400 days as a `stats` frame (`{ v: 1, at, days: { "2026-11-09":
+[chars, prs, agentMs] } }`, checked in `protocol.ts`) when a friend's link comes up and again when
+your numbers changed (looked at every 5 minutes); only friends' frames are taken. What each friend sent
+last is kept in `~/.beluga/leaderboard.json` so they still show while away, and dropped once they're no
+longer a friend. Macs that do it say `stats.board`; a friend's Beluga without it shows as needing an
+update. The Usage tab asks for everyone's with `stats.leaderboard`.
 
 ## Friends from your room (BLG-202)
 
@@ -431,7 +449,10 @@ conversation, and it's the same chat.
 - **Media goes Mac to Mac.** The window makes the call with WebRTC (packages/mac/src/call): Opus
   voice with echo cancellation and noise suppression to everyone in it (a mesh), DTLS-SRTP
   encrypted. Public STUN only finds each Mac's address; there's no TURN yet, so two networks that
-  block UDP can't call each other.
+  block UDP can't call each other, and neither can a Mac behind a VPN that gives each destination
+  its own port (Cloudflare WARP does) with most home networks. Call notes still arrive then (they go
+  between the daemons), so a line that hasn't connected after 12 s says so in the strip, by name,
+  until it does: otherwise it looks like a call where nobody talks.
 - **Screen sharing through a tree.** A share is tuned for text (`contentHint: text`, resolution
   kept before frame rate, H.264 first: the Mac's hardware encodes it). The sharer feeds the first
   three viewers; each viewer passes it on to at most two more (`shareTree` in shared/calls.ts), so
@@ -466,16 +487,19 @@ conversation, and it's the same chat.
   network delivers.
 - **Microphone and speaker** (BLG-737). The chevron beside Mute picks which microphone and speaker
   the call uses; a new microphone goes on every line at once, and the choice is kept on this Mac.
-  Picking a speaker needs WebKit's `setSinkId`; without it, macOS's own output is used.
+  Picking a speaker needs WebKit's `setSinkId`; without it, macOS's own output is used. A voice is
+  only sent to a speaker by name when one was picked; otherwise it plays where macOS plays sound.
 - **Background noise** (BLG-744). WebKit ignores a page's `noiseSuppression` and
   `autoGainControl`: only echo cancellation applies (macOS's voice processing, Standard Mic Mode),
   and macOS lets no app turn Voice Isolation on for itself (only the user, in Control Center). So
   the call has its own filter (call/noise-filter.ts): RNNoise (via @sapphi-red/web-noise-suppressor)
   in an audio worklet at 48 kHz, between the microphone and everything that hears you (the lines,
-  the speaking ring, the notes). It's on in every call; Noise Removal in the microphone menu turns it
-  off for that call, rewiring what feeds the call's one track, so no line is renegotiated. If the
-  audio engine won't start, or stops and won't resume, the plain microphone goes on instead and the
-  menu says it can't run.
+  the speaking ring, the notes). It's off until you turn on Noise Removal in the microphone menu,
+  then on in every call on this Mac until you turn it off; either way every line switches at once
+  (the sender's track is replaced, nothing renegotiated). It was on in every call at first, and
+  friends stopped hearing each other since: until a call between two Macs proves its Web Audio
+  track reaches the other side, the line sends the microphone itself. If the audio engine won't
+  start, or stops and won't resume, the plain microphone goes on instead and the menu says it can't run.
 - **The chat where it can't be seen.** Full Screen and Face to Face cover the chat, so what the
   others write from then on pops up on the right, dissolves once there was time to read it, and a
   line under it answers in the same chat (call/ChatPops.tsx). Messages that were already there
@@ -810,6 +834,14 @@ request for another project, or into a worktree not shared with them, is decline
 everyone in it (`agent_event`), and so does the owner's own chat. The owner's Mac passes each person's message on to
 the others (`as`), so people who aren't friends with each other still see it all. Someone who only follows along
 (`view`) reads but can't ask; their Mac refuses, and the owner's would too.
+
+**Your own agent in a friend's worktree.** There, "@claude …" is your agent, not theirs (`core/shared-guest.ts`): it
+runs on your Mac in a folder of its own (`~/.beluga/guest-work`), is told whose worktree it is, and reads it with
+`list_peer_files` / `read_peer_file` (the worktree's share, over the link); it can't change it. Your line goes to everyone
+as any message does, and its turn (`agent_event`, requested by you) goes to the owner, who takes it into the worktree's
+conversation (a contributor's own agent, for their own ask only: `WorkspaceSharing.agentMayWrite`) and passes it on
+(`as`). A plain line, or "@claude:<owner> …", is the owner's agent, as before. In a room-shared worktree it's the same,
+your Mac telling each person directly.
 
 The worktree's header shows each person in it, its owner first, with how they're doing (online, away, offline, "needs
 an update" when their Beluga can't link with yours; someone who isn't your friend isn't known), on the owner's Mac too

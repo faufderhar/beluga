@@ -17,6 +17,14 @@ export async function openWork(page: Page, tab: 'Tasks' | 'Issues' | 'Actions' |
   await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: tab }).click();
 }
 
+/**
+ * The room's group chat: the first of Channels in the sidebar while someone else is in the room (BLG-871).
+ * The window opens on the Overview, so tests in the room's chat start here.
+ */
+export async function openGroupChat(page: Page): Promise<void> {
+  await page.getByRole('navigation', { name: 'Sidebar' }).locator('[data-room-chat]').click();
+}
+
 /** A person's row in the sidebar: "bob", or "bob Add bob as a friend" while you aren't friends yet. */
 export const personRow = (page: Page, name: string): Locator =>
   page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: new RegExp(`^${name}(?: Add ${name} as a friend)?$`) });

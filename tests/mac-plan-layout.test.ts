@@ -19,6 +19,7 @@ import {
   gateHeight,
   glidable,
   isFolded,
+  joinAt,
   labelAt,
   milestoneAnchors,
   milestoneFrame,
@@ -100,6 +101,38 @@ describe('the plan graph’s geometry', () => {
     const lane = route.find((pt, i) => i > 0 && pt.y === 750)!.x;
     expect(lane < between.x || lane > between.x + between.width).toBe(true);
     for (let i = 1; i < route.length; i++) expect(route[i]!.x === route[i - 1]!.x || route[i]!.y === route[i - 1]!.y).toBe(true);
+  });
+
+  it('cuts every line into a milestone waiting on several where they meet, above its lock', () => {
+    // Its lane runs straight down onto the lock: one long last stretch, still cut just above the lock.
+    const lane = milestoneRoute({ x: 1133, y: 85 }, { x: 751, y: 743 }, 145, 703);
+    expect(lane).toEqual([
+      { x: 1133, y: 85 },
+      { x: 1133, y: 145 },
+      { x: 751, y: 145 },
+      { x: 751, y: 743 },
+    ]);
+    expect(joinAt(lane, 703)).toEqual({
+      line: [
+        { x: 1133, y: 85 },
+        { x: 1133, y: 145 },
+        { x: 751, y: 145 },
+        { x: 751, y: 703 },
+      ],
+      stem: [
+        { x: 751, y: 703 },
+        { x: 751, y: 743 },
+      ],
+    });
+    // Coming in across the run above it: cut where it turns down.
+    const across = milestoneRoute({ x: 368, y: 641 }, { x: 751, y: 743 }, 703, 703);
+    expect(joinAt(across, 703)?.line).toEqual([
+      { x: 368, y: 641 },
+      { x: 368, y: 703 },
+      { x: 751, y: 703 },
+    ]);
+    // Never on the lock itself.
+    expect(joinAt(across, 740)?.stem[0]).toEqual({ x: 751, y: 731 });
   });
 
   it('places rows top to bottom, centred, a row under the milestones it waits on', () => {

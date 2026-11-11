@@ -3,7 +3,8 @@ import type { Action, AppState } from '../src/core/store.js';
 import type { Notice } from '../src/core/work-store.js';
 import { type ScreenAction, initialAppState, reduceApp } from '../src/client/screen.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { bellCount, isCovered, noticeNeedView, splitActions, waitingList } from '../packages/mac/src/layout/waiting-model.js';
+import { bellCount, isCovered, noticeNeedView, sameWaiting, splitActions, waitingList } from '../packages/mac/src/layout/waiting-model.js';
+import type { TaskView as GwTask } from '../src/core/gateway/model.js';
 
 /** The bell's "Waiting for you" (packages/mac/src/layout/waiting-model.ts, BLG-255). */
 
@@ -79,3 +80,35 @@ describe('the bell’s Waiting for you', () => {
     expect(noticeNeedView(s, notice({ kind: 'done' }))).toBeUndefined();
   });
 });
+
+/**
+ * BLG-905: opening the bell froze the window grey. An answer's args (a friend's agent asking to do
+ * something, one of Claude's questions, a plan to approve) sat deeper than the list's compare
+ * could see, so an unchanged list never read the same and the window redrew for good.
+ */
+describe('an unchanged waiting list reads the same, however deep its answers go', () => {
+  const plan: Action = { type: 'question_add', question: { qid: 'q2', requestId: 'r2', owner: 'me', channel: 'ws:auth', picked: {}, question: { kind: 'plan', plan: 'Do it' } } } as Action;
+  const friendAsks = (s: AppState): AppState => {
+    const task = { id: 't_request00001', direction: 'received', peerId: 'bob', peerName: 'bob', kind: 'run', ask: 'Run the e2e suite', summary: 'run the e2e suite', needs: ['shell'], by: 'person', state: 'awaiting_approval', steps: [], createdAt: 5, updatedAt: 5 } as unknown as GwTask;
+    return { ...s, gateway: { ...s.gateway, tasks: [task] } };
+  };
+  const cases: Array<[string, () => AppState]> = [
+    ['one of Claude’s questions with choices', () => apply(base(), question('q1', 'ws:auth'))],
+    ['a plan to approve', () => apply(base(), plan)],
+    ['a friend’s agent asking to do something', () => friendAsks(base())],
+  ];
+  for (const [what, state] of cases) {
+    it(what, () => {
+      const s = state();
+      const a = waitingList(s);
+      expect(a.length).toBeGreaterThan(0);
+      expect(sameWaiting(a, waitingList(s))).toBe(true);
+    });
+  }
+
+  it('still sees a real change', () => {
+    const s = apply(base(), question('q1', 'ws:auth'));
+    expect(sameWaiting(waitingList(s), waitingList(teamUp(s)))).toBe(false);
+  });
+});
+

@@ -220,6 +220,9 @@ describe('invitations', () => {
     expect(acceptError('Something went wrong: Nobody is waiting for that invitation.')).toMatch(/expired or was already used/);
     expect(acceptError("That's your own invitation")).toMatch(/your own invitation/);
     expect(acceptError('Pairing timed out')).toBe('Pairing timed out');
+    // A network that couldn't connect isn't an expired invitation: the core's words, code and all.
+    const unreachable = "Found whoever made that invitation, but your two networks couldn't connect directly (HOLEPUNCH_ABORTED). The invitation still works: try again.";
+    expect(acceptError(`Something went wrong: ${unreachable}`)).toBe(unreachable);
   });
 });
 

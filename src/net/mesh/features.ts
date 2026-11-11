@@ -39,6 +39,8 @@ export const FEATURE_NAMES = {
   'profile.avatar': 'profile pictures',
   /** Calls in a conversation: voice, screen sharing and pointing at it (core/calls, BLG-706). */
   'call.voice': 'calls',
+  /** Friends swap their prompt characters, merged PRs and agent time a day for the leaderboard (core/leaderboard, BLG-904). */
+  'stats.board': 'the leaderboard',
 } as const;
 
 export type Feature = keyof typeof FEATURE_NAMES;
@@ -50,7 +52,7 @@ export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folde
 export const TEAM_FEATURES: readonly Feature[] = ['team.board', 'team.plans', 'team.context', 'team.knock'];
 
 /** What the network itself always does. */
-export const MESH_FEATURES: readonly Feature[] = ['chat.files', 'chat.claude', 'profile.avatar', 'call.voice'];
+export const MESH_FEATURES: readonly Feature[] = ['chat.files', 'chat.claude', 'profile.avatar', 'call.voice', 'stats.board'];
 
 /** What a Mac takes while its gateway listens (core/gateway). */
 export const TASK_FEATURES: readonly Feature[] = ['task.ask', 'task.run', 'task.file', 'task.question', 'task.secret'];

@@ -15,6 +15,7 @@ import { DEMO_AGENTS } from './demo-agents.js';
 import { belugaEnv } from './beluga-env.js';
 import { SHARE_FEATURES } from '../net/mesh/features.js';
 import { demoCallers } from './calls/demo.js';
+import { startDemoBoard } from './leaderboard/demo.js';
 
 const CHECKLIST = `# Friday release
 
@@ -132,6 +133,9 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     })().catch(() => undefined);
   }
 
+  // The leaderboard (BLG-904): bob writes and merges more than you, mia less, and her agents run long.
+  const boards = [startDemoBoard(bob, { chars: 9_000, prs: 0.7, hours: 4.5, seed: 3 }), startDemoBoard(mia, { chars: 2_600, prs: 0.25, hours: 6, seed: 11 })];
+
   // Calls (BLG-706): bob and mia pick up when you call; BELUGA_DEMO_SCENE=call has bob ring you in #launch.
   const callers = demoCallers([bob, mia], pace);
   if (belugaEnv('DEMO_SCENE') === 'call') {
@@ -167,6 +171,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     stop: async () => {
       stopped = true;
       stopTeam?.();
+      for (const off of boards) off();
       callers.stop();
       for (const c of Object.values(chats)) {
         c.claude.stop();

@@ -130,7 +130,7 @@ const PATHS = {
   heat: 'M2.5 2.5h11v11h-11z M2.5 8h11 M8 2.5v11 M4.5 4.5h1.5v1.5h-1.5z M10 10h1.5v1.5H10z',
   /** Your phone (the companion): the sidebar footer's mark, Settings › Phone. */
   phone: 'M5.5 1.75h5a1 1 0 0 1 1 1v10.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1z M7.25 12.25h1.5',
-  /** Supporting Beluga: a star on GitHub, a coffee, and the heart that goes with them. */
+  /** Supporting Beluga (a star on GitHub), a cup (Food & Drink emoji), and a heart. */
   star: 'M8 2.25l1.75 3.55 3.9.57-2.83 2.76.67 3.89L8 11.18l-3.49 1.84.67-3.89L2.35 6.37l3.9-.57z',
   cup: 'M3 6.5h7.5v3a3.5 3.5 0 0 1-3.5 3.5h-.5A3.5 3.5 0 0 1 3 9.5z M10.5 7.5h.75a1.75 1.75 0 0 1 0 3.5h-1.1 M5.5 2.5c-.4.6.4 1.1 0 1.75 M8 2.5c-.4.6.4 1.1 0 1.75',
   heart: 'M8 13.25S2.75 10.1 2.75 6.4A2.65 2.65 0 0 1 8 5.1a2.65 2.65 0 0 1 5.25 1.3C13.25 10.1 8 13.25 8 13.25z',

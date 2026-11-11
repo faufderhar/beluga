@@ -15,7 +15,7 @@ import path from 'node:path';
 /** Where the install script links `beluga` (often not on PATH for a command run over ssh). */
 const REMOTE_PATH = 'PATH="$HOME/.local/bin:$PATH"';
 export const remoteBeluga = (command: string): string => `sh -c '${REMOTE_PATH} exec beluga ${command}'`;
-export const INSTALL_LINE = 'curl -fsSL https://github.com/kayraucklnc/beluga/releases/latest/download/install.sh | sh';
+export const INSTALL_LINE = 'curl -fsSL https://github.com/beluga-labs/beluga/releases/latest/download/install.sh | sh';
 /** Keeps a dead link from hanging, and has ssh notice a dead network in under a minute. */
 export const SSH_KEEPALIVE = ['-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', '-o', 'ConnectTimeout=20'] as const;
 /** From the daemon nobody can type: keys and the agent only, never a password prompt. */

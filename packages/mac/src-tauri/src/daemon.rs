@@ -547,7 +547,33 @@ async fn terminate_child(mut child: Child) -> bool {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    tauri::async_runtime::spawn_blocking(move || force(&mut child))
+        .await
+        .unwrap_or(false)
+}
+
+/// End a daemon we started that didn't stop when asked. On Windows, everything it started too
+/// (its terminals, its Claudes): ending only the daemon there leaves them running.
+fn force(child: &mut Child) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let root = std::env::var_os("SYSTEMROOT").unwrap_or_else(|| "C:\\Windows".into());
+        let _ = Command::new(PathBuf::from(root).join("System32").join("taskkill.exe"))
+            .args(tree_kill_args(child.id()))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x0800_0000)
+            .status();
+    }
     child.kill().is_ok() && child.wait().is_ok()
+}
+
+/// taskkill's words for "this process and all it started, now".
+#[cfg_attr(not(windows), allow(dead_code))]
+fn tree_kill_args(pid: u32) -> [String; 4] {
+    ["/PID".into(), pid.to_string(), "/T".into(), "/F".into()]
 }
 
 /// Ask a daemon this app didn't start to quit; force it if it doesn't.
@@ -674,8 +700,7 @@ pub fn stop(app: &AppHandle) {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    force(&mut child);
 }
 
 #[cfg(test)]
@@ -771,6 +796,11 @@ mod tests {
         assert!(info.keep_alive);
         let old: Info = serde_json::from_str(r#"{"pid":42,"port":5000,"token":"t"}"#).unwrap();
         assert!(old.version.is_none() && !old.keep_alive);
+    }
+
+    #[test]
+    fn forcing_on_windows_takes_what_the_daemon_started_too() {
+        assert_eq!(tree_kill_args(4242), ["/PID", "4242", "/T", "/F"]);
     }
 
     #[test]

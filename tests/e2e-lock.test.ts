@@ -227,7 +227,7 @@ describe.skipIf(process.platform === 'win32')('a stale lock’s cleanup only sto
 
   it('a reused pid, its old group and whoever listens on its port now all survive', async () => {
     // Someone else's server, in its own group, listening on the dead run's port.
-    const server = spawn(process.execPath, ['-e', "const s=require('net').createServer().listen(0,'127.0.0.1',()=>console.log(s.address().port)); setInterval(()=>{},1000)"], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const server = spawn(process.execPath, ['-e', "const s=require('net').createServer().listen(0,'127.0.0.1',()=>process.stdout.write(String(s.address().port)+'\\n')); setInterval(()=>{},1000)"], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
     children.push(server);
     const port = await new Promise<number>((resolve) => server.stdout!.once('data', (d) => resolve(Number(String(d).trim()))));
     // And a process of the dead run, tagged and under its worktree: that one goes.
