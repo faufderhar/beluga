@@ -3,6 +3,7 @@ import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { formatTokens } from '@beluga/ui/work-models.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { cacheHitOf, contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { contextFacts } from '@beluga/ui/context-facts.js';
 import { speedWords } from '@beluga/shared/local-endpoints.js';
 import { unreadCount } from '@beluga/core/work-store.js';
 import { issuesOfWorkspace } from '@beluga/core/board/model.js';
@@ -177,6 +178,10 @@ function WorkspaceDetails({ id }: { id: string }) {
     },
     (a, b) => sameDeep(a, b, 2),
   );
+  const facts = useApp(
+    (full) => contextFacts(full, `ws:${id}`),
+    (a, b) => a.modelLabel === b.modelLabel && a.window === b.window && a.runtime === b.runtime,
+  );
   const { ws, st, pr, ctx, setup } = state;
   if (!ws || !st) return null;
   const members = Object.entries(state.members ?? {});
@@ -199,11 +204,11 @@ function WorkspaceDetails({ id }: { id: string }) {
         ) : null}
         {ctx && state.contextMeter ? (
           <Field label="Context">
-            {/* The same numbers and colours as the meter in the box you type in. */}
-            <span className={s.meter} data-tone={contextTone(contextPct(ctx))} title={`${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)} tokens`}>
+            {/* The same numbers and colours as the meter in the box you type in, named for this agent. */}
+            <span className={s.meter} data-tone={contextTone(contextPct(ctx))} title={`${formatTokenCount(ctx.used)} of ${facts.window ? formatTokenCount(facts.window) : 'an unreported window'} · ${facts.modelLabel}`}>
               <span style={{ width: `${contextPct(ctx)}%` }} />
             </span>
-            {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)}`}
+            {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${facts.window ? formatTokenCount(facts.window) : 'an unreported window'} · ${facts.modelLabel}`}
           </Field>
         ) : null}
         {cache ? (

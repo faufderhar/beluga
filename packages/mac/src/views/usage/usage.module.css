@@ -114,6 +114,37 @@
   color: var(--text-3);
   line-height: 1.45;
 }
+.cacheGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 28px;
+  margin-top: 12px;
+}
+.cacheHeading {
+  margin: 0 0 6px;
+  color: var(--text-2);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.cacheTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.cacheTable td {
+  padding: 5px 0;
+  border-top: 0.5px solid var(--hairline);
+}
+.cachePct {
+  width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@container usage-page (max-width: 40rem) {
+  .cacheGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* ------------------------------------------------------------ cards */
 

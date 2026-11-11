@@ -21,7 +21,7 @@ Make it yours with the radio button, or pick it for one conversation in the agen
 - Pictures in a message.
 - Your skills: Grok Build loads your Claude Code skills itself. Claude Code's custom commands (`~/.claude/commands`) are expanded for it, and its own commands work as typed.
 - Sub-agents: each one its `spawn_subagent` tool starts is a row on the card.
-- Usage: tokens and cost for each turn, and the context meter.
+- Usage: tokens and cost for each turn, the context meter for Grok's own window, and the billing period when `grok usage` can read it. When it can't, Usage shows the tokens counted in conversations on this Mac and says the period isn't available from here.
 
 ## What's different
 

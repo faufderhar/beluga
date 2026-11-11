@@ -17,6 +17,7 @@ import { acpServers, promptBlocks } from '../opencode/runner.js';
 import { mapOpenCodeSlash } from '../opencode/skills.js';
 import { INTERRUPT_TIMEOUT_MS } from '../types.js';
 import { type GrokConnect, type GrokConnection, type GrokModel, findGrok, spawnGrok } from './connection.js';
+import { readGrokPlan } from './plan-usage.js';
 import { modelChoice, probeGrok } from './models.js';
 import { askGrokBtw, forkGrok, grokComplete } from './side.js';
 import { GROK_EXIT_PLAN, GROK_OWN, GROK_SUBAGENT, GROK_WRITES, grokCalls, grokResultText, grokToolOf, isBelugaTool } from './tools.js';
@@ -437,6 +438,21 @@ export function createGrokBackend(opts: GrokBackendOptions): AgentBackend {
 
     // A side question (/btw): a fork of the conversation's session, every tool turned down, the fork dropped after.
     btw: (req) => askGrokBtw(req, side),
+
+    // The billing period, when `grok usage` can read it. A scripted Grok never shells out.
+    // Filed on Grok itself (not Claude). No window: the Usage view says so from the local ledger.
+    async refreshUsage() {
+      if (opts.connect) return undefined;
+      try {
+        const plan = await readGrokPlan(bin());
+        if (plan.kind === 'signed_out') opts.bridge.reportUsage({ signedIn: false }, GROK_AGENT);
+        else if (plan.kind === 'team') opts.bridge.reportUsage({ plan: 'Team', signedIn: true }, GROK_AGENT);
+        else if (plan.kind === 'windows') opts.bridge.reportUsage({ windows: plan.windows.map((w) => ({ ...w })), signedIn: true }, GROK_AGENT);
+      } catch {
+        // The period stays unreported; the view still shows tokens counted on this Mac.
+      }
+      return undefined;
+    },
 
     // Its models, from what it says when it starts.
     listModels: async () => {

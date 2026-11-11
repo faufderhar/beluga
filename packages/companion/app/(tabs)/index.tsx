@@ -161,7 +161,7 @@ export default function Home() {
           </>
         )}
       </ScrollView>
-      <UsageSheet usage={h?.usage ?? []} visible={usageOpen} onClose={() => setUsageOpen(false)} />
+      <UsageSheet usage={h?.usage ?? []} cache={h?.cache} visible={usageOpen} onClose={() => setUsageOpen(false)} />
       <MacChatsSheet window visible={chatsOpen} onClose={() => setChatsOpen(false)} />
       <UpdateSheet visible={updateOpen} onClose={() => setUpdateOpen(false)} />
     </Screen>

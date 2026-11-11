@@ -11,6 +11,7 @@ import { workMenuSpec, type WorkMenuKind } from './work-menus.js';
 import { describeWindow } from '../agent/runtime/claude/usage.js';
 import { type Usage, defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
+import { contextFacts } from './context-facts.js';
 import { FILE_MANAGER } from '../shared/assistant.js';
 
 function usageLines(usage: Usage | undefined): string[] {
@@ -238,11 +239,9 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
   return { title: isSelf ? `${peer.name} (you)` : peer.name, intro: [about, ...lets, ...usageLines(peer.usage), ...access], options };
 }
 
-/** The model a conversation uses: its own pick, else your default. */
+/** The model a conversation uses: its own pick, else its agent's. Settings' model is Claude's only. */
 export function modelOf(state: AppState, channel: string): string | undefined {
-  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
-  const ws = id ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
-  return ws?.model ?? state.prefs.model;
+  return contextFacts(state, channel).modelId;
 }
 
 export { modelLabel };

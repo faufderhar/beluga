@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { modelLabel, modelOf } from '@beluga/ui/menus.js';
-import { cacheHitOf, clampThreshold, contextWindowFor, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { contextFacts } from '@beluga/ui/context-facts.js';
+import { cacheHitOf, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { LOCAL_RUNTIME, speedWords } from '@beluga/shared/local-endpoints.js';
 import { cx } from '../components/ui.js';
@@ -121,16 +121,16 @@ export function ContextMeter({ channel }: { channel: string }) {
 function MeterDetails({ channel, model }: { channel: string; model: MeterModel }) {
   const api = useApi();
   const { client } = useBeluga();
-  const prefs = useApp((st) => st.prefs);
-  const picked = useApp((st) => modelOf(st, channel));
-  const modelName = useApp((st) => modelLabel(st, picked));
-  // A workspace someone shared with you: their Claude, so only they can compact it.
+  const facts = useApp(
+    (st) => contextFacts(st, channel),
+    (a, b) => a.runtime === b.runtime && a.modelLabel === b.modelLabel && a.window === b.window && a.autoCompact === b.autoCompact && a.autoCompactMark === b.autoCompactMark && a.threshold === b.threshold,
+  );
+  // A workspace someone shared with you: their agent, so only they can compact it.
   const theirs = useApp((st) => st.view.kind === 'shared');
   const local = useLocalRun(channel);
   const cache = useCacheHit(channel);
   const info = model.info;
   const rows = info ? breakdownRows(info) : [];
-  const at = clampThreshold(prefs.autoCompactAt);
   const compact = (): void => {
     api.session.compact(channel).then(
       () => (model.busy ? toast(client, 'Your agent compacts this conversation when it finishes what it’s doing', 'info') : undefined),
@@ -147,7 +147,7 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
         <>
           <div className={s.bar} role="img" aria-label={usageLine(info)}>
             {rows.length ? rows.map((r) => <span key={r.key} className={s[`seg_${r.key}`]} style={{ width: `${r.share * 100}%` }} />) : <span className={s.seg_used} style={{ width: `${model.pct}%` }} />}
-            {prefs.autoCompact ? <i className={s.mark} style={{ left: `${at}%` }} title={`Auto-compacts at ${at}%`} /> : null}
+            {facts.autoCompactMark ? <i className={s.mark} style={{ left: `${facts.threshold}%` }} title={facts.autoCompactTitle ?? facts.autoCompact} /> : null}
           </div>
           <div className={s.sub} data-context-usage="">
             {usageLine(info)}
@@ -171,8 +171,8 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
       <dl className={cx(s.rows, s.facts)}>
         <dt>Model window</dt>
         <dd>
-          {formatTokenCount(info?.window ?? contextWindowFor(picked))}
-          {modelName ? ` · ${modelName}` : ''}
+          {facts.window ? formatTokenCount(facts.window) : 'Not reported yet'}
+          {` · ${facts.modelLabel}`}
         </dd>
         {cache ? (
           <>
@@ -189,7 +189,7 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
         <dt>Last compacted</dt>
         <dd>{model.last ? `${whenText(model.last.ts)} · ${formatTokenCount(model.last.compact.pre ?? 0)} → ${formatTokenCount(model.last.compact.post ?? 0)}` : 'Not yet'}</dd>
         <dt>Auto-compact</dt>
-        <dd>{prefs.autoCompact ? `At ${at}%` : 'Off'}</dd>
+        <dd title={facts.autoCompactTitle}>{facts.autoCompact}</dd>
       </dl>
       {theirs ? (
         <div className={s.actions}>

@@ -907,6 +907,7 @@ Then protect \`/api/payments\`.",
       "topic": "conv:mac:assistant",
       "unread": 2,
     },
+    "cache": [],
     "mac": {
       "keepAwake": "off",
       "name": "Kayra’s Mac",

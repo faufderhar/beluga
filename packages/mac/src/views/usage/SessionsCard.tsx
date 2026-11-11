@@ -26,9 +26,12 @@ const when = (w: PlanWindow): string => {
 
 /** Each window as a block on a timeline: its height is how much you used, the faint rest is what was left. */
 function Timeline({ windows, kind, now, hover, onHover }: { windows: readonly PlanWindow[]; kind: PlanKind; now: number; hover?: number; onHover: (i?: number) => void }) {
+  // The plot starts a span before now, not before the latest reset. A session that resets later
+  // today would otherwise slide the window forward and stack the oldest bars on the left edge,
+  // where each one covers the hover target of the one before it.
   const end = Math.max(now, ...windows.map((w) => w.resetsAt));
-  const from = end - SPAN[kind];
-  const span = end - from;
+  const from = now - SPAN[kind];
+  const span = Math.max(1, end - from);
   const pos = (t: number): number => ((t - from) / span) * 100;
   // A mark at each midnight (sessions) or each week's start, a name on every other one.
   const marks: Array<{ at: number; label: string }> = [];
