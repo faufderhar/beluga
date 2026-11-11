@@ -204,6 +204,12 @@
   flex-shrink: 1;
   min-width: 0;
 }
+/* A chip that has to shrink keeps its icon and shortens the name (the full name stays in the menu and tooltip). */
+.chipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* A narrow box: a chip's words step aside and its icon stays (the full name is in its menu and tooltip). */
 @container composer (max-width: 440px) {
   .chipLabel {

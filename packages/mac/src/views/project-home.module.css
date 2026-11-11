@@ -193,12 +193,20 @@ button.stat:disabled {
   max-width: 100%;
   flex: 1 1 auto;
 }
-/* Basis is the icon and chevron. Grows to its words ahead of the name and the spacer, and ellipsizes before the button wraps. */
-.bar > button[data-shrink] {
+/* Basis is the icon and chevron. A fixed Runs-on chip plus the name's 11rem floor is wider than the column's cap, so Create Worktree would wrap and the model name would never give way. Both chips share what is left, and max-content lets a short model name fill in before either one grows past its words. */
+.bar > button[data-shrink],
+.bar > [data-runs-on] {
   flex: 1000 1 3rem;
   min-width: 3rem;
   max-width: max-content;
   overflow: hidden;
+}
+/* "Runs on" gives way before the computer's name. The button's accessible name still says the whole phrase. */
+.bar > [data-runs-on] [data-runs-on-words] {
+  flex-shrink: 100;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* Just Ask's and New Plan's line of words: it takes two lines before it pushes anything off. */
 .bar > .note {
