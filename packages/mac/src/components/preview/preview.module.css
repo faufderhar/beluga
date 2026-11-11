@@ -155,41 +155,41 @@ button.title:hover {
   color: var(--text-3);
 }
 
-/* Why it isn't drawing: calm, on the frame's own canvas. */
+/* Why it isn't drawing: a calm note in the app's own colours, in place of the frame (or over the last drawing). */
 .problem {
-  position: absolute;
-  inset: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px;
-  background: #fbfaff;
-  color: #3b3550;
-  font-size: 12.5px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--bg-sunken) 50%, var(--bg));
+  color: var(--text);
+  font-size: 12px;
 }
 .problemOver {
+  position: absolute;
   inset: auto 10px 10px;
   border-radius: var(--radius);
+  background: var(--bg-raised);
   box-shadow:
-    0 0 0 1px rgba(60, 50, 90, 0.1),
-    0 6px 20px rgba(60, 50, 90, 0.1);
+    0 0 0 0.5px var(--hairline-strong),
+    0 6px 20px rgba(0, 0, 0, 0.12);
 }
 .problemIcon {
   flex: none;
-  color: #8a84a3;
+  color: var(--text-3);
 }
 .problemText {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 .problemText strong {
-  font-weight: 600;
+  font-weight: 550;
 }
 .problemText span {
-  color: #6c6684;
+  color: var(--text-2);
 }
 
 .notice {
@@ -585,6 +585,16 @@ textarea.field {
 }
 .stageDark .skeleton {
   color: #a49fbb;
+}
+/* Nothing to draw: no canvas, just the note; a frame kept from before waits out of sight. */
+.stage.stageBlocked {
+  background: none;
+  transition: none;
+}
+.stageBlocked .frame {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
 }
 .titleChevron {
   margin-left: 4px;

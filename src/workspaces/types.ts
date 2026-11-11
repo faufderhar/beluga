@@ -101,6 +101,8 @@ export interface WorkspaceRecord {
   readonly handedTo?: string;
   /** Came from a friend's handoff (their name). */
   readonly handedFrom?: string;
+  /** An external agent started it: its grant's id and name, for the label and for what it may do here. */
+  readonly startedByAgent?: { readonly id: string; readonly name: string };
   /** Continued on another computer of yours (its name, BLG-808): archived here once it ran there. */
   readonly continuedOn?: string;
   /** Continued here from another computer of yours (its name). */

@@ -1,10 +1,10 @@
-import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import type { AgentBackend, AgentRunInput, TerminalLaunch, TerminalSink } from '../src/agent/types.js';
-import { sessionArgs, trustFolder } from '../src/agent/runtime/claude/terminal.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AgentBackend, AgentRunInput, RoomBridge, TerminalLaunch, TerminalSink } from '../src/agent/types.js';
+import { claudeTerminal, sessionArgs, trustFolder } from '../src/agent/runtime/claude/terminal.js';
 import { childEnv } from '../src/terminal/pty.js';
 import { shellChildren } from '../src/terminal/shells-under.js';
 import { readFileSync } from 'node:fs';
@@ -146,6 +146,53 @@ describe('launching the agent’s terminal', () => {
     const main = terminalHookAnswer({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(cwd, 'x') } }, {}, { ...policy, autoEdit: false, askOnly: true });
     expect(main).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
     expect(terminalHookAnswer({ hook_event_name: 'PostToolUse' }, {}, policy)).toEqual({});
+  });
+
+  describe('the tools’ token stays off the command line (BLG-110)', () => {
+    const launched = async (home: string, host: ToolHost, cwd: string, signal = new AbortController().signal): Promise<TerminalLaunch> => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', home); // trustFolder writes here, not in your ~/.claude.json
+      const input = { prompt: 'hello', requesterName: 'me', viaAgent: false, context: [], place: { cwd, autoEdit: true, additionalDirectories: [] }, signal, onEvent: () => undefined } as unknown as AgentRunInput;
+      const bridge = { selfName: () => 'me', listPeers: () => [] } as unknown as RoomBridge;
+      return claudeTerminal(input, { add: () => 1 }, { bridge, claudePath: '/bin/claude', toolHost: host, node: '/bin/node', home });
+    };
+    const configIn = (launch: TerminalLaunch): string => launch.args[launch.args.indexOf('--mcp-config') + 1]!;
+
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('gives Claude Code a private file that goes when the run closes', async () => {
+      const home = mkdtempSync(path.join(os.tmpdir(), 'beluga-mcp-home-'));
+      const cwd = mkdtempSync(path.join(os.tmpdir(), 'beluga-mcp-cwd-'));
+      const host = new ToolHost({ command: 'beluga', args: [] });
+      const launch = await launched(home, host, cwd);
+      const file = configIn(launch);
+      const { mcpServers } = JSON.parse(readFileSync(file, 'utf8')) as { mcpServers: Record<string, { env: Record<string, string> }> };
+      const token = mcpServers.beluga!.env.BELUGA_TOOLS_TOKEN!;
+
+      expect(token).toMatch(/^[0-9a-f]{64}$/);
+      expect(launch.args.join(' ')).not.toContain(token);
+      expect(launch.args.join(' ')).not.toContain('BELUGA_TOOLS_TOKEN');
+      expect(launch.args.join(' ')).toContain('mcp__beluga');
+      if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
+      // Never in the worktree: its scratch folder shows on your screens and to friends sharing it.
+      expect(file.startsWith(home + path.sep)).toBe(true);
+
+      launch.close();
+      expect(existsSync(file)).toBe(false);
+      launch.close(); // closing again does no harm
+      await host.close();
+    });
+
+    it('gives each run its own file', async () => {
+      const home = mkdtempSync(path.join(os.tmpdir(), 'beluga-mcp-home-'));
+      const cwd = mkdtempSync(path.join(os.tmpdir(), 'beluga-mcp-cwd-'));
+      const host = new ToolHost({ command: 'beluga', args: [] });
+      const [a, b] = [await launched(home, host, cwd), await launched(home, host, cwd)];
+      expect(configIn(a!)).not.toBe(configIn(b!));
+      a!.close();
+      expect(existsSync(configIn(b!))).toBe(true);
+      b!.close();
+      await host.close();
+    });
   });
 
   it('the hook script asks the daemon, and refuses when it can’t', async () => {

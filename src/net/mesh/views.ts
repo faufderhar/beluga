@@ -1,3 +1,4 @@
+import type { MessageVia } from '../../protocol.js';
 /**
  * What the Beluga network looks like to a screen: people, groups, messages and invitations.
  * Plain data only (no keys, no secrets): this is what goes into the shared state.
@@ -87,6 +88,8 @@ export interface ChatExtras {
   readonly task?: ChatTaskRef;
   /** This message is the author's Claude answering message `for`. */
   readonly claude?: ClaudeReply;
+  /** An external agent wrote it for its author: "Sent by <name>". */
+  readonly via?: MessageVia;
 }
 
 /** One message in a conversation with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */

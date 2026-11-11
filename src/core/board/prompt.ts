@@ -10,6 +10,7 @@ import {
   SECTION_INFO,
   STATUS_INFO,
   actorName,
+  externalLabel,
   activityText,
   assigneeName,
   blocking,
@@ -36,7 +37,7 @@ const SHOWN_COMMENTS = 20;
 const COMMENT_CHARS = 1500;
 
 /** Who said it, from no one's side (a run's instructions are the same whoever reads them). */
-const speaker = (a: Actor): string => (a.kind === 'person' ? a.name : a.kind === 'claude' ? agentLabel(undefined, a.ownerName, false) : 'Beluga');
+const speaker = (a: Actor): string => (a.kind === 'person' ? a.name : a.kind === 'claude' ? (a.external ? externalLabel(a.external) : agentLabel(undefined, a.ownerName, false)) : 'Beluga');
 
 /** The talk on a task: its comments and notes, oldest first. */
 const commentsOf = (issue: Issue): Activity[] => issue.activity.filter((a) => (a.kind === 'comment' || a.kind === 'note') && a.body?.trim());

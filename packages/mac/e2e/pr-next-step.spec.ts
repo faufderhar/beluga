@@ -100,7 +100,7 @@ test('the toolbar names the PR’s real next step: conflicts, running, failed, n
     // The sidebar row says it too (BLG-840), and the PR sheet won't merge without it: Push and Merge.
     await expect(sidebar(page).locator('[data-not-on-pr="1"]')).toHaveAttribute('aria-label', '1 commit not on PR #7');
     // The pill (first; the step's "Push 1 Commit to PR #7" ends in #7 too).
-    await branchGroup(page).getByRole('button', { name: /#7$/ }).first().click();
+    await toolbar(page).getByRole('button', { name: /#7$/ }).first().click();
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
     await expect(sheet.getByRole('button', { name: 'Push and Merge' })).toHaveAttribute('data-push-first', '1');
     await expect(sheet).toContainText('1 commit not on it yet');

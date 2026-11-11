@@ -6,6 +6,7 @@ import { MESSAGE_BANNER, NOTIFICATION_TAP } from './notices.js';
 import { REQUEST_NOTIFICATION, notificationActions } from '../gateway/request-actions.js';
 import { version } from '../../src-tauri/tauri.conf.json';
 import { machineSocketUrl } from '../machines/pane-model.js';
+import { t } from '../i18n/index.js';
 
 /** Running inside the Tauri shell (otherwise: a browser, while developing). */
 export const inApp = (): boolean => '__TAURI_INTERNALS__' in globalThis;
@@ -96,7 +97,7 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
         // A real sound name ("default" isn't one on macOS: it was silent). See lib/sounds/native.ts.
         const { sound, fallback }: { sound?: string; fallback?: () => void } = test ? {} : await notificationSound(n);
         // An approval on its own gets Approve / Decline (and Always for a friend's request) on the notification.
-        sendNotification({ title: n.title, body: n.body, ...(sound ? { sound } : {}), ...notificationActions(n), extra: { ...(n.channel ? { channel: n.channel } : {}), ...(n.approval ? { approval: n.approval } : {}), ...(n.task ? { task: n.task } : {}) } });
+        sendNotification({ title: t(n.title), body: t(n.body), ...(sound ? { sound } : {}), ...notificationActions(n), extra: { ...(n.channel ? { channel: n.channel } : {}), ...(n.approval ? { approval: n.approval } : {}), ...(n.task ? { task: n.task } : {}) } });
         fallback?.();
         return;
       }
@@ -133,7 +134,10 @@ export const APP_VERSION: string = version;
 /** Attach to Beluga. */
 export async function connect(caps: Capabilities): Promise<SocketClient> {
   const { url, token } = await endpoint();
-  return SocketClient.connect({ url, token, kind: 'mac', version: APP_VERSION, caps });
+  const client = await SocketClient.connect({ url, token, kind: 'mac', version: APP_VERSION, caps });
+  // The window opens on Overview (a screen starts on the room, which is no place of its own here: BLG-871).
+  client.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+  return client;
 }
 
 /**

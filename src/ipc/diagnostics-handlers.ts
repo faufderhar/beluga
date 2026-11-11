@@ -15,4 +15,7 @@ export const DIAGNOSTICS_HANDLERS = {
     const what = p.kind === 'stalled' ? 'never finished loading' : 'failed to load';
     blackbox.record('error', `window: chunk ${p.chunk} ${what} after ${Math.round(p.ms)} ms: ${p.message}`);
   },
+  'diagnostics.windowCrash': (_s, p) => {
+    blackbox.record('error', `window: ${p.part} crashed: ${p.message}${p.stack ? `\n${p.stack}` : ''}`);
+  },
 } satisfies DiagnosticsHandlers;

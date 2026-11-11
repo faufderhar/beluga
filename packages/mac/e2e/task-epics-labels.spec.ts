@@ -101,7 +101,8 @@ test('sub-tasks start tucked under their epic; the eye pops them out one by one,
   await page.getByLabel('Filter tasks').fill('');
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
   await expect(page.getByRole('row', { name: /Refund endpoint/ })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Show All' }).click();
+  // Exactly: the sidebar's Sentinel has a "Show all 10…" of its own.
+  await page.getByRole('button', { name: 'Show All', exact: true }).click();
   await expect(page.getByRole('row', { name: /Refund endpoint/ })).toBeVisible();
   await expect(page.getByText(/sub-tasks? tucked under their epics/)).toHaveCount(0);
 });

@@ -1,7 +1,8 @@
-import { Suspense, useRef } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Empty } from '../components/ui.js';
-import { useApp } from '../lib/beluga.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { groupChatOpen } from '../lib/group-chat.js';
 import { ViewBoundary, lazyView } from '../lib/lazy-view.js';
 import { useMaking } from '../lib/making.js';
 import { ChatView } from '../views/ChatView.js';
@@ -74,6 +75,25 @@ function MakingWorktree() {
   );
 }
 
+/**
+ * The room's group chat with its call around it (BLG-716), while someone else is in the room.
+ * Alone, it's no place (BLG-871): what still opens it (Back, a notification, /room, the phone's
+ * Open on your Mac) goes to Overview. Someone leaving while you read it leaves you where you are.
+ */
+function RoomChat() {
+  const { client } = useBeluga();
+  const [open] = useState(() => groupChatOpen(client.store.getState()));
+  useEffect(() => {
+    if (!open) client.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+  }, [open, client]);
+  if (!open) return null;
+  return (
+    <CallRoom id="room">
+      <ChatView />
+    </CallRoom>
+  );
+}
+
 function Route() {
   const view = useApp((st) => st.view);
   const making = useMaking();
@@ -83,12 +103,7 @@ function Route() {
   if (making) return <MakingWorktree />;
   switch (view.kind) {
     case 'room':
-      // The room's chat with its call around it (BLG-716).
-      return (
-        <CallRoom id="room">
-          <ChatView />
-        </CallRoom>
-      );
+      return <RoomChat />;
     case 'assistant':
     case 'draft':
     case 'draft_worktree':

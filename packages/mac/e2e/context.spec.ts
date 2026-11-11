@@ -53,7 +53,7 @@ test('the meter shows how full the conversation is, with the details on hover', 
 async function setAutoCompact(page: Page, on: boolean): Promise<void> {
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Agent' }).click();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   const auto = settings.getByRole('switch', { name: 'Auto-compact' });
   if ((await auto.getAttribute('aria-checked')) !== String(on)) await auto.click();
   await expect(auto).toHaveAttribute('aria-checked', String(on));
@@ -103,7 +103,7 @@ test('Compact now leaves a divider that opens to show what Claude kept', async (
 test('Settings › Claude has auto-compact with its threshold', async ({ page }) => {
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Agent' }).click();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   const auto = settings.getByRole('switch', { name: 'Auto-compact' });
   // Off by default: Claude 5 models have a 1M context window.
   await expect(auto).toHaveAttribute('aria-checked', 'false');

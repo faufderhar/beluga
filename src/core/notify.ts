@@ -10,6 +10,7 @@ import { isDecisionQid } from './plans/decisions.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { allNeeds, needMatches } from '../companion/needs-you.js';
 import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import { isExternalRequester } from './trust.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { laterUntil } from './triage/facts.js';
 
@@ -112,6 +113,7 @@ const firstLine = (text: string, max = 140): string => {
 /** "add-auth", "the group chat", or a shared workspace's name. */
 export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
+  if (isExternalRequester(channel)) return 'an external agent';
   if (isAssistant(channel)) return ASSISTANT_TITLE;
   if (isSentinelChat(channel)) return 'the Sentinel chat';
   // A friends' chat (your Claude acts there when you ask it, BLG-207).

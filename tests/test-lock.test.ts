@@ -139,7 +139,7 @@ describe.skipIf(process.platform === 'win32')("vitest's global setup", () => {
 describe.skipIf(process.platform === 'win32')("a worktree's Claude Code runs at lower priority", () => {
   it('nices a run that carries KLAUD_WORKTREE, and what it starts inherits it', async () => {
     // What it starts reads its own niceness (macOS's ps once said -10 for a process niced to 10 on CI).
-    const own = `${JSON.stringify(process.execPath)} -e 'console.log(require("os").getPriority())'`;
+    const own = `${JSON.stringify(process.execPath)} -e 'process.stdout.write(String(require("os").getPriority()) + "\\n")'`;
     const child = spawn('/bin/sh', ['-c', `sleep 0.3; ${own}`], { stdio: ['ignore', 'pipe', 'ignore'] });
     expect(niceForWorktree(child.pid!, { KLAUD_WORKTREE: '/w/kld-49' })).toBe(true);
     expect(os.getPriority(child.pid!)).toBe(10);

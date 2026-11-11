@@ -50,7 +50,6 @@ const GO: readonly AppMenuRow[] = [
   row('go-actions', 'Actions'),
   row('go-sentinel', 'Sentinel'),
   row('go-dashboard', 'Dashboard'),
-  row('go-room', 'Chat'),
   row('go-search', 'Search'),
   row('go-usage', 'Usage'),
   row('go-terminal', 'Terminal'),

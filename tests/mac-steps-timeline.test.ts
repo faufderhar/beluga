@@ -49,6 +49,13 @@ describe('remarks in the timeline', () => {
 });
 
 describe('foldOf', () => {
+  it('never folds a failed step away', () => {
+    const steps = ['a', 'b', 'c', 'd', 'e'].map((id, i) => ({ kind: 'step' as const, id, step: { id, status: i === 1 ? 'error' : 'done' } as never }));
+    const { older, shown } = foldOf(steps, 1);
+    expect(older.map((e) => e.id)).toEqual(['a', 'c', 'd']);
+    expect(shown.map((e) => e.id)).toEqual(['b', 'e']);
+  });
+
   it('folds all but the last few finished rows, never just one', () => {
     const t = timelineOf([step('a', 1), step('b', 2), step('c', 3)], [], () => undefined);
     expect(foldOf(t, 2).older).toEqual([]);

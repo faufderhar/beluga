@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -82,6 +82,10 @@ describe('the chat history backfill', () => {
       agent: { runtime: 'codex', label: 'Codex' },
     },
     { id: '5', type: 'chat', channel: 'ws:a', from: SELF, name: 'Me', text: 'after counting began', ts: NOW + 1, byAgent: false },
+    // Not prompts, as when counted live: a /command, a blank line, and words another agent sent through you.
+    { id: '6', type: 'chat', channel: 'ws:a', from: SELF, name: 'Me', text: '/clear', ts: NOW - DAY, byAgent: false },
+    { id: '7', type: 'chat', channel: 'ws:a', from: SELF, name: 'Me', text: '   ', ts: NOW - DAY, byAgent: false },
+    { id: '8', type: 'chat', channel: 'ws:a', from: SELF, name: 'Me', text: 'from my other agent', ts: NOW - DAY, byAgent: false, via: { id: 'codex-1', name: 'Codex', creationSource: 'mcp' } },
   ];
 
   it('counts your prompts and your agent’s runs from before counting began', () => {
@@ -128,6 +132,30 @@ describe('reading the stats', () => {
     // Nothing real at all: from when counting began.
     const only = { ...emptyStats(NOW), days: { '1970-01-01': { [ROOT]: { claude: { worktrees: 1 } } } } };
     expect(snapshotOf(only, false).since).toBe(NOW);
+  });
+
+  it('keeps what still reads when one value in stats.json is bad, and a copy of the file as it was', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'stats-'));
+    const file = path.join(dir, 'stats.json');
+    const day = statDay(NOW - DAY);
+    const pr = { project: ROOT, agent: 'claude', number: 4, opened: NOW - DAY, merged: NOW, added: 9, removed: 1 };
+    const broken = {
+      ...emptyStats(NOW - 9 * DAY),
+      history: true,
+      days: { [day]: { [ROOT]: { claude: { prompts: 3 }, codex: { prompts: -1 } } } },
+      prs: { [`${ROOT}#4`]: pr, [`${ROOT}#5`]: { ...pr, number: 5, added: null } },
+    };
+    writeFileSync(file, JSON.stringify(broken));
+    const loaded = loadStats(file, NOW);
+    expect(loaded.startedAt).toBe(NOW - 9 * DAY);
+    expect(loaded.history).toBe(true);
+    expect(loaded.days[day]![ROOT]).toEqual({ claude: { prompts: 3 } });
+    expect(Object.keys(loaded.prs)).toEqual([`${ROOT}#4`]);
+    expect(readdirSync(dir).some((f) => f.startsWith('stats.json.unreadable-'))).toBe(true);
+    // Not JSON at all: started over, the file kept beside it.
+    writeFileSync(file, '{ not json');
+    expect(loadStats(file, NOW + 1).days).toEqual({});
+    expect(readdirSync(dir).filter((f) => f.startsWith('stats.json.unreadable-'))).toHaveLength(2);
   });
 
   it('makes a repeatable demo year for every project', () => {
@@ -200,6 +228,79 @@ describe('the counter', () => {
     expect(totalsOf(counter.snapshot(), '').prompts).toBe(2);
     expect(totalsBy(counter.snapshot(), 'agent', '').get('codex')?.prompts).toBe(1);
     expect(listPrs).toHaveBeenCalledTimes(1);
+    counter.stop();
+  });
+
+  it('asks GitHub about every project, past Chats (listed first, with no folder)', async () => {
+    const store = new Store(initialState('test', 'ask'));
+    store.dispatch({ type: 'identity', selfId: SELF, isHost: true });
+    const chats: Project = { id: 'chats', name: 'Chats', root: '', base: '', workspaces: [] };
+    store.dispatch({ type: 'projects', projects: [chats, project([ws('a')])] });
+    const merged = [{ number: 7, headRefName: 'beluga/a', createdAt: new Date(NOW - DAY).toISOString(), mergedAt: new Date(NOW).toISOString(), additions: 12, deletions: 3 }];
+    const listPrs = vi.fn(async () => JSON.stringify(merged));
+    const counter = new StatsCounter({ store, file: null, historyDir: null, listPrs, now: () => NOW });
+    await counter.backfill();
+    expect(listPrs).toHaveBeenCalledWith(ROOT, expect.any(Number));
+    expect(totalsOf(counter.snapshot(), '')).toMatchObject({ prsMerged: 1, linesAdded: 12, linesRemoved: 3 });
+    counter.stop();
+  });
+
+  it('reads all of a project’s pull requests the first time, then only the newest', async () => {
+    const store = new Store(initialState('test', 'ask'));
+    store.dispatch({ type: 'identity', selfId: SELF, isHost: true });
+    store.dispatch({ type: 'projects', projects: [project([ws('a')])] });
+    let at = NOW;
+    const listPrs = vi.fn(async () => '[]');
+    const counter = new StatsCounter({ store, file: null, historyDir: null, listPrs, now: () => at });
+    await counter.backfill();
+    at += 7 * 3_600_000;
+    await counter.backfill();
+    const [first, later] = listPrs.mock.calls.map((c) => (c as unknown as [string, number])[1]);
+    expect(first).toBeGreaterThanOrEqual(1000);
+    expect(later).toBeLessThan(first!);
+    counter.stop();
+  });
+
+  it('asks GitHub again a few seconds after a worktree’s pull request merges, not hours later', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const store = new Store(initialState('test', 'ask'));
+      store.dispatch({ type: 'identity', selfId: SELF, isHost: true });
+      store.dispatch({ type: 'projects', projects: [project([ws('a')])] });
+      const pr = { number: 9, headRefName: 'beluga/a', createdAt: new Date(NOW - DAY).toISOString(), mergedAt: null as string | null, additions: 40, deletions: 2 };
+      const listPrs = vi.fn(async () => JSON.stringify([pr]));
+      const counter = new StatsCounter({ store, file: null, historyDir: null, listPrs, now: () => NOW });
+      counter.start();
+      await counter.backfill();
+      expect(totalsOf(counter.snapshot(), '').prsMerged).toBe(0);
+      pr.mergedAt = new Date(NOW).toISOString();
+      store.dispatch({ type: 'pr', id: 'a', pr: { number: 9, url: 'https://github.com/o/r/pull/9', state: 'MERGED', title: 'x', draft: false, checks: 'none' } });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(listPrs).toHaveBeenCalledTimes(2);
+      expect(totalsOf(counter.snapshot(), '')).toMatchObject({ prsMerged: 1, linesAdded: 40 });
+      // Already counted as merged: not asked again.
+      store.dispatch({ type: 'pr', id: 'a', pr: { number: 9, url: 'https://github.com/o/r/pull/9', state: 'MERGED', title: 'x!', draft: false, checks: 'none' } });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(listPrs).toHaveBeenCalledTimes(2);
+      counter.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads chat histories only once the projects are known', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'stats-'));
+    mkdirSync(path.join(dir, 'history'));
+    const old: LogItem = { id: 'o', type: 'chat', channel: 'ws:a', from: SELF, name: 'Me', text: 'from before', ts: NOW - DAY, byAgent: false };
+    writeFileSync(path.join(dir, 'history', 'a.json'), JSON.stringify([old]));
+    const store = new Store(initialState('test', 'ask'));
+    store.dispatch({ type: 'identity', selfId: SELF, isHost: true });
+    const counter = new StatsCounter({ store, file: null, historyDir: path.join(dir, 'history'), listPrs: null, now: () => NOW });
+    await counter.backfill();
+    expect(totalsOf(counter.snapshot(), '').prompts).toBe(0);
+    store.dispatch({ type: 'projects', projects: [project([ws('a')])] });
+    await counter.backfill();
+    expect(totalsOf(counter.snapshot(), '').prompts).toBe(1);
     counter.stop();
   });
 });

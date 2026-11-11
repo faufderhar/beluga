@@ -86,6 +86,11 @@ export function SelectMenu<T extends string>(p: MenuProps<T>) {
   useEffect(() => {
     if (place) reveal(list.current, rowAt(active));
   }, [active]);
+  // Opened before its options came (a project's branches): once there are enough for a field, the
+  // focus goes to it, as it would have on opening (unless you've moved it since).
+  useEffect(() => {
+    if (p.search && document.activeElement === list.current) field.current?.focus({ preventScroll: true });
+  }, [p.search]);
   useEffect(() => {
     if (place?.mode !== 'below') return;
     let frame = requestAnimationFrame(() => {

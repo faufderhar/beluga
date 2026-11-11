@@ -72,6 +72,12 @@ export const calls = {
   setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
   setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
+  /** 1.38 (BLG-122): external agents: who holds a grant, what they did, and stopping them. */
+  externalAgents: (): Call => make('external.agents', [], 'External agents'),
+  externalActivity: (kind?: 'allowed' | 'asked' | 'refused'): Call => make('external.activity', [kind ? { kind } : {}], 'Activity'),
+  externalStop: (agent: string, name: string): Call => make('external.stopAgent', [agent], `Stop ${short(name)}`),
+  externalStopAll: (): Call => make('external.stopAll', [], 'Stop all agents'),
+  externalRevoke: (agent: string, name: string): Call => make('external.revoke', [agent], `Revoke ${short(name)}`),
   /** Give a conversation the Mac's terminal drives back to the chat (1.36, BLG-534). */
   takeOver: (topic: Topic): Call => make('agentTerm.takeOver', [channelOf(topic).replace(/^ws:/, '')], 'Take over'),
   /** A request you asked of a friend's Claude (a `conv:task:<id>`): stop it, or (1.27) remove it from your lists. */

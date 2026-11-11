@@ -71,7 +71,7 @@ describe('side calls on any runtime (a fake one here)', () => {
 
 describe('claudeComplete', () => {
   it('starts Claude Code with no settings, no session and only the tools given', async () => {
-    claude.result = { subtype: 'success', result: 'fix-it' };
+    claude.result = { subtype: 'success', is_error: false, result: 'fix-it' };
     const said = await claudeComplete({ prompt: 'name it', system: 'You name.', cwd: '/x', model: 'haiku', tools: ['Read'], vetTool: (tool) => ({ allow: tool === 'Read', reason: tool === 'Read' ? 'Reading.' : 'No.' }), maxTurns: 3 }, '/bin/claude');
     expect(said).toBe('fix-it');
     expect(claude.prompt).toBe('name it');
@@ -85,6 +85,30 @@ describe('claudeComplete', () => {
     await claudeComplete({ prompt: 'what is this', images: [{ mime: 'image/png', data: 'AAAA' }], system: 's', cwd: '/x', suites: { beluga_chat: { name: 'beluga_chat', version: '1', tools: [] } } });
     expect(typeof claude.prompt).not.toBe('string');
     expect(claude.options).toMatchObject({ strictMcpConfig: true, mcpServers: { beluga_chat: { type: 'sdk', name: 'beluga_chat' } }, tools: [], maxTurns: 1 });
+  });
+
+  it.each([
+    'Failed to authenticate. OAuth session expired. Please log in again.',
+    'API Error: 401 unauthorized',
+    'Rate limit exceeded',
+  ])('rejects a flagged error regardless of provider wording: %s', async (result) => {
+    claude.result = { subtype: 'success', is_error: true, result };
+    await expect(claudeComplete({ prompt: 'p', system: 's', cwd: '/x' })).rejects.toMatchObject({ kind: 'failed' });
+  });
+
+  it('accepts successful answers about authentication rather than filtering error words', async () => {
+    claude.result = { subtype: 'success', is_error: false, result: 'fix-oauth-session-expired' };
+    const calls = sideCalls(claudeComplete, '/room');
+    expect(await calls.nameTask('fix the expired OAuth session')).toBe('fix-oauth-session-expired');
+  });
+
+  it('uses the local worktree name instead of an authentication error', async () => {
+    claude.result = { subtype: 'success', is_error: true, result: 'Failed to authenticate. OAuth session expired. Please log in again.' };
+    const calls = sideCalls(claudeComplete, '/room');
+    expect(await calls.nameTask('please fix the login redirect')).toBe('fix-login-redirect');
+    expect(await calls.nameTask('檢查並清理舊分支')).toMatch(/^task-[a-z0-9]{5}$/);
+    expect(await calls.titlePlan('take card payments')).toBeUndefined();
+    expect(await calls.titleChat('take card payments')).toBeUndefined();
   });
 
   it('says why there is no answer', async () => {

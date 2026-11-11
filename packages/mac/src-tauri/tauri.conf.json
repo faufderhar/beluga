@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Beluga",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "identifier": "io.github.kayraucklnc.beluga",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -36,7 +36,7 @@
     "deep-link": { "desktop": { "schemes": ["beluga", "klaud"] } },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBNTczOTFEMDA3MThFNDIKUldSQ2puRUFIVGxYYW1jeXhaT0tISG5CQXh3dWJibUJ0MVMvVm5TWDFNNzN4UXY4OHNHaENwR3kK",
-      "endpoints": ["https://github.com/kayraucklnc/beluga/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/beluga-labs/beluga/releases/latest/download/latest.json"],
       "requireSignedVersion": true
     }
   },
@@ -48,7 +48,7 @@
     "shortDescription": "Every project and the Claude working in it, with friends",
     "longDescription": "Beluga for macOS: the same Beluga as the terminal app — worktrees per task, Claude you can watch, and friends with their own Claude in the same room.",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
-    "resources": { "resources/daemon/": "daemon/" },
+    "resources": { "resources/daemon/": "daemon/", "locales/zh-Hans.lproj/": "zh-Hans.lproj/" },
     "externalBin": ["binaries/node"],
     "macOS": {
       "minimumSystemVersion": "12.0",

@@ -178,7 +178,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
   // Your own message in one of your conversations can be edited (BLG-385): rewound to, or forked from.
   const wsId = own && item.channel.startsWith('ws:') ? item.channel.slice(3) : undefined;
   const kind = useApp((st) => (wsId ? findWorkspace(st.projects, wsId)?.kind : undefined));
-  const editable = Boolean(wsId) && (kind === 'worktree' || kind === 'chat') && !steer;
+  const editable = Boolean(wsId) && (kind === 'worktree' || kind === 'chat') && !steer && !item.via;
   const [editing, setEditing] = useState(false);
   // Emoji reactions (BLG-702): the button a hover shows, and the chips under the message.
   const reactions = useChatReactions(item, own);
@@ -191,6 +191,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
         <div ref={row} className={cx(s.message, s.own, r.reactable, continued && s.continued, steer && s.unread)} data-mine="true" data-steer={steer ? 'waiting' : undefined} data-chat={item.id}>
           {editing ? null : reactions.button}
           <div className={s.body}>
+            {item.via ? <div className={s.sentBy} data-sent-by={item.via.id}>Sent by {item.via.name}</div> : null}
             {editing && wsId ? (
               <EditPrompt wsId={wsId} lineId={item.id} text={item.text} worktree={kind === 'worktree'} onClose={() => setEditing(false)} />
             ) : text ? (
@@ -238,6 +239,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
                 {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
               </div>
             )}
+            {item.via ? <div className={cx(s.sentBy, s.sentByTheirs)} data-sent-by={item.via.id}>Sent by {item.via.name}</div> : null}
             {text ? (
               <div className={cx(s.theirBubble, ends && s.theirTail)}>
                 <Folding>
@@ -268,6 +270,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
                     {item.name}
                   </span>
                   {item.byAgent ? <AgentBadge agent={item.agent} /> : null}
+                  {item.via ? <span className={s.time} data-sent-by={item.via.id}>Sent by {item.via.name}</span> : null}
                 </>
               )}
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
@@ -563,10 +566,10 @@ function TurnCard({
                 </Button>
               </ActionsDropdown>
             </div>
-          ) : limited && failure?.kind === 'signed_out' && (failure.runtime === 'opencode' || failure.runtime === 'grok') ? (
-            // OpenCode's model provider said no, or Grok Build isn't signed in: sign in in Terminal (`opencode auth login`, `grok login`), then Continue.
+          ) : limited && failure?.kind === 'signed_out' && (failure.runtime === 'opencode' || failure.runtime === 'copilot' || failure.runtime === 'grok') ? (
+            // OpenCode's model provider said no, Copilot's GitHub sign-in did, or Grok Build isn't signed in: sign in in Terminal, then Continue.
             <div className={s.limitActions}>
-              <Button size="small" icon="person" onClick={() => void client.api.workbench.agentSignIn(failure.runtime!).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'))} title="Add or renew a model provider in Terminal (opencode auth login), then Continue">
+              <Button size="small" icon="person" onClick={() => void client.api.workbench.agentSignIn(failure.runtime!).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'))} title={failure.runtime === 'copilot' ? 'Sign in to GitHub in Terminal (copilot login), then Continue' : failure.runtime === 'grok' ? 'Sign in with your Grok account in Terminal (grok login), then Continue' : 'Add or renew a model provider in Terminal (opencode auth login), then Continue'}>
                 Sign In
               </Button>
               <Button size="small" icon="play" onClick={resume} title={`Send “continue”: ${agentName(item.agent)} picks up where it stopped`}>

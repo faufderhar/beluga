@@ -7,6 +7,12 @@ export function toPct(value: number | null | undefined): number | undefined {
   return Math.max(0, Math.min(100, Math.round(pct)));
 }
 
+/** A value already in percent (0–100), never a fraction: 1 is 1%, not 100%. */
+export function fromPercent(value: number | null | undefined): number | undefined {
+  if (value === null || value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 /** Seconds, milliseconds or ISO strings → epoch ms. */
 export function toMs(value: number | string | null | undefined): number | undefined {
   if (value === null || value === undefined) return undefined;
@@ -44,11 +50,11 @@ interface UsageResponse {
   readonly rate_limits: { five_hour?: UsageWindowResponse | null; seven_day?: UsageWindowResponse | null } | null;
 }
 
-/** Map the (experimental) /usage response into our Usage shape. */
+/** Map the (experimental) /usage response into our Usage shape. Its utilization is a percentage (0–100, per the SDK's types). */
 export function fromUsageResponse(res: UsageResponse, now = Date.now()): Usage | undefined {
   if (!res.rate_limits_available || !res.rate_limits) return undefined;
   const win = (w: UsageWindowResponse | null | undefined) => {
-    const pct = toPct(w?.utilization);
+    const pct = fromPercent(w?.utilization);
     return pct === undefined ? undefined : { pct, resetsAt: toMs(w?.resets_at) };
   };
   return {

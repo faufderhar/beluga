@@ -3,6 +3,7 @@ import { joinPath } from '@beluga/shared/os-path.js';
 import { FormSheet } from '../../components/FormSheet.js';
 import { Button } from '../../components/ui.js';
 import { inApp } from '../../lib/boot.js';
+import { copyPng } from '../../lib/copy.js';
 import { toast, useApi, useBeluga } from '../../lib/beluga.js';
 import { type ShareInput, drawShare } from './share-image.js';
 import s from './your-card.module.css';
@@ -26,12 +27,6 @@ async function savePicture(png: string, save: (b64: string, to: string) => Promi
   return true;
 }
 
-/** Copy the picture, to paste it into a chat or a post. */
-async function copyPicture(png: string): Promise<void> {
-  const blob = await (await fetch(png)).blob();
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-}
-
 /**
  * Share your stats: the picture (share-image.ts) as it will be, Save Image… (the main action) and
  * Copy Image. Nothing is sent anywhere: you take it from here.
@@ -52,7 +47,8 @@ export function ShareSheet({ input, onClose }: { input: ShareInput; onClose: () 
   }, [input, client]);
   const copy = (): void => {
     if (!png) return;
-    copyPicture(png)
+    // The picture, to paste into a chat or a post.
+    copyPng(fetch(png).then((r) => r.blob()))
       .then(() => setCopied(true))
       .catch(() => toast(client, 'Couldn’t copy the picture: save it instead', 'warn'));
   };

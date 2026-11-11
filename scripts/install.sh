@@ -1,7 +1,7 @@
 #!/bin/sh
 # Beluga on a server (Linux or macOS), with nothing to install first and no sudo:
 #
-#   curl -fsSL https://github.com/kayraucklnc/beluga/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/beluga-labs/beluga/releases/latest/download/install.sh | sh
 #
 # Puts Beluga (with its own Node) in ~/.beluga/server and links `beluga` into ~/.local/bin.
 # Run it again (or `beluga update`) to update in place; a running Beluga is restarted on the new one.
@@ -10,7 +10,7 @@
 #   BELUGA_BIN_DIR=…            where to link `beluga` (default ~/.local/bin)
 set -eu
 
-REPO=kayraucklnc/beluga
+REPO=beluga-labs/beluga
 
 say() { printf '%s\n' "$*"; }
 fail() {

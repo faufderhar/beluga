@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { AgentRef } from '../../protocol.js';
+import { AgentRef, MessageVia } from '../../protocol.js';
 import { PeerIdSchema } from './schemas.js';
 import type { ChatExtras, ChatFile } from './views.js';
 
@@ -49,6 +49,8 @@ export const ExtrasSchema = z.object({
       agent: AgentRef.optional().catch(undefined),
     })
     .optional(),
+  // Which external agent wrote this for its owner. Older Macs drop it and show the words; a malformed one is dropped alone.
+  via: MessageVia.optional().catch(undefined),
   // Older Macs drop it and show the text ("kay asked bob's Claude: …").
   task: z.object({ id: z.string().regex(/^t_[\w-]{10,40}$/), role: z.literal('request') }).optional(),
 });
@@ -58,8 +60,9 @@ export function parseExtras(raw: unknown): ChatExtras | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const parsed = ExtrasSchema.safeParse(raw);
   if (!parsed.success) return undefined;
-  const { files, ask, claude, task } = parsed.data;
-  const out: { files?: ChatFile[]; ask?: ChatExtras['ask']; claude?: ChatExtras['claude']; task?: ChatExtras['task'] } = {};
+  const { files, ask, claude, task, via } = parsed.data;
+  const out: { files?: ChatFile[]; ask?: ChatExtras['ask']; claude?: ChatExtras['claude']; task?: ChatExtras['task']; via?: ChatExtras['via'] } = {};
+  if (via) out.via = via;
   if (task) out.task = { id: task.id, role: task.role };
   if (files?.length) out.files = files.map((f) => ({ sha: f.sha, name: f.name, size: f.size, ...(f.mime ? { mime: f.mime } : {}), ...(f.image ? { image: true } : {}) }));
   if (ask) out.ask = ask;
@@ -68,7 +71,7 @@ export function parseExtras(raw: unknown): ChatExtras | undefined {
 }
 
 /** The fields to spread into a message or a view: nothing when there are no extras. */
-export const extrasFields = (x: ChatExtras | undefined): ChatExtras => (x ? { ...(x.files ? { files: x.files } : {}), ...(x.ask ? { ask: x.ask } : {}), ...(x.claude ? { claude: x.claude } : {}), ...(x.task ? { task: x.task } : {}) } : {});
+export const extrasFields = (x: ChatExtras | undefined): ChatExtras => (x ? { ...(x.via ? { via: x.via } : {}), ...(x.files ? { files: x.files } : {}), ...(x.ask ? { ask: x.ask } : {}), ...(x.claude ? { claude: x.claude } : {}), ...(x.task ? { task: x.task } : {}) } : {});
 
 /** A message needs words, files, or a call for Claudes (who then read the conversation and answer it). */
 export function checkMessage(text: string, extras: ChatExtras | undefined, maxText: number): void {

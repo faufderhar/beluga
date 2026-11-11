@@ -109,7 +109,7 @@ export async function startDemo({ home, claude, port, linkMs = 0 }: { home: stri
     env: {
       ...process.env,
       TMPDIR: `${tmp}/`,
-      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), TAILSCALE: path.join(import.meta.dirname, 'fake-tailscale.mjs'), WEB_PORT: '0', FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}`, NETWORK: '', DEMO_LINK_MS: String(linkMs) }),
+      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), TAILSCALE: path.join(import.meta.dirname, 'fake-tailscale.mjs'), WEB_PORT: '0', FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}`, NETWORK: '', DEMO_LINK_MS: String(linkMs), EXTERNAL_PORT: '0' }),
     },
     stdio: ['ignore', out, out],
   });

@@ -2,7 +2,7 @@ import type { PreviewProblem } from '@beluga/shared/preview/opened.js';
 import { openExternal } from '../../lib/system.js';
 import { Icon } from '../Icon.js';
 import { Button, IconButton, cx } from '../ui.js';
-import type { FiredEvent } from './preview-model.js';
+import { type FiredEvent, floatsOverFrame } from './preview-model.js';
 import type { AuditIssue } from './use-preview.js';
 import s from './preview.module.css';
 
@@ -23,7 +23,7 @@ export function ProblemCard({ problem, touched, onReset, onAsk, onRetry, onTurnO
               ? { label: 'Ask Agent to Set Up', run: onAsk }
               : { label: 'Ask Agent to Fix', run: onAsk };
   return (
-    <div className={cx(s.problem, (problem.kind === 'render' || problem.kind === 'provider') && s.problemOver)} role="status">
+    <div className={cx(s.problem, floatsOverFrame(problem) && s.problemOver)} role="status">
       <Icon name="info" size={14} className={s.problemIcon} />
       <div className={s.problemText}>
         <strong>{problem.title}</strong>

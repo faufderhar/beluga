@@ -127,8 +127,17 @@ describe('explainGitTrouble', () => {
     expect(troubleLine(explainGitTrouble('Could not resolve host: github.com')!)).toBe('Couldn’t reach GitHub. Try again in a moment.');
   });
 
+  it('https helper broken: add an SSH key (Beluga goes over SSH by itself then), or GitHub’s guide', () => {
+    const raw = "git-remote-https: symbol lookup error: /lib/x86_64-linux-gnu/libcurl.so.4: undefined symbol: nghttp2_option_set_no_rfc9113_leading_and_trailing_ws_validation\nfatal: remote helper 'https' aborted session";
+    expect(classifyGitError(raw)).toBe('https_broken');
+    const https = 'https://github.com/me/app.git';
+    expect(explainGitTrouble(raw, { gh: 'ok', remote: https })!.fixes.map((f) => f.id)).toEqual(['add_ssh_key', 'link', 'retry']);
+    expect(explainGitTrouble(raw, { gh: 'logged_out', remote: https })!.fixes.map((f) => f.id)).toEqual(['link', 'retry']);
+    expect(explainGitTrouble(raw, { gh: 'ok', remote: https })!.title).toBe('git can’t use https on this computer');
+  });
+
   it('every fix has a label and a line; links have a page and terminal steps a command', () => {
-    const raws = [SSH_DENIED, 'Host key verification failed.', 'Repository not found', 'Authentication failed for x', 'spawn gh ENOENT', 'gh auth login', 'No such remote', 'Could not resolve host'];
+    const raws = [SSH_DENIED, 'Host key verification failed.', 'Repository not found', 'Authentication failed for x', "fatal: remote helper 'https' aborted session", 'spawn gh ENOENT', 'gh auth login', 'No such remote', 'Could not resolve host'];
     const setups: GitSetup[] = [{ gh: 'ok', remote: ssh }, { gh: 'logged_out', remote: ssh }, { gh: 'missing', brew: '/opt/homebrew/bin' }, { gh: 'missing' }, { gh: 'unknown' }];
     for (const raw of raws)
       for (const setup of setups) {

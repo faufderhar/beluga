@@ -267,7 +267,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const continued = (i: number): boolean => {
     const a = rows[i - 1];
     const b = rows[i];
-    return Boolean(a && b && a.type === 'chat' && b.type === 'chat' && a.from === b.from && a.byAgent === b.byAgent && b.ts - a.ts < GROUP_GAP_MS);
+    return Boolean(a && b && a.type === 'chat' && b.type === 'chat' && a.from === b.from && a.byAgent === b.byAgent && a.via?.id === b.via?.id && b.ts - a.ts < GROUP_GAP_MS);
   };
 
   const go = (index: number): void => {

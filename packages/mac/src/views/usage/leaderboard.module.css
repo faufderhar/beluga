@@ -1,0 +1,308 @@
+/*
+ * The leaderboard (Leaderboard.tsx): one surface. Standings first (a row a person, their points as
+ * one bar split by number), a legend, then each number head to head in cells split by hairlines,
+ * like the stats strip. Colour only says which number; everything else is type and hairlines.
+ * Sits inside usage.module.css's .page (its --card, --card-line and --track).
+ */
+.board,
+.empty {
+  --b-chars: var(--series-1);
+  --b-prs: var(--merged);
+  --b-time: var(--worktree);
+}
+
+.wait {
+  height: 260px;
+  border-radius: 18px;
+  background: var(--card);
+  opacity: 0.5;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px;
+}
+.emptyText {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 1rem;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------ standings */
+
+.standingsWrap {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 4px;
+}
+.standings {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* You, after a jump past the rows not shown. */
+.gapRow {
+  height: 1px;
+  margin: 6px 10px;
+  background: repeating-linear-gradient(to right, var(--card-line) 0 4px, transparent 4px 8px);
+}
+.standingsFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 8px 10px 2px;
+}
+.more {
+  margin-left: auto;
+}
+.row {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(7rem, 12rem) minmax(0, 1fr) 4.5rem;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  padding: 0 10px;
+  border-radius: 10px;
+}
+.rowMe {
+  background: color-mix(in srgb, var(--card) 92%, var(--text) 4%);
+}
+.place {
+  color: var(--text-3);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.placeFirst {
+  color: var(--text);
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--track);
+}
+.barFill {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  transform-origin: left;
+  transition: transform 700ms var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+.part {
+  flex-basis: 0;
+  min-width: 2px;
+}
+.points {
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.pointsUnit {
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.note {
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 10px 22px 16px;
+  color: var(--text-2);
+  font-size: 0.82rem;
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.legendNote {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------------------ head to head */
+
+.versusFit {
+  container: board-versus / inline-size;
+  border-top: 0.5px solid var(--card-line);
+}
+.versusRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--card-line);
+}
+@container board-versus (width < 46rem) {
+  .versusRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.versus {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 18px 22px 20px;
+  background: var(--card);
+}
+.vLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 0.84rem;
+  font-weight: 550;
+}
+.vLabel :global(svg) {
+  color: var(--b);
+}
+.vHeadline {
+  min-height: 2.6em;
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Everyone on one line, none at the left, the most at the right. */
+.line {
+  position: relative;
+  height: 30px;
+  margin: 8px 11px 6px;
+}
+.lineTrack {
+  position: absolute;
+  top: 50%;
+  left: -11px;
+  right: -11px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--track), color-mix(in srgb, var(--b) 55%, var(--track)));
+  transform: translateY(-50%);
+}
+.mark {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card);
+  transform: translate(-50%, -50%);
+  transition: left 800ms var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+.markMe {
+  z-index: 1;
+  box-shadow:
+    0 0 0 2px var(--card),
+    0 0 0 3.5px var(--b);
+}
+
+.dot {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--b) 45%, var(--card));
+  box-shadow: 0 0 0 1.5px var(--card);
+  transform: translate(-50%, -50%);
+  transition: left 800ms var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+.figures {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 3rem;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.figureMe {
+  color: var(--text);
+}
+.fName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fValue {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.figureGap {
+  height: 1px;
+  margin: 3px 0;
+  background: repeating-linear-gradient(to right, var(--card-line) 0 4px, transparent 4px 8px);
+}
+.fMore {
+  margin: 4px 0 0;
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+.fVs {
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barFill,
+  .mark,
+  .dot {
+    transition: none;
+  }
+}

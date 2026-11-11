@@ -1,15 +1,15 @@
 import { router } from 'expo-router';
 import { ArrowUp, Bot, Check, ChevronRight, CircleAlert, Hourglass, ImageIcon, Images, MessageSquare } from 'lucide-react-native';
 import { ProjectMark } from './ProjectMark';
-import { Fragment, type ReactNode, useState } from 'react';
+import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { Image } from 'expo-image';
 import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { openOutput } from './Outputs';
 import { Block } from './render/Block';
 import { CodeChip } from './render/CodeChip';
-import { InlineThing } from './render/Inline';
+import { InlineThing, useWorktreeIds } from './render/Inline';
 import { ViewCard } from './render/ViewCard';
-import { TASK_LINK_SCHEME, linkTaskKeys, readInline, splitInlineMath, tableView } from '../lib/render';
+import { TASK_LINK_SCHEME, codeWorktreeRefs, linkTaskKeys, readInline, splitInlineMath, tableView } from '../lib/render';
 import { TaskChip, type TaskRef, useTaskIndex } from './render/TaskChip';
 import { InlineMath, type MathMap } from './render/MathBlock';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -106,16 +106,20 @@ const isRule = (line: string): boolean => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?
  * Claude's words: paragraphs, bullets, headings, Markdown tables (drawn as table views, as on the
  * Mac), pictures from the web, and what it drew (views, graphs, tasks: components/render), with
  * any other code folded into a chip. `at`: the conversation and turn, for a live view's rows.
- * `tasks`: a bare task key the board has ("BLG-98", "@BLG-98") is a live chip (BLG-109): your own
- * words and your own Claude's only, as on the Mac (someone else's key may be on their board).
+ * `tasks`: a bare task key the board has ("BLG-98", "@BLG-98") is a live chip (BLG-109), and so is a
+ * pasted "worktree:wt-…": your own words and your own Claude's only, as on the Mac (someone else's key
+ * may be on their board).
  */
 export function Prose({ prose, color: tone = color.text, size = 15.5, at, tasks: withTasks = false }: { readonly prose: ProseView; readonly color?: string; readonly size?: number; readonly at?: { topic: Topic; turn: string }; readonly tasks?: boolean }) {
   const base = { ...type.body, fontSize: size, lineHeight: size * 1.42, color: tone };
   const index = useTaskIndex(withTasks);
   const tasks = withTasks && index.size ? index : undefined;
+  // A pasted "worktree:wt-…" of yours: its chip (BLG-878), on the same terms as the task keys.
+  const worktrees = useWorktreeIds(withTasks);
+  const text = useMemo(() => (worktrees.size ? codeWorktreeRefs(prose.text, (id) => worktrees.has(id)) : prose.text), [prose.text, worktrees]);
   type Block = { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'h'; text: string } | { kind: 'code'; n: number } | { kind: 'table'; lines: string[] } | { kind: 'img'; alt: string; src: string };
   const blocks: Block[] = [];
-  const lines = prose.text.split('\n');
+  const lines = text.split('\n');
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li]!.trimEnd();
     const last = blocks.at(-1);

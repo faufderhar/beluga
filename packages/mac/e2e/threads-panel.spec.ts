@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { SocketClient } from '../../../src/ipc/socket-client.js';
 import { expect, test, type Page } from './fixtures.js';
+import { openGroupChat } from './helpers.js';
 
 /**
  * Child threads in the Mac app (BLG-166 to BLG-168): the demo's agent starts real threads through
@@ -52,7 +53,7 @@ test('with threads off, no row has a mark', async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
   // A chat that is on the screen twice: in its project, and unread.
   await startParent(page, 'e2e-off', 'none=claude:finish now');
-  await sidebar(page).getByRole('button', { name: /^Group chat( \d+)?$/ }).first().click();
+  await openGroupChat(page);
   await unfold(page);
   await expect(sidebar(page).getByRole('button', { name: 'e2e-off', exact: true })).toBeVisible();
   await expect(sidebar(page).getByRole('region', { name: 'Unread' }).getByRole('button', { name: /^e2e-off · / })).toBeVisible({ timeout: 40_000 });

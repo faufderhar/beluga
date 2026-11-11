@@ -7,9 +7,9 @@ import { GIT_LOCAL_ENV, dropGitLocalEnv } from '../src/core/git-env.js';
 
 /** Beluga started from inside git never points its own git at that repository (a bisect made one bare). */
 describe('git’s own variables', () => {
-  it('are git’s full list, as git says it', () => {
+  it('cover git’s full list, as this git says it (older ones list one more)', () => {
     const said = execFileSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' }).split('\n').filter(Boolean).sort();
-    expect([...GIT_LOCAL_ENV].sort()).toEqual(said);
+    expect(said.filter((k) => !(GIT_LOCAL_ENV as readonly string[]).includes(k))).toEqual([]);
   });
 
   it('are dropped, and with them gone `git init --bare` makes the folder it names, not the repository they pointed at', () => {

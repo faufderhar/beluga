@@ -21,9 +21,10 @@ const keys = deriveKeys(generateSecret());
 let hub: Hub;
 const sessions: Session[] = [];
 let demo: WorkspaceManager;
+// Two real repos with history and worktrees: well past 30 s on a busy Windows runner.
 beforeAll(async () => {
   demo = await createDemoWorkspaces();
-});
+}, 120_000);
 afterEach(async () => {
   for (const s of sessions.splice(0)) await s.stop();
   await hub?.close();

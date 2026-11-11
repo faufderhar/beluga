@@ -7,12 +7,12 @@ import { type Location, type Store, clean } from './store.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 
 /** What someone invited by link to one project may send you; everything else is dropped. */
-const GUEST_KINDS = new Set<Body['kind']>(['chat', 'chat_react', 'agent_request', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'ws_leave']);
+const GUEST_KINDS = new Set<Body['kind']>(['chat', 'chat_react', 'agent_request', 'agent_event', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'ws_leave']);
 
 export function guestMayDo(body: Body, shares: Pick<ShareService, 'isPrivate'>): boolean {
   if (!GUEST_KINDS.has(body.kind)) return false;
-  // Not the room chat, not your Claude in the room: only their workspaces.
-  if ((body.kind === 'chat' || body.kind === 'chat_react' || body.kind === 'agent_request') && !body.channel.startsWith('ws:')) return false;
+  // Not the room chat, not your Claude in the room: only their workspaces (their own agent's answers there too).
+  if ((body.kind === 'chat' || body.kind === 'chat_react' || body.kind === 'agent_request' || body.kind === 'agent_event') && !body.channel.startsWith('ws:')) return false;
   // Only folders shared with particular people (their workspaces), never ones shared with the whole room.
   if (body.kind === 'fs_list' || body.kind === 'fs_read' || body.kind === 'fs_fetch' || body.kind === 'fs_search') return shares.isPrivate(body.share);
   return true;

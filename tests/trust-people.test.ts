@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TRUST_INFO, defaultTrust, reachOf, trustOf } from '../src/core/trust.js';
+import { TRUST_INFO, defaultTrust, reachOf, requesterTrust, trustOf } from '../src/core/trust.js';
 import { People, type PeopleDeps } from '../src/core/people.js';
 import { Store, initialState, reduce, type DomainState, type Policy } from '../src/core/store.js';
 import type { Settings } from '../src/core/settings.js';
@@ -22,6 +22,11 @@ describe('trust', () => {
   it('you always fully trust yourself, whatever the policy or levels', () => {
     const s = reduce(withSelf('deny'), { type: 'trust_level', peerId: SELF, level: 'blocked' });
     expect(trustOf(s, SELF)).toBe('full');
+  });
+
+  it('requesterTrust gives the same answers as trustOf and reachOf', () => {
+    const s = reduce(reduce(withSelf('auto'), { type: 'trust_level', peerId: BOB, level: 'blocked' }), { type: 'trust_level', peerId: ANN, level: 'full' });
+    for (const id of [SELF, BOB, ANN, 'someone-else']) expect(requesterTrust(s, id)).toEqual({ level: trustOf(s, id), reach: reachOf(s, id) });
   });
 
   it('an explicit level beats the policy default', () => {

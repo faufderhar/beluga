@@ -53,7 +53,7 @@ export const NamedUsageWindow = UsageWindow.extend({ label: z.string().min(1).ma
 export type NamedUsageWindow = z.infer<typeof NamedUsageWindow>;
 
 /** Runtimes Beluga knows by name; others (a newer Mac's) still parse, as their id. */
-export const KNOWN_RUNTIMES = ['claude', 'codex', 'opencode', 'grok', 'local'] as const;
+export const KNOWN_RUNTIMES = ['claude', 'codex', 'opencode', 'copilot', 'grok', 'local'] as const;
 export type AgentRuntime = (typeof KNOWN_RUNTIMES)[number] | (string & {});
 
 /**
@@ -128,6 +128,13 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
 // `sentinel-chat:<id>`: the Sentinel chat (docs/sentinel.md §12), yours only; its events only go to you.
 export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|sentinel-chat:[a-z0-9]{1,24}|ws:[\w:.-]{1,80}|dm:[\w-]{8,64}|group:[\w-]{1,80})$/).default('room');
 
+/**
+ * An external agent acted through its owner's Beluga: the frame is signed with the owner's key, so
+ * this says the words aren't the owner's. Additive: an older Mac drops it and shows the rest.
+ */
+export const MessageVia = z.object({ id: z.string().min(1).max(40), name: z.string().min(1).max(80), creationSource: z.literal('mcp') });
+export type MessageVia = z.infer<typeof MessageVia>;
+
 export const ChatBody = z.object({
   kind: z.literal('chat'),
   text: z.string().min(1).max(MAX_TEXT),
@@ -135,6 +142,7 @@ export const ChatBody = z.object({
   channel: Channel,
   /** With `byAgent`: which of their agents wrote it (an older Mac leaves it out: Claude). */
   agent: AgentRef.optional(),
+  via: MessageVia.optional(),
   /**
    * BLG-702: the sender's own id for it, the same in every copy (a workspace chat goes to each person
    * in a frame of its own), so a reaction can name it: it's `<from>:<mid>` everywhere. An older Mac
@@ -174,6 +182,8 @@ export const AgentRequestBody = z.object({
   requestId: shortStr,
   prompt: z.string().min(1).max(MAX_TEXT),
   viaAgent: z.boolean().default(false),
+  /** An external agent of theirs asked: their card says so. */
+  via: MessageVia.optional(),
   channel: Channel,
   /** Now, not after the current task: your own steer the run working (read at its next step), else interrupt it. */
   urgent: z.boolean().default(false),
@@ -227,6 +237,8 @@ export const AgentEventBody = z.object({
   agent: AgentRef.optional(),
   /** BLG-520: the request named another agent, which doesn't run there: why `agent` answers instead (in words). */
   fallback: z.string().max(300).optional(),
+  /** The run is an external agent's: its requester shows as this name. */
+  via: MessageVia.optional(),
 });
 
 export const FsListBody = z.object({
@@ -445,6 +457,8 @@ export const ShellRequestBody = z.object({
   timeoutSec: z.number().int().min(1).max(MAX_SHELL_SECONDS).default(120),
   /** Your Claude asked (not you). */
   viaAgent: z.boolean().default(false),
+  /** An external agent of theirs asked: their card says so. */
+  via: MessageVia.optional(),
   why: z.string().max(500).default(''),
 });
 export const ShellResultBody = z.object({

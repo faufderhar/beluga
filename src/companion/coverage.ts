@@ -259,7 +259,9 @@ export const PHONE: Record<Method, Side> = {
   'projects.initGit': 'mac',
   'projects.suggest': 'mac',
   'projects.create': 'mac',
+  'projects.clone': 'mac',
   'projects.newHome': 'mac',
+  'projects.myRepos': 'mac',
   'projects.iconAt': 'mac',
   'local.listDirs': 'mac',
   'local.browse': 'mac',
@@ -323,14 +325,16 @@ export const PHONE: Record<Method, Side> = {
   'revenuecat.refresh': 'mac',
   'revenuecat.setApps': 'mac',
 
-  // ---- supporting Beluga: the star and coffee asks are the Mac's (they open web pages there)
+  // ---- supporting Beluga: the star ask is the Mac's (it opens GitHub there)
   'support.answer': 'mac',
   // ---- your stats: the Usage tab's charts and what the composer saw (the phone keeps its plan meters)
   'stats.get': 'mac',
+  'stats.leaderboard': 'mac',
   'stats.note': 'mac',
   'stats.saveImage': 'mac',
   'diagnostics.report': 'mac',
   'diagnostics.windowProblem': 'mac',
+  'diagnostics.windowCrash': 'mac',
 
   // ---- browsers on the web port (BLG-650): let in and revoked from the Mac's Settings or `beluga web`
   'web.link': 'mac',
@@ -704,6 +708,19 @@ export const PHONE: Record<Method, Side> = {
   'sentinel.chatOpen': 'mac',
   'sentinel.chatClear': 'mac',
   'sentinel.chatDelete': 'mac',
+  // External agents: only the Mac app and `beluga mcp` manage who connects.
+  'external.status': 'mac',
+  'external.setEnabled': 'mac',
+  'external.setRoute': 'mac',
+  'external.pairingCode': 'mac',
+  'external.localToken': 'mac',
+  'external.agents': 'phone',
+  'external.revoke': 'phone',
+  'external.resume': 'mac',
+  'external.stopAgent': 'phone',
+  'external.stopAll': 'phone',
+  'external.setPaused': 'mac',
+  'external.activity': 'phone',
 };
 
 /** A method the phone may call (unknown names are not). */

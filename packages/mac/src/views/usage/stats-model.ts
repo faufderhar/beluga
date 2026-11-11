@@ -182,7 +182,7 @@ export interface GroupRow {
   readonly projectId?: string;
 }
 
-const AGENT_COLOR: Readonly<Record<string, string>> = { claude: 'var(--claude)', codex: 'var(--a-codex)', opencode: 'var(--a-opencode)', grok: 'var(--a-grok)', local: 'var(--a-local)' };
+const AGENT_COLOR: Readonly<Record<string, string>> = { claude: 'var(--claude)', codex: 'var(--a-codex)', opencode: 'var(--a-opencode)', copilot: 'var(--a-copilot)', grok: 'var(--a-grok)', local: 'var(--a-local)' };
 
 /** A project's (or agent's) name, colour and icon, from its key (a root, or a runtime). */
 export function groupOf(key: string, by: GroupBy, projects: AppState['projects']): { name: string; color: string; projectId?: string } {

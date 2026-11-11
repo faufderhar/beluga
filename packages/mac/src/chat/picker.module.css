@@ -30,10 +30,14 @@
   background: var(--bg-hover);
   color: var(--text);
 }
+/* Never taller or wider than the window lets it be: the models scroll inside instead. */
 .popover {
   z-index: 60;
-  width: 340px;
-  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, var(--radix-popover-content-available-width, 440px));
+  max-height: min(420px, var(--radix-popover-content-available-height, 420px));
+  padding: 6px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
   backdrop-filter: blur(30px) saturate(1.7);
@@ -49,9 +53,10 @@
 }
 .heading {
   display: flex;
+  flex: none;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 8px 4px;
+  padding: 4px 8px 6px;
   font-weight: 600;
   font-size: 0.9rem;
 }
@@ -60,32 +65,103 @@
   font-weight: 400;
   font-size: 0.84rem;
 }
+/* The agents on the left, the shown one's models on the right; each scrolls on its own. */
+.body {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+.rail,
+.pane {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-right: 6px;
+  border-right: 0.5px solid var(--hairline);
+}
+.agent {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-align: left;
+}
+.agent:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.agentOn,
+.agentOn:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.agentMark {
+  flex: none;
+}
+.agentName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agentOff {
+  color: var(--text-3);
+}
+.agentOff .agentMark {
+  opacity: 0.55;
+}
+/* The agent at work here. */
+.inUse {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 .models {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-bottom: 6px;
 }
+/* One line a model: its name, then what it's good at, cut short when it's long (the whole of it in the tooltip). */
 .model {
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
   text-align: left;
+  white-space: nowrap;
 }
 .model:hover {
   background: var(--bg-hover);
 }
-.modelOn {
+.modelOn,
+.modelOn:hover {
   background: var(--bg-selected);
 }
 .radio {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-  margin-top: 1px;
+  width: 14px;
+  height: 14px;
   flex: none;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
@@ -95,154 +171,174 @@
   background: var(--accent);
   box-shadow: none;
 }
-.modelText {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
 .modelName {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex: none;
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 550;
-}
-.flavor {
-  color: var(--text-3);
-  font-weight: 400;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
 }
 .modelDesc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-3);
-  font-size: 0.84rem;
-}
-.others {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: 8px;
-  color: var(--text-2);
-  font-size: 0.86rem;
-  font-weight: 500;
-}
-.others:hover {
-  background: var(--bg-hover);
-}
-.group {
-  margin: 2px 0 4px 8px;
-}
-.groupName {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px 2px;
-  font-weight: 600;
-  font-size: 0.86rem;
-}
-/* A runtime's mark, before its name (never instead of it). */
-.mark {
-  flex: none;
-  align-self: center;
-  margin-right: -2px;
-  color: var(--text-2);
-}
-.groupOff .mark {
-  color: var(--text-3);
+  font-size: 0.82rem;
 }
 /* A model's maker, when it isn't its runtime's own (a GPT model served locally). */
 .maker {
   flex: none;
-  align-self: center;
   margin-right: -3px;
   color: var(--text-3);
 }
-.groupOff .groupName {
-  color: var(--text-3);
-}
 .why {
-  padding: 2px 8px 8px;
+  padding: 6px 8px;
   color: var(--text-3);
   font-size: 0.84rem;
+  line-height: 1.4;
 }
-.meterRow {
+/* Effort, for every conversation: what the level means, then Auto and Low to Max on one track. */
+.thinking {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  margin: 4px 8px 0;
-}
-.auto {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 6px;
-  color: var(--text-2);
-  font-size: 0.86rem;
-  font-weight: 500;
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
-}
-.autoOn {
-  background: var(--accent);
-  color: white;
-  box-shadow: none;
-}
-.meter {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-}
-.step {
-  display: flex;
+  flex: none;
   flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-end;
-  gap: 4px;
-  height: 46px;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 4px 2px;
+  border-top: 0.5px solid var(--hairline);
 }
-.step:disabled {
-  opacity: 0.3;
+.thinkingHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 4px;
 }
-.stepLabel {
-  color: var(--text-3);
-  font-size: 0.74rem;
-  text-align: center;
+.thinkingLabel {
+  flex: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.thinkingDetail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-3);
+  font-size: 0.82rem;
 }
-.stepLabelOn {
+/*
+ * Six equal stops. `--at` is the stop picked (0 Auto … 5 Max), `--heat` how deep the level is
+ * (0 … 1): the fill behind the stops reaches the thumb and warms toward Claude's colour with it.
+ */
+.track {
+  --stops: 6;
+  --stop: calc((100% - 4px) / var(--stops));
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  height: 28px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--bg-press);
+  isolation: isolate;
+}
+.fill {
+  position: absolute;
+  z-index: -1;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(var(--stop) * (var(--at) + 1));
+  border-radius: 7px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--claude) calc(var(--heat) * 34%), transparent));
+  opacity: min(1, calc(var(--heat) * 4));
+  transition: width var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
+}
+.thumb {
+  position: absolute;
+  z-index: -1;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: var(--stop);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--claude) calc(var(--heat) * 22%), var(--bg-raised));
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 1px 2px rgba(0, 0, 0, 0.08);
+  transform: translateX(calc(100% * var(--at)));
+  transition: transform var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+}
+.level {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: color var(--dur-fast);
+}
+.level:hover:not(:disabled) {
+  color: var(--text);
+}
+.levelOn {
   color: var(--text);
   font-weight: 600;
 }
-.bar {
-  display: block;
-  border-radius: 3px;
-  background: var(--bg-press);
-  transform-origin: bottom;
-  transition: background var(--dur-fast), transform var(--dur-fast);
-}
-.step:hover:not(:disabled) .bar {
-  background: color-mix(in srgb, var(--claude) 35%, var(--bg-press));
-}
-.step:active:not(:disabled) .bar {
-  transform: scaleY(0.94);
-}
-.barOn {
-  background: var(--claude);
-}
-.step:hover:not(:disabled) .barOn {
-  background: color-mix(in srgb, var(--claude) 85%, white);
-}
-.effortDetail {
-  padding: 8px 8px 4px;
+.level:disabled {
   color: var(--text-3);
-  font-size: 0.84rem;
+  opacity: 0.45;
+  cursor: default;
 }
-/* A model that can't be picked now (a local endpoint not answering): greyed, its why below it. */
+.level:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fill,
+  .thumb {
+    transition: none;
+  }
+}
+/* A model that can't be picked now (a local endpoint not answering): greyed, its why in its line. */
 .modelOff {
   opacity: 0.55;
   cursor: default;
 }
 .modelOff:hover {
   background: none;
+}
+/* Moving to another agent (BLG-592): two ways, each in two lines. */
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+.choice:hover {
+  background: var(--bg-hover);
+}
+.choiceText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.choiceName {
+  font-weight: 550;
+}
+.choiceDesc {
+  color: var(--text-3);
+  font-size: 0.84rem;
 }
 /* Moving to another agent (BLG-592): back to the models, and each way's icon where a model's radio sits. */
 .back {

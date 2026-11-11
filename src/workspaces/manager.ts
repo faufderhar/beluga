@@ -21,6 +21,7 @@ import { dropCodexSessions } from '../agent/runtime/codex/codex-sessions.js';
 import { dropOpenCodeFolder, dropOpenCodeSession } from '../agent/runtime/opencode/sessions.js';
 import { dropGrokSession } from '../agent/runtime/grok/sessions.js';
 import { foldSessionCache } from '../shared/context-usage.js';
+import { dropCopilotFolder, dropCopilotSession } from '../agent/runtime/copilot/sessions.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { DeletePlan, MergeWait, Project, ProjectGroup, PullHead, ProjectSync, ProjectsConfig, RenameResult, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -1208,7 +1209,7 @@ export class WorkspaceManager {
     // A chat in a folder that stays (yours, or a worktree it was forked in): only what you sent it goes.
     else if (ws.kind === 'chat' && existsSync(ws.path)) await dropSent(ws.path, sentFolder(`ws:${ws.id}`, false)).catch(() => undefined);
     if (ours) {
-      // Claude Code's (your own Claude and local models alike), Codex's and OpenCode's, whichever agent ran there.
+      // Claude Code's (your own Claude and local models alike), Codex's, OpenCode's, Grok Build's and Copilot's, whichever agent ran there.
       for (const dir of new Set([sessionsDir, path.resolve(ws.path)])) await dropFolderSessions(dir).catch(() => 0);
       await dropCodexSessions({ dir: sessionsDir }).catch(() => 0);
       if (ws.sessionRuntime === 'opencode') {
@@ -1216,10 +1217,12 @@ export class WorkspaceManager {
         await dropOpenCodeFolder(sessionsDir, ws.kind === 'worktree' ? ws.projectRoot : sessionsDir).catch(() => 0);
       }
       if (ws.sessionRuntime === 'grok' && ws.sessionId) await dropGrokSession(ws.sessionId).catch(() => false);
+      if (ws.sessionRuntime === 'copilot') await dropCopilotFolder(sessionsDir).catch(() => 0);
     } else if (ws.kind === 'chat' && this.ownSession(ws)) {
       if (ws.sessionRuntime === 'codex') await dropCodexSessions({ threadId: ws.sessionId! }).catch(() => 0);
       else if (ws.sessionRuntime === 'opencode') await dropOpenCodeSession(ws.sessionId!).catch(() => false);
       else if (ws.sessionRuntime === 'grok') await dropGrokSession(ws.sessionId!).catch(() => false);
+      else if (ws.sessionRuntime === 'copilot') await dropCopilotSession(ws.sessionId!).catch(() => false);
       else await dropSession(sessionsDir, ws.sessionId!).catch(() => undefined);
     }
     this.records = this.records.filter((r) => r.id !== id);
@@ -1309,6 +1312,12 @@ export class WorkspaceManager {
     this.require(id);
     // Another agent's model may not take the effort picked for the last one: Settings' again.
     this.patchRecord(id, { agent: undefined, model: undefined, effort: undefined, ...agentFields(agent) });
+  }
+
+  /** An external agent started this chat. */
+  setStartedBy(id: string, agent: { readonly id: string; readonly name: string }): void {
+    this.require(id);
+    this.patchRecord(id, { startedByAgent: agent });
   }
 
   /** After a quiet switch, the agent it came from (BLG-592); undefined once its recent conversation went along. */

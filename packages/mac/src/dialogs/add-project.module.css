@@ -227,3 +227,53 @@
 .newError {
   color: var(--error);
 }
+
+/* Clone: your GitHub repositories above the address. */
+.cloneForm {
+  flex: 1;
+  min-height: 0;
+  padding-top: 0;
+}
+.cloneForm .listHead {
+  padding-top: 8px;
+  padding-bottom: 0;
+}
+.repoList {
+  flex: 1 1 auto;
+  max-height: 280px;
+}
+.repo {
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.repoPicked,
+.repoPicked:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.repoList .note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* A button's words stacked in one cell: as wide as the widest, whichever shows. */
+.steady {
+  display: inline-grid;
+}
+.steady > span {
+  grid-area: 1 / 1;
+  text-align: center;
+}
+.steadyOff {
+  visibility: hidden;
+}
+.repo .itemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -104,7 +104,7 @@ export const addonInstalled = (): boolean => phoneControlAvailable() && phoneCon
 /** Open Beluga Link (it goes to Accessibility), or where to download it. */
 export const openAddon = (): void => phoneControl.openAddon();
 /** Beluga Link's APK on the latest release (each release carries it under this name, BLG-390). */
-export const LINK_APK_URL = 'https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk';
+export const LINK_APK_URL = 'https://github.com/beluga-labs/beluga/releases/latest/download/Beluga-Link.apk';
 export const downloadLink = (): void => void Linking.openURL(LINK_APK_URL);
 export const onAccessibilityChange = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onAccessibilityChange(fn) : () => {});
 /** The Stop button on the phone's notification: cut control at once. */

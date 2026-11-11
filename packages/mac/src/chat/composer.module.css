@@ -110,6 +110,81 @@
 .fileChip button:hover {
   background: color-mix(in srgb, var(--text) 12%, transparent);
 }
+/* Comments on the changes, waiting to go with the message (CommentCards.tsx). */
+.commentCards {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.commentCard {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 240px;
+  padding: 6px 6px 7px 9px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-hover));
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  font-size: 0.86rem;
+}
+.commentHead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+}
+.commentWhere {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.commentHead button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+.commentHead button:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+.commentCode {
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.commentCode[data-sign='+'] {
+  background: color-mix(in srgb, var(--ok) 11%, transparent);
+}
+.commentCode[data-sign='-'] {
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--error) 45%, transparent);
+}
+.commentSaid {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text);
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .bar {
   display: flex;
   align-items: center;

@@ -78,6 +78,15 @@
   padding-left: 15%;
 }
 /* The bubble, with Edit beside it on hover (BLG-385). */
+.sentBy {
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: right;
+}
+.sentByTheirs {
+  text-align: left;
+}
 .bubbleRow {
   display: flex;
   align-items: flex-start;

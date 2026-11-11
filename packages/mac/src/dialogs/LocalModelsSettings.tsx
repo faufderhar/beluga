@@ -124,7 +124,7 @@ export function LocalModelsSettings() {
 
   return (
     <Group title="Local models">
-      <Row label="Run on your own models" detail={`Ollama on ${thisComputer()}, or any Anthropic-compatible address (LiteLLM, a company proxy). Same tools and features; how good the answers are depends on the model. Pick one under Other agents in the box you type in.`}>
+      <Row label="Run on your own models" detail={`Ollama on ${thisComputer()}, or any Anthropic-compatible address (LiteLLM, a company proxy). Same tools and features; how good the answers are depends on the model. Pick Local model in the agent box you type in.`}>
         <Button variant="quiet" icon="refresh" disabled={busy} onClick={() => void run(() => api.env.checkEndpoints())}>
           Check Again
         </Button>

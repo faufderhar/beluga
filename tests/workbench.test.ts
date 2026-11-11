@@ -501,6 +501,18 @@ describe('models, usage, space and search', () => {
     expect(kay.state().search.hits).toEqual([]);
   });
 
+  it("finds the room's chat only while someone else is in the room: alone it's no place to open (BLG-871)", async () => {
+    hub = await startHub({ keys });
+    const kay = await solo(repo());
+    kay.store.dispatch({ type: 'log_upsert', channel: 'room', items: [{ id: 'r1', type: 'chat', channel: 'room', from: 'z', name: 'kay', text: 'the quince ledger', ts: 5, byAgent: false }] });
+    kay.bench.search('quince');
+    expect(kay.state().search.hits).toEqual([]);
+    const me = kay.state().self!;
+    kay.store.dispatch({ type: 'peers', peers: [me, { ...me, peerId: 'bob-id', name: 'bob' }] });
+    kay.bench.search('quince');
+    expect(kay.state().search.hits.map((h) => [h.channel, h.place])).toEqual([['room', 'Group chat']]);
+  });
+
   it('deleting or archiving a worktree stops the Claude working in it, and nothing lands in its conversation after', async () => {
     hub = await startHub({ keys });
     // A Claude that works until it's stopped (a slow one: Windows' runners showed it, BLG-728).

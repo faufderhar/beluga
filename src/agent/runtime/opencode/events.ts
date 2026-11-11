@@ -6,18 +6,27 @@ import type { AgentRunInput, SubAgentEvent } from '../../types.js';
 import type { PromptResponse, SessionUpdate, ToolCall } from './acp.js';
 import { type BelugaCall, belugaCalls, resultText, touchedFiles } from './tools.js';
 
-/** What differs between one ACP agent and another: how it names its tools, and what they mean. OpenCode's unless a run says otherwise (Grok Build's: grok/runner.ts). */
-export interface EventsDialect {
-  /** Which tool a call is (the name the rest of this table goes by). */
-  readonly toolOf: (call: Pick<ToolCall, 'title' | 'rawInput' | '_meta'>) => string;
-  readonly calls: (tool: string, raw: Record<string, unknown>, cwd: string, suites?: readonly string[]) => BelugaCall[];
-  readonly result: (call: ToolCall) => string;
-  /** Tools that change files. */
+/**
+ * How one ACP agent names its tools (OpenCode's, Copilot's in runtime/copilot/tools.ts, or Grok
+ * Build's in runtime/grok/runner.ts): the rest of a turn (chunks, steps, usage) reads the same.
+ */
+export interface AcpDialect {
+  /** A call's tool id, from the first update about it. */
+  toolOf(call: ToolCall): string;
+  /** Its input as fields (Copilot sends an apply_patch body as a bare string). */
+  inputOf(call: ToolCall): Record<string, unknown>;
+  /** The call as Beluga's (Claude Code's) tools: one per file a patch touches. */
+  callsOf(tool: string, raw: Record<string, unknown>, cwd: string, suites: readonly string[]): BelugaCall[];
+  /** Tools whose permission is judged on input that may come after the call starts. */
+  readonly needsInput: ReadonlySet<string>;
+  /** The input fields that say what such a call is for. */
+  readonly inputKeys: ReadonlySet<string>;
+  /** Tools that change files (onFileTouched). */
   readonly writes: ReadonlySet<string>;
-  /** Its sub-agent tool: each call a row on the card. */
-  readonly subAgent: string;
-  /** A tool whose input may come after its permission request, so judging it waits for that. */
-  readonly needsInput: (tool: string) => boolean;
+  /** The tool that starts a sub-agent (its row); none: no sub-agent rows. */
+  readonly subTool?: string;
+  /** A finished call's text. Unset: OpenCode's resultText. Grok's output is ANSI plus a raw OkayOutput. */
+  readonly result?: (call: ToolCall) => string;
 }
 
 /**
@@ -59,8 +68,8 @@ export function contextEvent(used: number, size: number, model?: string): string
 /** Follows one run's session updates: events and steps to the current turn's sink. */
 export class OpenCodeEvents {
   private sink: TurnSink;
+  private readonly dialect: AcpDialect;
   private readonly recorder: StepRecorder;
-  private readonly dialect: EventsDialect;
   private readonly calls = new Map<string, Known>();
   /** Tools running now (for Steer.status). */
   readonly tools = new Map<string, { label: string; since: number }>();
@@ -95,12 +104,12 @@ export class OpenCodeEvents {
       readonly onSub?: (e: SubAgentEvent) => void;
       /** The turn's words stay out of the chat (a /compact's summary). */
       readonly quiet?: () => boolean;
-      /** Another ACP agent's tools; unset: OpenCode's. */
-      readonly dialect?: EventsDialect;
+      /** Whose tool names these are (unset: OpenCode's). */
+      readonly dialect?: AcpDialect;
     } = {},
   ) {
-    this.sink = sink;
     this.dialect = opts.dialect ?? OPENCODE_DIALECT;
+    this.sink = sink;
     this.recorder = new StepRecorder({ cwd, emit: (record) => this.sink.onStep?.(record), ...(opts.now ? { now: opts.now } : {}) });
   }
 
@@ -117,7 +126,7 @@ export class OpenCodeEvents {
   /** What the turn said last (its answer). Steps it left open end with it. */
   endTurn(completed = true): string {
     this.flush();
-    for (const [id, known] of this.calls) if (known.started && known.tool === this.dialect.subAgent) this.opts.onSub?.({ id, phase: 'done', failed: !completed });
+    for (const [id, known] of this.calls) if (known.started && known.tool === this.dialect.subTool) this.opts.onSub?.({ id, phase: 'done', failed: !completed });
     this.recorder.finish(!completed);
     this.tools.clear();
     this.calls.clear();
@@ -136,12 +145,13 @@ export class OpenCodeEvents {
    */
   async callOf(toolCall: ToolCall, waitMs = 3_000): Promise<{ readonly tool: string; readonly raw: Record<string, unknown> } | undefined> {
     const known = this.calls.get(toolCall.toolCallId);
-    const merged = (): Record<string, unknown> => ({ ...(this.calls.get(toolCall.toolCallId)?.raw ?? {}), ...(toolCall.rawInput ?? {}) });
-    const tool = known?.tool ?? this.dialect.toolOf(toolCall);
+    const { needsInput, inputKeys } = this.dialect;
+    const merged = (): Record<string, unknown> => ({ ...(this.calls.get(toolCall.toolCallId)?.raw ?? {}), ...this.dialect.inputOf(toolCall) });
+    const tool = known?.tool ?? (toolCall.title ? this.dialect.toolOf(toolCall) : '');
     if (!tool) return undefined;
-    if (!this.dialect.needsInput(tool) || Object.keys(merged()).some((k) => INPUT_KEYS.has(k))) return { tool, raw: merged() };
+    if (!needsInput.has(tool) || Object.keys(merged()).some((k) => inputKeys.has(k))) return { tool, raw: merged() };
     const until = Date.now() + waitMs;
-    while (Date.now() < until && !Object.keys(merged()).some((k) => INPUT_KEYS.has(k))) {
+    while (Date.now() < until && !Object.keys(merged()).some((k) => inputKeys.has(k))) {
       await new Promise<void>((resolve) => {
         const wake = (): void => (this.waiters.delete(wake), resolve());
         this.waiters.add(wake);
@@ -196,18 +206,19 @@ export class OpenCodeEvents {
     const id = call.toolCallId;
     let known = this.calls.get(id);
     if (!known) {
-      known = { tool: this.dialect.toolOf(call) || 'tool', raw: {}, started: false, calls: [] };
+      known = { tool: this.dialect.toolOf(call), raw: {}, started: false, calls: [] };
       this.calls.set(id, known);
     }
-    if (call.rawInput && Object.keys(call.rawInput).length) known.raw = { ...known.raw, ...call.rawInput };
+    const input = this.dialect.inputOf(call);
+    if (Object.keys(input).length) known.raw = { ...known.raw, ...input };
     for (const wake of [...this.waiters]) wake();
     const done = call.status === 'completed' || call.status === 'failed';
-    if (!known.started && (done || call.status === 'in_progress' || Object.keys(known.raw).some((k) => INPUT_KEYS.has(k)))) this.start(id, known);
+    if (!known.started && (done || call.status === 'in_progress' || Object.keys(known.raw).some((k) => this.dialect.inputKeys.has(k)))) this.start(id, known);
     if (!done) return;
     const failed = call.status === 'failed' || this.stopping;
-    const output = this.denied.get(id) ?? this.dialect.result(call);
+    const output = this.denied.get(id) ?? (this.dialect.result ?? resultText)(call);
     if (!failed && this.dialect.writes.has(known.tool)) for (const file of touchedFiles(call, this.cwd).length ? touchedFiles(call, this.cwd) : known.calls.map((c) => String(c.input.file_path ?? '')).filter(Boolean)) this.opts.onFileTouched?.(file);
-    if (known.tool === this.dialect.subAgent) this.opts.onSub?.({ id, phase: 'done', ...(failed ? { failed: true } : {}) });
+    if (known.tool === this.dialect.subTool) this.opts.onSub?.({ id, phase: 'done', ...(failed ? { failed: true } : {}) });
     this.recorder.observe({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: output || (failed ? 'Failed.' : ''), is_error: failed }] } });
     this.tools.delete(id);
     this.calls.delete(id);
@@ -219,12 +230,12 @@ export class OpenCodeEvents {
     this.flush();
     this.thinking = false;
     known.started = true;
-    known.calls = this.dialect.calls(known.tool, known.raw, this.cwd, this.opts.suites);
+    known.calls = this.dialect.callsOf(known.tool, known.raw, this.cwd, this.opts.suites ?? []);
     const call = known.calls[0]!;
     const label = summarizeTool(call.name, call.input, this.cwd);
     this.tools.set(id, { label: call.name === 'Bash' ? String(call.input.command).split('\n')[0]!.slice(0, 80) : label, since: Date.now() });
     this.sink.onEvent('tool', label);
-    if (known.tool === this.dialect.subAgent) this.opts.onSub?.({ id, phase: 'start', title: String(call.input.description || 'Sub-agent'), kind: 'agent' });
+    if (known.tool === this.dialect.subTool) this.opts.onSub?.({ id, phase: 'start', title: String(call.input.description || 'Sub-agent'), kind: 'agent' });
     this.recorder.observe({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: call.name, input: call.input }] } });
   }
 }
@@ -234,4 +245,13 @@ const NEEDS_INPUT = new Set(['read', 'write', 'edit', 'multiedit', 'patch', 'app
 const INPUT_KEYS = new Set(['filePath', 'file_path', 'filepath', 'path', 'command', 'pattern', 'patchText', 'url']);
 const WRITES = new Set(['write', 'edit', 'multiedit', 'patch', 'apply_patch']);
 
-const OPENCODE_DIALECT: EventsDialect = { toolOf: (call) => call.title ?? '', calls: belugaCalls, result: resultText, writes: WRITES, subAgent: 'task', needsInput: (tool) => NEEDS_INPUT.has(tool) };
+/** OpenCode's tools: a call's first title is its tool id, its input comes in the updates after. */
+export const OPENCODE_DIALECT: AcpDialect = {
+  toolOf: (call) => call.title ?? 'tool',
+  inputOf: (call) => (call.rawInput && typeof call.rawInput === 'object' ? call.rawInput : {}),
+  callsOf: belugaCalls,
+  needsInput: NEEDS_INPUT,
+  inputKeys: INPUT_KEYS,
+  writes: WRITES,
+  subTool: 'task',
+};

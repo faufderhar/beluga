@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { CompletionError, type CompletionRequest } from '../types.js';
 import { PromptQueue } from './live-run.js';
 import { sdkServers } from './sdk-mount.js';
+import { claudeExecutable } from '../../claude-code.js';
 
 /**
  * A side call on Claude Code (agent/side-calls.ts): one model turn or a few, no saved session, no
@@ -51,12 +52,12 @@ export async function claudeComplete(req: CompletionRequest, claudePath?: string
               },
             }
           : {}),
-        ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+        ...claudeExecutable(claudePath),
       },
     });
     for await (const msg of q) {
       if (msg.type !== 'result') continue;
-      if (msg.subtype === 'success') return msg.result;
+      if (msg.subtype === 'success' && !msg.is_error) return msg.result;
       throw new CompletionError(msg.subtype === 'error_max_turns' ? 'max_turns' : 'failed');
     }
     throw new CompletionError('no_answer');

@@ -21,4 +21,16 @@ export const DIAGNOSTICS_API = {
         .strict(),
     ]),
   },
+  // A part of the window threw while drawing (BLG-905): what it was, its error and where it came from, noted in the black box.
+  'diagnostics.windowCrash': {
+    args: z.tuple([
+      z
+        .object({
+          part: z.string().min(1).max(200),
+          message: z.string().max(1000),
+          stack: z.string().max(4000).optional(),
+        })
+        .strict(),
+    ]),
+  },
 } as const;

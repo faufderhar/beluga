@@ -15,6 +15,8 @@ export type GitTroubleKind =
   | 'no_access'
   /** HTTPS: git has no login for GitHub (or an old password). */
   | 'https_auth'
+  /** HTTPS: git's https helper itself fails on this computer (mismatched libcurl and its libraries), whatever the login. */
+  | 'https_broken'
   /** The GitHub CLI (gh) isn't installed. */
   | 'gh_missing'
   /** The GitHub CLI is installed but not logged in. */
@@ -73,8 +75,15 @@ const HOST_KEYS_URL = 'https://docs.github.com/en/authentication/keeping-your-ac
 const ACCESS_DOCS = 'https://docs.github.com/en/repositories/creating-and-managing-repositories/troubleshooting-cloning-errors#error-repository-not-found';
 const REMOTE_DOCS = 'https://docs.github.com/en/get-started/getting-started-with-git/managing-remote-repositories';
 
+/**
+ * git-remote-https crashed or couldn't load: libcurl and its libraries don't match (an AppImage's
+ * LD_LIBRARY_PATH, a half-done upgrade). git then only says "remote helper 'https' aborted session".
+ */
+export const HTTPS_BROKEN = /remote helper '?https?'? aborted session|symbol lookup error|undefined symbol: \w*(nghttp2|curl)|(libcurl|libnghttp2)[\w.-]*: (cannot open|version)|git-remote-https: error while loading/i;
+
 /** In the order they're checked: a message can match several (SSH ends every refusal with "Could not read from remote repository"). */
 const PATTERNS: ReadonlyArray<readonly [GitTroubleKind, RegExp]> = [
+  ['https_broken', HTTPS_BROKEN],
   ['gh_missing', /spawn \S*\bgh ENOENT|gh: command not found|command not found: gh|GitHub CLI \(gh\) isn.t installed/i],
   ['gh_logged_out', /gh auth login|To get started with GitHub CLI, please run|not logged in(to)? (to )?any (GitHub )?hosts?|You are not logged into any GitHub hosts|token .*(is )?(invalid|expired)|HTTP 401|Bad credentials/i],
   ['no_remote', /'[^']*' does not appear to be a git repository|No such remote|No configured push destination|no git remotes found|none of the git remotes configured for this repository point to a known GitHub host/i],
@@ -110,6 +119,22 @@ export function httpsRemoteOf(url: string | undefined): string | undefined {
   const repo = m[2]!.replace(/\/+$/, '');
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo.replace(/\.git$/, ''))) return undefined;
   return `https://${host}/${repo.endsWith('.git') ? repo : `${repo}.git`}`;
+}
+
+/** An https address on a host everyone reaches over SSH as git@host (GitHub, GitLab, Bitbucket). */
+const SSH_HOST = /^https?:\/\/(?:[^@/\s]+@)?(github\.com|gitlab\.com|bitbucket\.org)\/(.*)$/i;
+
+/**
+ * The SSH address of an https remote on GitHub, GitLab or Bitbucket, with the https prefix it
+ * stands for: "https://github.com/me/app.git" → git@github.com:me/app.git, and the prefixes for the
+ * whole host ("https://github.com/" → "git@github.com:"). Undefined for any other address.
+ */
+export function sshRemoteOf(url: string | undefined): { readonly url: string; readonly host: { readonly https: string; readonly ssh: string } } | undefined {
+  const m = url ? SSH_HOST.exec(url.trim()) : null;
+  if (!m) return undefined;
+  const https = url!.trim().slice(0, url!.trim().length - m[2]!.length);
+  const ssh = `git@${m[1]!.toLowerCase()}:`;
+  return { url: `${ssh}${m[2]}`, host: { https, ssh } };
 }
 
 /** The host of a remote ("github.com"), for the sentences. */
@@ -153,6 +178,8 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
   const useHttps: GitFix | undefined = ssh && https ? { id: 'use_https', label: 'Always Use HTTPS for This Project…', detail: `Changes origin to ${https} (asks first). You can change it back any time.` } : undefined;
   const thenHttps = 'Then Beluga pushes over HTTPS with that login.';
   const thenRetry = 'Then Beluga tries again.';
+  const addSshKey: GitFix = { id: 'add_ssh_key', label: 'Add an SSH Key to GitHub', detail: `Makes a key on this Mac if there isn’t one (${SSH_KEY}: it asks for an optional passphrase) and adds it to your GitHub account, in the terminal.`, command: `${gh} auth refresh --hostname ${host} --scopes admin:public_key && { [ -f ${SSH_KEY}.pub ] || ssh-keygen -t ed25519 -f ${SSH_KEY}; } && ${gh} ssh-key add ${SSH_KEY}.pub --title "Beluga on $(scutil --get ComputerName 2>/dev/null || hostname)"` };
+  const sshGuide: GitFix = { id: 'link', label: 'GitHub’s SSH Guide', detail: 'Making a key and adding it to your account.', url: SSH_DOCS };
   // Each fix once (two routes can land on the same page).
   const out = (title: string, explain: string, fixes: ReadonlyArray<GitFix | undefined>): GitTrouble => ({ kind, title, explain, fixes: fixes.filter((f, i, all): f is GitFix => Boolean(f) && all.findIndex((g) => g && (g.id === 'link' ? g.url === f!.url : g.id === f!.id)) === i), raw: raw.trim() });
 
@@ -167,9 +194,9 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
       const sshFix: GitFix = hostKey
         ? { id: 'check_host', label: `Check ${host}’s Fingerprint`, detail: `Connects once in the terminal so you can compare the fingerprint with GitHub’s list and accept it.`, command: `ssh -T git@${host}` }
         : setup.gh === 'ok'
-          ? { id: 'add_ssh_key', label: 'Add an SSH Key to GitHub', detail: `Makes a key on this Mac if there isn’t one (${SSH_KEY}: it asks for an optional passphrase) and adds it to your GitHub account, in the terminal.`, command: `${gh} auth refresh --hostname ${host} --scopes admin:public_key && { [ -f ${SSH_KEY}.pub ] || ssh-keygen -t ed25519 -f ${SSH_KEY}; } && ${gh} ssh-key add ${SSH_KEY}.pub --title "Beluga on $(scutil --get ComputerName 2>/dev/null || hostname)"` }
+          ? addSshKey
           : { id: 'link', label: 'How SSH Keys Work', detail: 'GitHub’s guide to making a key and adding it to your account.', url: SSH_DOCS };
-      const docs: GitFix = hostKey ? { id: 'link', label: 'GitHub’s Fingerprints', detail: 'The fingerprints to compare with.', url: HOST_KEYS_URL } : { id: 'link', label: 'GitHub’s SSH Guide', detail: 'Making a key and adding it to your account.', url: SSH_DOCS };
+      const docs: GitFix = hostKey ? { id: 'link', label: 'GitHub’s Fingerprints', detail: 'The fingerprints to compare with.', url: HOST_KEYS_URL } : sshGuide;
       // gh logged in: HTTPS works right away. Otherwise gh comes first (and HTTPS after it).
       const setupGh = ghSetupFix(setup, pushHttps ? thenHttps : thenRetry);
       return out(title, explain, setupGh ? [setupGh, ...(hostKey ? [sshFix] : []), docs, retry] : [pushHttps ?? sshFix, useHttps, ...(pushHttps ? [sshFix] : []), docs, retry]);
@@ -189,6 +216,15 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
       return out(`git isn’t logged in to ${host === 'github.com' ? 'GitHub' : host}`, `Your project pushes over HTTPS, and git has no GitHub login on this Mac (or an old password, which GitHub stopped taking). Your GitHub CLI login can do it.`, [
         setupGh ?? { id: 'push_https', label: 'Push With Your GitHub Login', detail: 'Pushes with your GitHub CLI login. Nothing else changes.' },
         setupGh ? undefined : { id: 'gh_login', label: 'Log In Again', detail: `Opens github.com in your browser to log in. ${thenRetry}`, command: `${gh} auth login --web --git-protocol https --hostname ${host}` },
+        retry,
+      ]);
+    }
+    case 'https_broken': {
+      // Beluga already tried SSH (workspaces/ssh-routes.ts): it didn't get in, or there's no SSH address for this host.
+      const account = host === 'github.com' ? 'GitHub' : host;
+      return out(`git can’t use https on this computer`, `git’s https helper fails here (its libraries don’t match: updating git usually fixes it), and Beluga couldn’t get in over SSH instead. With an SSH key your ${account} account knows, Beluga goes over SSH by itself.`, [
+        setup.gh === 'ok' && host === 'github.com' ? addSshKey : sshGuide,
+        sshGuide,
         retry,
       ]);
     }

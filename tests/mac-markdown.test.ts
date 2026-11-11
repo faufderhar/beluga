@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type MdNode, parseAlertMarker, remarkAlerts, toAlert, withAlerts } from '../packages/mac/src/components/markdown/md-alerts.js';
+import { hastText } from '../packages/mac/src/components/markdown/hast-text.js';
 import { metaRows, splitFrontMatter } from '../packages/mac/src/components/markdown/md-frontmatter.js';
 import { anchorIds, dirOf, isMarkdownPath, joinPath, resolveImage, resolveLink } from '../packages/mac/src/components/markdown/md-paths.js';
 
@@ -176,5 +177,45 @@ describe('the reader’s HTML (the same plugins the Mac app renders with)', asyn
     const html = await render('<div class="markdown-alert-danger evil">x</div>\n\n<code class="language-js other">y</code>');
     expect(html).not.toMatch(/markdown-alert|evil|other/);
     expect(html).toContain('<code class="language-js">y</code>');
+  });
+});
+
+describe('GitHub’s words in the app (issues, PR comments)', async () => {
+  const [{ unified }, { default: remarkParse }, { default: remarkRehype }, { toHtml }, { default: remarkGfm }, { GITHUB_REHYPE, TO_HTML }] = await Promise.all([
+    import('../packages/mac/node_modules/unified/index.js'),
+    import('../packages/mac/node_modules/remark-parse/index.js'),
+    import('../packages/mac/node_modules/remark-rehype/index.js'),
+    import('../packages/mac/node_modules/hast-util-to-html/index.js'),
+    import('../packages/mac/node_modules/remark-gfm/index.js'),
+    import('../packages/mac/src/components/markdown/md-pipeline.js'),
+  ]);
+  const tree = async (md: string) => {
+    const proc = unified().use(remarkParse).use(remarkGfm).use(remarkRehype, { ...TO_HTML, allowDangerousHtml: true }).use(GITHUB_REHYPE);
+    return proc.run(proc.parse(md));
+  };
+
+  it('draws an issue pasted as a whole HTML page, without its page tags or comments', async () => {
+    const body = '<html>\n<body>\n<!--StartFragment--><html><head></head><body><h1><span>Bug</span></h1><ul><li><p><strong><span>OS:</span></strong><span> Windows 11</span></p></li></ul><pre><code><span>error creating thread:\nrefusing</span></code></pre><script>alert(1)</script><p onclick="x()">Done</p></body></html><!--EndFragment-->\n</body>\n</html>';
+    const html = toHtml(await tree(body));
+    expect(html).toContain('<h1><span>Bug</span></h1>');
+    expect(html).toContain('<li><p><strong><span>OS:</span></strong><span> Windows 11</span></p></li>');
+    expect(html).not.toMatch(/<html|<head|<body|<!--|<script|onclick/i);
+    expect(html).toContain('<p>Done</p>');
+  });
+
+  it('keeps Markdown issues as they were', async () => {
+    const html = toHtml(await tree('## Steps\n\n| Test | Result |\n| -- | -- |\n| Chat | Works |\n\n`npm test`'));
+    expect(html).toContain('<h2>Steps</h2>');
+    expect(html).toContain('<td>Works</td>');
+    expect(html).toContain('<code>npm test</code>');
+  });
+
+  it('reads the text of code whose words sit in spans', async () => {
+    const root = await tree('<pre><code><span>error:</span>\n<span>refusing</span></code></pre>');
+    const find = (n: { type: string; tagName?: string; children?: unknown[] }): typeof n | undefined =>
+      n.tagName === 'code' ? n : (n.children as (typeof n)[] | undefined)?.map(find).find(Boolean);
+    expect(hastText(find(root) as Parameters<typeof hastText>[0])).toBe('error:\nrefusing');
+    expect(hastText({ type: 'text', value: 'x' })).toBe('x');
+    expect(hastText(undefined)).toBe('');
   });
 });

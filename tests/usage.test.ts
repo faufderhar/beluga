@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/runtime/claude/usage.js';
+import { describeWindow, fromPercent, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/runtime/claude/usage.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { personMenu } from '../src/ui/menus.js';
@@ -36,6 +36,11 @@ describe('usage', () => {
       week: { pct: 38, resetsAt: undefined },
       updatedAt: 5,
     });
+    // Already percent: 1 is 1% (a fresh 5-hour session), never read as a fraction (100%).
+    const low = { ...res, rate_limits: { five_hour: { utilization: 1, resets_at: null }, seven_day: { utilization: 0.5, resets_at: null } } };
+    expect(fromUsageResponse(low, 5)).toMatchObject({ fiveHour: { pct: 1 }, week: { pct: 1 } });
+    expect(fromPercent(null)).toBeUndefined();
+    expect(fromPercent(140)).toBe(100);
     expect(fromUsageResponse({ subscription_type: null, rate_limits_available: false, rate_limits: null })).toBeUndefined();
     expect(describeWindow(undefined)).toBe('–');
     expect(describeWindow({ pct: 3 })).toBe('3%');

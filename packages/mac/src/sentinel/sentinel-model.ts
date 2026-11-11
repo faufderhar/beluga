@@ -41,6 +41,7 @@ import {
 } from '../../../../src/core/sentinel/model.js';
 import { agentForChoice } from '../../../../src/ui/agent-choice.js';
 import type { IconName } from '../components/Icon.js';
+import { dateLocale } from '../i18n/index.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ASSISTANT_TITLE } from '../../../../src/shared/assistant.js';
 import { computerTitle, computerWord } from '../lib/os-words.js';
@@ -112,8 +113,8 @@ export function whenText(ts: number, now: number): string {
   const at = clockOf(ts);
   if (days === 0) return `Today ${at}`;
   if (days === 1) return `Yesterday ${at}`;
-  if (days > 1 && days < 7) return `${new Date(ts).toLocaleDateString('en-US', { weekday: 'short' })} ${at}`;
-  return `${new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${at}`;
+  if (days > 1 && days < 7) return `${new Date(ts).toLocaleDateString(dateLocale(), { weekday: 'short' })} ${at}`;
+  return `${new Date(ts).toLocaleDateString(dateLocale(), { month: 'short', day: 'numeric' })} ${at}`;
 }
 
 /** When it runs next, short: "7:00" today, "Tue 7:00" this week, "Nov 3" later. */
@@ -121,8 +122,8 @@ export function nextText(ts: number, now: number): string {
   const days = Math.round((startOf(ts) - startOf(now)) / DAY);
   if (days <= 0) return clockOf(ts);
   if (days === 1) return `tomorrow ${clockOf(ts)}`;
-  if (days < 7) return `${new Date(ts).toLocaleDateString('en-US', { weekday: 'short' })} ${clockOf(ts)}`;
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (days < 7) return `${new Date(ts).toLocaleDateString(dateLocale(), { weekday: 'short' })} ${clockOf(ts)}`;
+  return new Date(ts).toLocaleDateString(dateLocale(), { month: 'short', day: 'numeric' });
 }
 
 /** How long something took: "48 s", "2.1 s", "4 min 12 s", "1 h 3 min". */

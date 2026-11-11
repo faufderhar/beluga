@@ -18,7 +18,7 @@ describe('the Mac app version', () => {
     const pkg = JSON.parse(readFileSync('packages/mac/package.json', 'utf8')) as { version: string };
     expect(conf.version).toBe(pkg.version);
     expect(conf.bundle.createUpdaterArtifacts).toBe(true);
-    expect(conf.plugins.updater.endpoints).toEqual(['https://github.com/kayraucklnc/beluga/releases/latest/download/latest.json']);
+    expect(conf.plugins.updater.endpoints).toEqual(['https://github.com/beluga-labs/beluga/releases/latest/download/latest.json']);
     expect(Buffer.from(conf.plugins.updater.pubkey, 'base64').toString()).toContain('minisign public key');
   });
 

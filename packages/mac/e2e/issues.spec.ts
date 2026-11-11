@@ -39,6 +39,18 @@ test('Issues lists a project’s open and closed issues, and searches them', asy
   await expect(rows.first()).toContainText('#47');
 });
 
+test('An issue written in HTML reads as GitHub draws it, not as tags', async ({ page }) => {
+  await openIssues(page);
+  await main(page).locator('[data-issue="43"]').click();
+  await expect(main(page).getByRole('heading', { name: 'Let an API key be limited to read-only' })).toBeVisible();
+  const list = main(page).getByRole('listitem').filter({ hasText: 'Read: list and fetch' });
+  await expect(list).toBeVisible();
+  await expect(list.locator('strong')).toHaveText('Read:');
+  await expect(main(page).locator('code', { hasText: 'scope: "read"' })).toBeVisible();
+  await expect(main(page).getByText('<p>', { exact: false })).toHaveCount(0);
+  await expect(main(page).getByText('StartFragment', { exact: false })).toHaveCount(0);
+});
+
 test('Investigate: a task and a worktree, Claude’s report, then Fix It in the same worktree', async ({ page }) => {
   await openIssues(page);
   await main(page).locator('[data-issue="48"]').click();

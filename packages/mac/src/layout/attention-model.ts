@@ -5,6 +5,7 @@ import { type Sentinel, sentinelChannels, sentinelOfChannel } from '../../../../
 import { channelsOf, laterUntil, triageFacts } from '../../../../src/core/triage/facts.js';
 import { type ChatCategory, type ChatTriage, categoryOf, triageKey } from '../../../../src/core/triage/model.js';
 import { hhmm, span } from '../../../../src/shared/clock.js';
+import { dateLocale } from '../i18n/index.js';
 import { remindLabel } from '../../../../src/shared/remind.js';
 import { threadNesting } from '../../../../src/ui/thread-tree.js';
 import { activityOf } from '../../../../src/ui/workspace-models.js';
@@ -475,7 +476,7 @@ export function settledWords(settled: NonNullable<ChatTriage['settled']>, idleDa
 export function wakeWords(at: number, now: number): string {
   const day = new Date(at);
   const sameDay = day.toDateString() === new Date(now).toDateString();
-  return sameDay ? hhmm(at) : `${day.toLocaleDateString('en-US', { weekday: 'short' })} ${hhmm(at)}`;
+  return sameDay ? hhmm(at) : `${day.toLocaleDateString(dateLocale(), { weekday: 'short' })} ${hhmm(at)}`;
 }
 
 const NEED_LABELS: Readonly<Record<Need, string>> = { question: 'Input', approval: 'Approval', plan: 'Plan', stuck: 'Stuck', conflict: '', checks: '' };

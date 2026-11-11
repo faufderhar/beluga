@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -43,42 +43,31 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const record = (merges: number, more: Partial<SupportRecord> = {}): SupportRecord => ({ counted: Array.from({ length: merges }, (_, i) => mergeKey(ROOT, `b${i}`)), ...more });
 
 describe('the asks (support-store)', () => {
-  it('asks for a star at the first merge, and only until it is answered', () => {
+  it('asks for a star at the third merge, and only until it is answered', () => {
     expect(dueAsk(record(0))).toBeUndefined();
-    expect(dueAsk(record(1))).toBe('star');
-    expect(dueAsk(answerAsk(record(1), 'star', 'later', 0))).toBeUndefined();
-    // A star never answered (several merges at once, the window closed) still comes first.
+    expect(dueAsk(record(1))).toBeUndefined();
+    expect(dueAsk(record(2))).toBeUndefined();
+    expect(dueAsk(record(3))).toBe('star');
+    for (const answer of ['yes', 'later', 'never'] as const) {
+      const answered = answerAsk(record(3), 'star', answer, 0);
+      expect(dueAsk({ ...answered, counted: record(40).counted })).toBeUndefined();
+    }
+    // A star never answered (several merges at once, the window closed) is still due.
     expect(dueAsk(record(6))).toBe('star');
   });
 
-  it('asks for a coffee at the fifth merge, never right after the star', () => {
-    const starred = answerAsk(record(1), 'star', 'yes', 0);
-    expect(dueAsk({ ...starred, counted: record(4).counted })).toBeUndefined();
-    expect(dueAsk({ ...starred, counted: record(5).counted })).toBe('coffee');
-    // Star answered at the fifth merge: the coffee waits for the next one.
-    const late = answerAsk(record(5), 'star', 'later', 0);
-    expect(dueAsk(late)).toBeUndefined();
-    expect(dueAsk({ ...late, counted: record(6).counted })).toBe('coffee');
-  });
-
-  it('Not now asks once more five merges later; Don’t ask again and yes never ask again', () => {
-    const starred = answerAsk(record(1), 'star', 'yes', 0);
-    const snoozed = answerAsk({ ...starred, counted: record(5).counted }, 'coffee', 'later', 0);
-    expect(dueAsk({ ...snoozed, counted: record(9).counted })).toBeUndefined();
-    const again = { ...snoozed, counted: record(10).counted };
-    expect(dueAsk(again)).toBe('coffee');
-    const twice = answerAsk(again, 'coffee', 'later', 0);
-    expect(twice.coffee?.times).toBe(2);
-    expect(dueAsk({ ...twice, counted: record(20).counted })).toBeUndefined();
-    for (const answer of ['never', 'yes'] as const) {
-      const done = answerAsk({ ...starred, counted: record(5).counted }, 'coffee', answer, 0);
-      expect(dueAsk({ ...done, counted: record(30).counted })).toBeUndefined();
+  it('never asks for money', () => {
+    for (let merges = 0; merges <= 30; merges++) {
+      const starred = answerAsk(record(Math.min(merges, 3)), 'star', 'yes', 0);
+      expect(dueAsk({ ...starred, counted: record(merges).counted })).toBeUndefined();
     }
+    expect(() => parseArgs('support.answer', ['coffee', 'yes'])).toThrow();
   });
 
   it('screens see the count, the ask due and what was shown', () => {
-    expect(supportView(record(1))).toEqual({ merges: 1, due: 'star', starShown: false, coffeeShown: false });
-    expect(supportView(answerAsk(record(1), 'star', 'yes', 0))).toEqual({ merges: 1, starShown: true, coffeeShown: false });
+    expect(supportView(record(1))).toEqual({ merges: 1, starShown: false });
+    expect(supportView(record(3))).toEqual({ merges: 3, due: 'star', starShown: false });
+    expect(supportView(answerAsk(record(3), 'star', 'yes', 0))).toEqual({ merges: 3, starShown: true });
   });
 });
 
@@ -100,7 +89,7 @@ describe('MergeCounter', () => {
     controller.merged('w3');
     controller.merged('gone');
     expect(counter.merges).toBe(1);
-    expect(store.getState().support).toEqual({ merges: 1, due: 'star', starShown: false, coffeeShown: false });
+    expect(store.getState().support).toEqual({ merges: 1, starShown: false });
     counter.stop();
   });
 
@@ -132,7 +121,7 @@ describe('MergeCounter', () => {
     controller.merged('w1');
     controller.merged('w2');
     expect(again.merges).toBe(2);
-    expect(store.getState().support).toEqual({ merges: 2, starShown: true, coffeeShown: false });
+    expect(store.getState().support).toEqual({ merges: 2, starShown: true });
     expect(loadSupportFile(file).counted).toHaveLength(2);
     again.stop();
   });
@@ -171,27 +160,35 @@ describe('MergeCounter', () => {
     counter.stop();
   });
 
-  it('brings the coffee ask at the fifth merge, after the star', async () => {
-    const branches = ['a', 'b', 'c', 'd', 'e'];
+  it('brings the star ask with the third merge, then never again', async () => {
+    const branches = ['a', 'b', 'c', 'd'];
     const store = storeWith(branches.map((b) => worktree(b, `feat/${b}`)));
     const controller = fakeController();
     const counter = new MergeCounter({ store, file: null, controller });
     controller.merged('a');
-    expect(store.getState().support.due).toBe('star');
+    controller.merged('b');
+    expect(store.getState().support).toEqual({ merges: 2, starShown: false });
+    controller.merged('c');
+    expect(store.getState().support).toEqual({ merges: 3, due: 'star', starShown: false });
     counter.answer('star', 'later');
-    for (const b of branches.slice(1, 4)) controller.merged(b);
-    expect(store.getState().support.due).toBeUndefined();
-    controller.merged('e');
-    expect(store.getState().support).toMatchObject({ merges: 5, due: 'coffee' });
-    counter.answer('coffee', 'never');
-    expect(store.getState().support).toEqual({ merges: 5, starShown: true, coffeeShown: true });
+    controller.merged('d');
+    expect(store.getState().support).toEqual({ merges: 4, starShown: true });
     counter.stop();
+  });
+
+  it('loads an old support.json that still has a coffee answer, and drops it', () => {
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-support-')), 'support.json');
+    const answered = { merges: 5, answer: 'later', times: 1, at: 1 };
+    writeFileSync(file, JSON.stringify({ counted: record(5).counted, star: { ...answered, merges: 1, answer: 'yes' }, coffee: answered }));
+    const loaded = loadSupportFile(file);
+    expect(loaded).toEqual({ counted: record(5).counted, star: { ...answered, merges: 1, answer: 'yes' } });
+    expect(dueAsk({ ...loaded, counted: record(10).counted })).toBeUndefined();
   });
 
   it('support.answer goes to the session’s counter', async () => {
     const store = storeWith([worktree('w1', 'feat/a')]);
     const session = {} as Session;
-    const counter = new MergeCounter({ store, file: null, seed: record(1) });
+    const counter = new MergeCounter({ store, file: null, seed: record(3) });
     attachSupport(session, counter);
     expect(supportOf(session)).toBe(counter);
     await HANDLERS['support.answer'](session, ...parseArgs('support.answer', ['star', 'yes']));

@@ -67,6 +67,24 @@ describe('suggest', () => {
     expect(values('email@x')).toEqual([]);
     expect(values('plain text')).toEqual([]);
   });
+
+  it("in a friend's worktree, @claude is yours and @claude:<owner> theirs, right under it", () => {
+    const friends = [{ name: 'Kayra', online: true }, { name: 'Mia', online: true }];
+    const here = { hint: "ask your agent: it reads Kayra's worktree from here", owner: { name: 'Kayra', hint: "ask Kayra's agent, in their worktree" } };
+    const theirs = suggest('@cla', { ...ctx, friends, claudeHere: here });
+    expect(theirs.slice(0, 2).map((s) => [s.label, s.hint])).toEqual([
+      ['@claude', "ask your agent: it reads Kayra's worktree from here"],
+      ['@claude:Kayra', "ask Kayra's agent, in their worktree"],
+    ]);
+    // Not offered a second time as a friend's agent "on their computer".
+    expect(theirs.filter((s) => s.label === '@claude:Kayra')).toHaveLength(1);
+    expect(theirs.map((s) => s.label)).toContain('@claude:Mia');
+    // Run on: this computer: your own agent, in your copy.
+    const yours = suggest('@cla', { ...ctx, friends, claudeHere: { hint: 'ask your agent, in your copy' } });
+    expect(yours[0]).toMatchObject({ label: '@claude', hint: 'ask your agent, in your copy' });
+    // Elsewhere, as ever.
+    expect(suggest('@cla', { ...ctx, friends })[0]).toMatchObject({ label: '@claude', hint: 'ask your agent' });
+  });
 });
 
 describe('peopleSuggestions (New Task, BLG-342)', () => {

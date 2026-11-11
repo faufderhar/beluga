@@ -14,13 +14,18 @@ test('another project’s task is offered last, says so when picked, and goes in
   const list = page.getByRole('listbox', { name: 'Suggestions' });
 
   // The first couple of letters: only this project's.
+  // (With nothing of this project's to offer, there may be no list at all.)
   await box.fill('see @re');
-  await expect(list).not.toContainText('Refund endpoint');
+  await expect(box).toHaveValue('see @re');
+  await expect(list.getByText('Refund endpoint')).toHaveCount(0);
 
   await box.fill('see @refund');
   await expect(list).toContainText('In other projects, not this one');
-  const option = list.getByRole('option').last();
-  await expect(option).toContainText('Refund endpoint');
+  // (bob-api's epic "Refunds and launch" is offered there too.) Followed by its key: once picked, its title gives way to a note.
+  const found = list.getByRole('option', { name: /Refund endpoint/ });
+  await expect(found).toBeVisible();
+  const key = /[A-Z]+-\d+/.exec((await found.textContent()) ?? '')![0];
+  const option = list.getByRole('option', { name: new RegExp(`^${key} `) });
   if (process.env.BELUGA_SHOTS) await list.screenshot({ path: `${process.env.BELUGA_SHOTS}/01-other-project-section.png` });
 
   // The first pick only says it isn't this project's.

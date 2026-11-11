@@ -73,10 +73,18 @@ export type Actor =
       readonly ownerName: string;
       /** Which agent it was (BLG-498: Codex, a local model…); left out on older entries: Claude, as before. */
       readonly agent?: AgentRef;
+      /** An external agent did it, through its grant. It stays kind `claude`, so every rule that holds an agent back applies to it. */
+      readonly external?: ExternalActor;
       /** Working for a friend who asked it (BLG-701): "Kayra's Claude, for Bran". */
       readonly for?: { readonly id: string; readonly name: string };
     }
   | { readonly kind: 'beluga' };
+
+/** An external agent as the board and plans record it: its grant and its name. */
+export interface ExternalActor {
+  readonly id: string;
+  readonly name: string;
+}
 
 /**
  * Saved boards and plans from before the rename say `{ kind: 'klaud' }` for Beluga itself: read them as
@@ -623,11 +631,14 @@ export function actorName(actor: Actor, selfId: string): string {
     case 'person':
       return actor.id === selfId ? 'You' : actor.name;
     case 'claude':
-      return agentLabel(actor.agent, actor.ownerName, actor.owner === selfId, { capital: true }) + (actor.for ? `, for ${actor.for.id === selfId ? 'you' : actor.for.name}` : '');
+      return actor.external ? externalLabel(actor.external) : agentLabel(actor.agent, actor.ownerName, actor.owner === selfId, { capital: true }) + (actor.for ? `, for ${actor.for.id === selfId ? 'you' : actor.for.name}` : '');
     default:
       return 'Beluga';
   }
 }
+
+/** A client picks its own name: the word after it keeps "You" from reading as you. */
+export const externalLabel = (agent: ExternalActor): string => `${agent.name} (agent)`;
 
 export function assigneeName(assignee: AnyAssignee | undefined, selfId: string): string {
   if (!assignee) return 'No one';

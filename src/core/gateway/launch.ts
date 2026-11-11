@@ -1,3 +1,4 @@
+import { asActingAgent } from '../acting-agent.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -107,7 +108,8 @@ export function launchGateway(host: GatewayHost): () => void {
     runFolder: (from) => session.peerRun.defaultFolder(from),
     // The demo never looks at your real screen.
     ...(host.demo ? { system: pretendSystem() } : {}),
-    resume: (channel, prompt) => {
+    resume: (channel, prompt, via) => {
+      if (via) return asActingAgent(via, () => session.runFor(session.selfId, channel, prompt));
       // Your Claude asked from a friends' chat (BLG-207): it carries on there, and answers in the chat.
       const chat = /^(dm|group):/.test(channel) ? chatIn(session) : undefined;
       if (chat?.claude.acts()) return chat.claude.continueWith(channel, prompt);

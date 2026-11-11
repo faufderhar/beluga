@@ -60,7 +60,7 @@ export function DataTable({ view, data, full, cell }: { view: View; data: ViewDa
         </div>
       ) : null}
       <div className={cx(v.scroll, data.loading && v.loadingRows)}>
-        <table className={v.table}>
+        <table className={v.table} translate="no">
           <thead>
             <tr>
               {columns.map((c) => {
@@ -133,7 +133,7 @@ function RowDetail({ row, columns, local, cell }: { row: Row; columns: readonly 
   const keys = [...new Set([...columns.map((c) => c.key), ...Object.keys(row)])];
   const byKey = new Map(columns.map((c) => [c.key, c]));
   return (
-    <dl className={v.detail}>
+    <dl className={v.detail} translate="no">
       {keys.map((k) => (
         <Fragment key={k}>
           <dt>{headingOf(byKey.get(k) ?? { key: k })}</dt>

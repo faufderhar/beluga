@@ -14,6 +14,7 @@ import { LiveStrip } from '../claude-code/Live.js';
 import { SharedStrip } from '../layout/PeopleHere.js';
 import { EnvStrip } from './project/EnvAsks.js';
 import { TaskStrip } from '../tasks/TaskStrip.js';
+import { DrivenStrip } from '../chat/DrivenStrip.js';
 import { PrStrip } from '../chat/PrStrip.js';
 import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
@@ -24,7 +25,7 @@ import { AssistantTabs } from '../chat/AssistantTabs.js';
 import { DrivingBanner } from '../agent-term/DrivingBanner.js';
 import { computerWord, yourComputer } from '../lib/os-words.js';
 
-/** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
+/** A conversation and the box to add to it: the room's group chat, a workspace, a shared workspace, a draft. */
 /** One-click ways to begin, under an empty conversation. */
 function Starters() {
   const actions = useActions();
@@ -102,7 +103,6 @@ const ASK_STARTERS = [
 
 export function ChatView() {
   const view = useApp((st) => st.view);
-  const solo = useApp((st) => st.peers.length <= 1);
   const channel = channelOf(view);
   const ws = useApp((st) => (view.kind === 'workspace' ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === view.id) : undefined));
   const projectName = useApp((st) => st.projects.find((p) => p.root && (view.kind === 'draft' ? p.id === view.projectId : p.workspaces.some((w) => w.id === ws?.id)))?.name);
@@ -120,7 +120,7 @@ export function ChatView() {
     ) : view.kind === 'assistant' ? (
       <Empty icon="laptop" title={`Ask ${yourComputer()}`} detail={`Your agent for this whole ${computerWord()}, not one project: screenshots, what’s using the CPU, starting a worktree or a task. Keep several chats as tabs above; the open one is the one on your phone.`} action={<AssistantStarters />} />
     ) : view.kind === 'room' ? (
-      <Empty icon="claude" title={solo ? 'Talk to your agent' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give your agent a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your agent.'} action={<Starters />} />
+      <Empty icon="claude" title="Say hi to the room" detail="Everyone here sees this chat. Mention @claude to ask your agent." action={<Starters />} />
     ) : (
       <Empty icon="chat" title="Tell your agent what to do here" detail="It works in this folder and remembers the conversation. Start with one of these, or write your own below." action={<Starters />} />
     );
@@ -144,6 +144,7 @@ export function ChatView() {
       {view.kind === 'assistant' ? <AssistantTabs /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
+      {view.kind === 'workspace' ? <DrivenStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <SharedStrip wsId={view.id} /> : null}
       {view.kind === 'workspace' ? <EnvStrip workspaceId={view.id} /> : null}

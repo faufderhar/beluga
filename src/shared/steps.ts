@@ -122,7 +122,7 @@ export function redactSecrets(text: string): string {
 }
 
 /** Input keys whose values are secrets whatever they look like. */
-const SECRET_KEY = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|credential)/i;
+export const SECRET_KEY = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|credential)/i;
 
 /** A tool's input, safe to keep and show: secrets redacted, long strings cut, the whole kept small. */
 export function boundInput(input: Readonly<Record<string, unknown>>): { input: Record<string, unknown>; truncated: boolean } {

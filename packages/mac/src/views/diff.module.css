@@ -245,3 +245,82 @@
 .compact .sign {
   width: 1em;
 }
+
+/* Comments on lines (DiffComment.tsx): a + over a line's sign on hover, kept as a bubble once it's in your message. */
+.text {
+  position: relative;
+}
+.commentBtn {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: calc(1.6em - 3px);
+  max-height: 18px;
+  padding: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  color: var(--accent);
+}
+.compact .commentBtn {
+  left: 0;
+  width: 14px;
+}
+tr:hover .commentBtn,
+.commentBtn:focus-visible,
+.commentOn {
+  display: inline-flex;
+}
+tr:hover .commentBtn:hover {
+  background: color-mix(in srgb, var(--accent) 30%, var(--bg));
+}
+.commentOn {
+  background: transparent;
+}
+tr.commented > .num:first-child,
+.split .num.commented {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+tr.picked,
+.split td.picked {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.commentRow > td {
+  padding: 6px 10px 10px;
+  background: var(--bg-sunken);
+  font-family: var(--font);
+  white-space: normal;
+}
+.commentBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 720px;
+}
+.commentActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.commentHint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 16px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  color: var(--text-2);
+  font-size: 0.9rem;
+}

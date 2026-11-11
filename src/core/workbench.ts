@@ -13,7 +13,8 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
-import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
+import { contentIn, resetTo } from '../workspaces/git.js';
+import { fetchRemote } from '../workspaces/sync.js';
 import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, headCarries, listPrs, useHttpsRemote, mergePr, mergeToBase, prStep, pushForPr, remoteRef, rerunFailed, resetPrPrompt, setPrTarget, unpushedCommits } from '../workspaces/pr.js';
 import { prTargetOf, pullOfBranch } from '../workspaces/github.js';
 import { failedRunIds, prOnOriginal } from './branch-state.js';
@@ -66,8 +67,10 @@ export interface WorkbenchDeps {
   readonly confirm?: (title: string, detail: string) => Promise<'yes' | 'no' | 'always'>;
   /** Open a URL or a file with the system's default app. */
   readonly open?: (target: string) => void;
-  /** Models your Claude Code offers (asked once). */
+  /** Models your Claude Code offers (asked at start, and again once Claude Code moved to a newer one). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
+  /** Keep Claude Code current in the background (agent/claude-code-updates.ts): true once it moved to a newer one. */
+  readonly updateAgent?: () => Promise<boolean>;
   /** Another runtime on a live conversation hands it off (core/agent-switch.ts, BLG-447); unset: a plain switch. */
   readonly switchAgent?: (channel: string, agent: AgentRef | undefined, mode?: HandoffMode) => Promise<unknown>;
   /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
@@ -142,6 +145,9 @@ export function withRuntimeStatus(runtimes: readonly RuntimeChoice[], found: Rea
 /** An agent that isn't ready yet (Codex not signed in) is asked about again this often. */
 const RUNTIME_RECHECK_MS = 60_000;
 const DISK_EVERY_MS = 5 * 60_000;
+/** Claude Code updates: first looked for a minute after start (not in the way of the first run), then every six hours. */
+const AGENT_FIRST_CHECK_MS = 60_000;
+const AGENT_CHECK_EVERY_MS = 6 * 60 * 60_000;
 /** How often to see which PRs are due a look (cheap: no gh unless one is). */
 const PR_TICK_MS = 5_000;
 /** PRs with checks running, or a branch just pushed. */
@@ -280,6 +286,8 @@ export class Workbench {
     return agentName(defaultAgentOf(this.deps.store.getState().self));
   }
   private diskTimer?: NodeJS.Timeout;
+  private agentTimer?: NodeJS.Timeout;
+  private agentEvery?: NodeJS.Timeout;
   /** The round of measuring under way: a second ask joins it rather than walking every folder again. */
   private measuring?: Promise<void>;
   private prTimer?: NodeJS.Timeout;
@@ -346,8 +354,16 @@ export class Workbench {
     });
     const runtimes = this.deps.listRuntimes?.();
     if (runtimes) this.deps.store.dispatch({ type: 'runtimes', runtimes });
-    void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
+    this.refreshModels();
     void this.checkRuntimes();
+    // Claude Code kept current, quietly: a newer one's models (a new Opus) show in the picker once it's in.
+    if (this.deps.updateAgent) {
+      const update = (): void => void this.deps.updateAgent!().then((moved) => moved && this.refreshModels(), () => undefined);
+      this.agentTimer = setTimeout(update, AGENT_FIRST_CHECK_MS);
+      this.agentTimer.unref();
+      this.agentEvery = setInterval(paced(AGENT_CHECK_EVERY_MS, () => this.deps.store.getState().powerSaving, update), AGENT_CHECK_EVERY_MS);
+      this.agentEvery.unref();
+    }
     setTimeout(() => void this.measureDisk(), 3000).unref();
     this.diskTimer = setInterval(paced(DISK_EVERY_MS, () => this.deps.store.getState().powerSaving, () => void this.measureDisk()), DISK_EVERY_MS);
     this.diskTimer.unref();
@@ -355,7 +371,14 @@ export class Workbench {
     this.prTimer.unref();
   }
 
+  /** Ask Claude Code for its models again (at start, and after it moved to a newer one). */
+  refreshModels(): void {
+    void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
+  }
+
   stop(): void {
+    clearTimeout(this.agentTimer);
+    clearInterval(this.agentEvery);
     clearInterval(this.diskTimer);
     clearInterval(this.prTimer);
     clearTimeout(this.runtimeTimer);
@@ -716,11 +739,9 @@ export class Workbench {
     if ((ws.status?.changed ?? 0) > 0) return this.deps.toast(`${ws.name} has uncommitted changes: commit them first`, 'warn');
     const base = this.prBase(ws);
     const target = `origin/${base}`;
-    try {
-      await fetchRemote(ws.path);
-    } catch (err) {
-      return this.deps.toast(`Couldn’t fetch ${target}: ${err instanceof Error ? err.message : String(err)}`, 'error');
-    }
+    // Over SSH when https can't and SSH can (sync.ts).
+    const fetched = await fetchRemote(ws.path);
+    if (!fetched.ok) return this.deps.toast(`Couldn’t fetch ${target}: ${fetched.message}`, 'error');
     const done = await contentIn(ws.path, 'HEAD', target);
     this.manager.setPrDone(id, pr.number, { url: pr.url, into: base, ...(pr.head ? { head: pr.head } : {}) });
     this.deps.store.dispatch({ type: 'pr', id, pr: undefined });
@@ -1889,12 +1910,14 @@ export class Workbench {
     };
     for (const channel of loaded) {
       if (channel === 'draft') continue;
+      // The room's chat is a page only while someone else is in it (BLG-871): alone, a hit there would open nothing.
+      if (channel === 'room' && state.peers.length <= 1) continue;
       const ws = channel.startsWith('ws:') ? this.manager.find(channel.slice(3)) : undefined;
       const shared = channel.startsWith('ws:') ? state.shared.find((w) => w.id === channel.slice(3)) : undefined;
       // A workspace that's gone (deleted, its project removed): nothing to open, so nothing to find.
       if (channel.startsWith('ws:') && !ws && !shared) continue;
       const items = state.log.filter((l) => l.channel === channel);
-      sources.push({ channel, place: ws ? placeOf(ws) : shared ? shared.name : channel === 'room' ? (state.peers.length > 1 ? 'Group chat' : 'Chat') : isAssistant(channel) ? macChatPlace(channel, items) : channel, items, archived: ws?.archived });
+      sources.push({ channel, place: ws ? placeOf(ws) : shared ? shared.name : channel === 'room' ? 'Group chat' : isAssistant(channel) ? macChatPlace(channel, items) : channel, items, archived: ws?.archived });
     }
     for (const ws of this.manager.list.flatMap((p) => p.workspaces)) {
       const channel = `ws:${ws.id}`;

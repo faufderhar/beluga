@@ -43,7 +43,8 @@
 }
 .titles {
   min-width: 0;
-  flex: 1 1 auto;
+  /* Use the space left by the controls, rather than shrinking them to fit a long title. */
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -70,6 +71,16 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Where the branch stands, right after the worktree's name: never cut, the name gives way first. */
+.branchPill {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  margin-left: 4px;
+}
+.branchPill:empty {
+  display: none;
 }
 .subtitle {
   display: flex;

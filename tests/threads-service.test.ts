@@ -10,6 +10,7 @@ import { runToolSuites } from '../src/agent/run-tools.js';
 import { runtimeFor as realRuntime } from '../src/agent/runtime/registry.js';
 import { routedBackend } from '../src/agent/runtime/router.js';
 import { AgentHost } from '../src/core/agent-host.js';
+import { externalRequester } from '../src/core/trust.js';
 import { PHONE } from '../src/companion/coverage.js';
 import { localModels, parseLocalModel } from '../src/shared/local-endpoints.js';
 import { ThreadService, type ThreadServiceDeps } from '../src/core/threads/service.js';
@@ -640,6 +641,14 @@ describe('who gets the tools', () => {
     await waitFor(() => t.runs.length === 1);
     expect(t.runs[0]!.threadTools).toBeDefined();
     expect(Object.keys(runToolSuites(t.runs[0]!, {} as never, {} as never, t.dir))).toContain('beluga_threads');
+  });
+
+  it.each(['trusted', 'full'] as const)('an external agent’s run at %s has no thread tools: a thread would run without its grant and label', async (level) => {
+    const t = host();
+    t.h.setExternalAgents((r) => (r === externalRequester('g1') ? { name: 'GrokBot', level } : undefined));
+    await t.h.onAgentRequest(ME, { kind: 'agent_request', requestId: 'ext', prompt: 'go', viaAgent: false, channel: 'ws:a', urgent: false, plan: false, via: { id: 'g1', name: 'GrokBot', creationSource: 'mcp' } });
+    await waitFor(() => t.runs.length === 1);
+    expect(t.runs[0]!.threadTools).toBeUndefined();
   });
 
   it('a read-only thread cannot move itself into a worktree', async () => {

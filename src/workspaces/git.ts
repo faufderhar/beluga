@@ -5,16 +5,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
 import { limiter } from './limit.js';
+import { withSshRoutes } from './ssh-routes.js';
 
 export class GitError extends Error {}
 
 /** Git must never ask for a password on Beluga's screen: fail instead, and say why. */
 const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
 
-/** Run git in a directory; resolves stdout, rejects with git's own message. `env`: more of git's environment (GIT_INDEX_FILE…). */
+/**
+ * Run git in a directory; resolves stdout, rejects with git's own message. `env`: more of git's
+ * environment (GIT_INDEX_FILE…). Commands that reach a remote go over SSH where https was found not
+ * to work (ssh-routes.ts).
+ */
 export function git(cwd: string, args: readonly string[], timeoutMs = 60_000, env?: Readonly<Record<string, string>>): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: env ? { ...GIT_ENV, ...env } : GIT_ENV }, (err, stdout, stderr) => {
+    execFile('git', [...withSshRoutes(args)], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: env ? { ...GIT_ENV, ...env } : GIT_ENV }, (err, stdout, stderr) => {
       if (err) reject(new GitError((stderr || err.message).trim()));
       else resolve(stdout);
     });
@@ -569,11 +574,6 @@ export async function contentIn(dir: string, head: string, base: string): Promis
   const merged = (await tryGit(dir, ['merge-tree', '--write-tree', base, head]))?.split('\n')[0]?.trim();
   const tree = (await tryGit(dir, ['rev-parse', `${base}^{tree}`]))?.trim();
   return merged && tree ? merged === tree : undefined;
-}
-
-/** Fetch `remote` (no pruning, no tags beyond the usual). Throws git's error. */
-export async function fetchRemote(dir: string, remote = 'origin'): Promise<void> {
-  await git(dir, ['fetch', remote]);
 }
 
 /** Move this worktree's branch to `to` (a clean worktree only: its files change to match). */

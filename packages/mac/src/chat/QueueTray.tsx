@@ -116,7 +116,7 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
           return (
             <Row key={q.requestId} channel={channel} prompt={q.prompt} mine={q.yours} className={cx(s.row, !q.yours && s.theirs)}>
               <span className={s.n}>{i + 1}</span>
-              <span className={s.text} title={imageLinksAsWords(q.prompt)}>
+              <span className={s.text} title={imageLinksAsWords(q.prompt)} translate="no">
                 {imageLinksAsWords(q.prompt) || 'A message'}
               </span>
               {who ? <span className={s.who}>{who}</span> : null}

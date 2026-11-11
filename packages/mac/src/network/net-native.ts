@@ -4,6 +4,7 @@ import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
 import { IDLE_AWAY_MS, findInvitation, idleStep, presenceFor, rememberIdleAway, selfLine, wasIdleAway } from './net-model.js';
 import { openNet } from './net-sheets.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Friends and groups in the app shell: the File menu's Add a Friend… / New Group…, your status
@@ -45,7 +46,7 @@ export function useTrayPresence(client: SocketClient): void {
     let last = '';
     const update = (): void => {
       const self = client.store.getState().network.self;
-      const presence = self ? { state: self.presence.state, line: selfLine(self.presence) } : null;
+      const presence = self ? { state: self.presence.state, line: t(selfLine(self.presence)) } : null;
       const key = JSON.stringify(presence);
       if (key === last) return;
       last = key;

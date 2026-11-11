@@ -139,8 +139,10 @@ test('your stats: a number per thing, the year, and each project or agent ranked
   await expect(stats.getByRole('grid', { name: 'PRs merged per day, the last year' })).toBeVisible();
   const byProject = stats.getByRole('list', { name: 'PRs merged by project' });
   await expect(byProject.getByRole('listitem').first()).toBeVisible();
-  // By agent: Claude, Codex and a local model each get a bar.
+  // By agent: Claude, Codex and a local model each get a bar (over the year: the demo's PRs fall on
+  // days that move with the date, so a month may hold only Claude's).
   await stats.getByRole('tab', { name: 'Agents' }).click();
+  await stats.getByRole('tablist', { name: 'Range' }).getByRole('tab', { name: 'Year' }).click();
   const byAgent = stats.getByRole('list', { name: 'PRs merged by agent' });
   await expect(byAgent.getByText('Claude', { exact: true })).toBeVisible();
   await expect(byAgent.getByText('Codex', { exact: true })).toBeVisible();
@@ -177,8 +179,9 @@ test('sessions: how much of each 5-hour session and each week you used', async (
   const sessions = page.getByRole('region', { name: 'Plan sessions' });
   await expect(sessions.getByText(/of each session used, on average/)).toBeVisible();
   const blocks = sessions.getByRole('list', { name: '5-hour sessions, the last 7 days' }).getByRole('listitem');
-  await expect(blocks.first()).toBeVisible();
-  await blocks.first().hover();
+  // The newest one: the oldest may be a sliver at the edge, mostly before these 7 days, under the next.
+  await expect(blocks.last()).toBeVisible();
+  await blocks.last().hover();
   await expect(sessions.getByText(/% used/)).toBeVisible();
   await sessions.getByRole('tab', { name: 'Weekly' }).click();
   await expect(sessions.getByRole('list', { name: 'Weeks, the last six' }).getByRole('listitem')).toHaveCount(6);
@@ -244,4 +247,22 @@ test('share your stats: a picture to save or copy, from your card and from the r
   await recap.getByRole('tablist', { name: 'Slides' }).getByRole('tab').last().click();
   await recap.getByRole('button', { name: 'Share…' }).click();
   await expect(page.getByRole('dialog', { name: 'Share Your Stats' })).toBeVisible();
+});
+
+test('the leaderboard: standings by points, and each number head to head with how much more', async ({ page }) => {
+  await openUsage(page);
+  const board = page.getByRole('region', { name: 'Leaderboard' });
+  await board.scrollIntoViewIfNeeded();
+  // bob and mia's Macs send their numbers over the demo network.
+  const standings = board.getByRole('list', { name: 'Standings' });
+  await expect(standings.getByRole('listitem')).toHaveCount(3);
+  await expect(standings.getByRole('listitem', { name: /^\d\. You, \d+ points$/ })).toBeVisible();
+  for (const name of ['Prompt characters', 'Pull requests merged', 'Agent hours']) {
+    const versus = board.getByRole('region', { name });
+    await expect(versus.getByRole('img', { name: /^bob: / })).toBeVisible();
+    await expect(versus.getByRole('img', { name: /^You: / })).toBeVisible();
+  }
+  await expect(board.getByRole('region', { name: 'Prompt characters' }).getByText(/^bob wrote [\d.]+× as much as you$/)).toBeVisible();
+  await board.getByRole('tab', { name: 'Year' }).click();
+  await expect(standings.getByRole('listitem')).toHaveCount(3);
 });

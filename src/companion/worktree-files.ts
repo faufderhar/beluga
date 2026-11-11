@@ -57,7 +57,7 @@ export function cleanRel(rel: string): string[] {
   if (cleaned.startsWith('/') || path.isAbsolute(cleaned) || /^[a-zA-Z]:/.test(cleaned)) throw new FileGateError('Only files inside the worktree can be opened');
   const parts = cleaned.split('/').filter((p) => p && p !== '.');
   if (parts.includes('..')) throw new FileGateError('Only files inside the worktree can be opened');
-  if (parts.some((p) => HIDDEN.has(p))) throw new FileGateError('Git’s own files aren’t shown');
+  if (parts.some((p) => HIDDEN.has(p.toLowerCase()))) throw new FileGateError('Git’s own files aren’t shown');
   if (parts.length && isSecretPath(parts.join('/'))) throw new FileGateError('That file is secret: it never leaves your Mac');
   return parts;
 }

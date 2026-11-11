@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
  * no Ink or React, nothing from the terminal UI, and no reading or writing the terminal.
  * Both clients (the terminal UI and the Mac app) attach to the same core.
  */
-const CORE = ['src/core', 'src/agent', 'src/workspaces', 'src/net', 'src/terminal', 'src/image', 'src/shared', 'src/ipc', 'src/daemon', 'src/protocol.ts'];
+const CORE = ['src/core', 'src/agent', 'src/workspaces', 'src/net', 'src/terminal', 'src/image', 'src/shared', 'src/ipc', 'src/daemon', 'src/external', 'src/protocol.ts'];
 
 const FORBIDDEN: ReadonlyArray<{ readonly what: string; readonly re: RegExp }> = [
   { what: 'imports ink', re: /from\s+['"]ink['"]/ },

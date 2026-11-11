@@ -204,3 +204,37 @@ test('A component file in Files has a Preview beside its Source', async ({ page 
   await expect(frame.getByRole('heading')).toHaveText('Quarterly report');
   await page.screenshot({ path: shot('25-preview-in-files.png') });
 });
+
+/** How far a button's words stand out from its fill (WCAG's contrast ratio; colours as computed, sRGB). */
+function contrast(el: Element): number {
+  const lum = (css: string): number => {
+    const [r, g, b] = (css.match(/[\d.]+/g) ?? []).slice(0, 3).map((v) => {
+      const c = Number(v) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const [a, b] = [lum(getComputedStyle(el).color), lum(getComputedStyle(el).backgroundColor)];
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+test('A component that can’t be built says why in a short note, with a button you can read', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page)).toBeVisible();
+  await turnOn(page);
+  await openHero(page);
+  await composer(page).fill('Show me the price tag');
+  await composer(page).press('Enter');
+  const block = page.locator('[data-preview="PriceTag.tsx"]').last();
+  await expect(block).toContainText('PriceTag.tsx imports a file that isn’t there', { timeout: 20_000 });
+  const ask = block.getByRole('button', { name: 'Ask Agent to Fix' });
+  await expect(ask).toBeVisible();
+  // The note takes the frame's place at its own height, and the button's words stand out from its fill.
+  const note = block.getByRole('status');
+  expect((await note.boundingBox())!.height).toBeLessThan(90);
+  expect(await ask.evaluate(contrast)).toBeGreaterThan(4.5);
+  await block.screenshot({ path: shot('28-preview-cant-draw.png') });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(() => ask.evaluate(contrast)).toBeGreaterThan(4.5);
+  await block.screenshot({ path: shot('29-preview-cant-draw-dark.png') });
+});

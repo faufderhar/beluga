@@ -293,7 +293,7 @@ s.on('upgrade', (req, sock) => {
   sock.write('HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: echo\\r\\nConnection: Upgrade\\r\\n\\r\\n');
   sock.on('data', (d) => sock.write(d));
 });
-s.listen(0, '127.0.0.1', () => console.log(s.address().port));
+s.listen(0, '127.0.0.1', () => process.stdout.write(String(s.address().port) + '\\n'));
 `;
 
 describe('a computer’s dev server on this Mac (BLG-802)', () => {
@@ -362,6 +362,15 @@ describe('a computer’s dev server on this Mac (BLG-802)', () => {
   }, 120_000);
 });
 
+/** A port free on this Mac now (another process may still take it before it's used). */
+async function freePort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+  const port = (probe.address() as net.AddressInfo).port;
+  await new Promise((r) => probe.close(r));
+  return port;
+}
+
 describe('a port of this Mac shared with a computer (BLG-804)', () => {
   it('is reachable from the worktree there at localhost, unsharing closes it at once, and it goes with the worktree', async () => {
     const app = await install('MacBook');
@@ -377,10 +386,7 @@ describe('a port of this Mac shared with a computer (BLG-804)', () => {
     cleanup.push(() => void db.close());
     const dbPort = (db.address() as net.AddressInfo).port;
     // The port shared: free on this Mac, so the computer (this same Mac, in the test) can take it.
-    const probe = net.createServer();
-    await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
-    const shared = (probe.address() as net.AddressInfo).port;
-    await new Promise((r) => probe.close(r));
+    let shared = await freePort();
 
     await screenOn(app, id);
     let on: Readonly<Record<string, string>> = {};
@@ -399,7 +405,18 @@ describe('a port of this Mac shared with a computer (BLG-804)', () => {
     await fwd.tick();
     expect(on).toEqual({ 'ws-1': id });
     await expect(fwd.share('nope', shared)).rejects.toThrow(/isn’t on one of your computers/);
-    expect(await fwd.share('ws-1', shared)).toEqual([{ machineId: id, workspaceId: 'ws-1', port: shared }]);
+    // A free port can be taken by another test's server before the computer listens on it: another one then.
+    for (let i = 0; ; i++) {
+      const done = await fwd.share('ws-1', shared).catch((err: unknown) => {
+        if (i < 4 && err instanceof Error && /already uses port/.test(err.message)) return undefined;
+        throw err;
+      });
+      if (done) {
+        expect(done).toEqual([{ machineId: id, workspaceId: 'ws-1', port: shared }]);
+        break;
+      }
+      shared = await freePort();
+    }
 
     // From the worktree's side: localhost:<shared> reaches this Mac's service.
     const conn = net.connect(shared, '127.0.0.1');

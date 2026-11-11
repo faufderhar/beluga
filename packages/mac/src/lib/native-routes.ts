@@ -62,7 +62,7 @@ export function routeTyped(ctx: RouteContext, text: string): boolean {
   switch (cmd) {
     case 'project':
       if ((rest[0] === 'setup' || rest[0] === 'run') && projectId) ui.openMenu({ kind: 'scripts', projectId });
-      else ui.patch({ addProject: rest[0] === 'new' ? 'new' : true });
+      else ui.patch({ addProject: rest[0] === 'new' || rest[0] === 'clone' ? rest[0] : true });
       return true;
     case 'fork':
       if (wsId) openSheet({ kind: 'fork', wsId });

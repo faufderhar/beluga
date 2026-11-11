@@ -45,11 +45,12 @@ export interface SharedCopy {
 }
 
 /**
- * Your fork of a friend's worktree on this Mac (BLG-312): asked for, coming over, made (`wsId`,
- * the worktree of yours it became), or it failed (why).
+ * Your fork of a friend's worktree on this Mac (BLG-312): its project being got here first (a
+ * clone, or a copy from their Mac), asked for, coming over, made (`wsId`, the worktree of yours it
+ * became), or it failed (why).
  */
 export interface SharedFork {
-  readonly state: 'asking' | 'copying' | 'ready' | 'failed';
+  readonly state: 'preparing' | 'asking' | 'copying' | 'ready' | 'failed';
   readonly wsId?: string;
   readonly error?: string;
   /** While copying: bytes of its pack here so far, of all of them (all here: it's being set up). */

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openGroupChat } from './helpers.js';
 
 /**
  * Back and forward between pages (the toolbar's arrows, ⌘[ and ⌘]): the page you were on comes
@@ -109,8 +110,8 @@ test('Scratch and a closed panel come back with their worktree, and going somewh
 });
 
 test('a worktree archived since is skipped: Back goes to the page before it, never to a blank one', async ({ page }) => {
-  // Chat, then add-auth, then the Overview.
-  await page.keyboard.press('Meta+3');
+  // The group chat, then add-auth, then the Overview.
+  await openGroupChat(page);
   await expect(composer(page)).toBeVisible();
   await openWorkspace(page, 'add-auth');
   await page.keyboard.press('Meta+1');
@@ -124,7 +125,7 @@ test('a worktree archived since is skipped: Back goes to the page before it, nev
   await alert.getByRole('button', { name: 'Archive', exact: true }).click();
   await expect(alert).toBeHidden();
   await expect(row).toHaveAccessibleName('add-auth, archived', { timeout: 15_000 });
-  // Back skips it: the Chat.
+  // Back skips it: the group chat.
   await backButton(page).click();
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeHidden();
   await expect(composer(page)).not.toHaveAttribute('placeholder', /add-auth/);

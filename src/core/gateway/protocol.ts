@@ -1,4 +1,4 @@
-import { AgentRef, ProviderUsage } from '../../protocol.js';
+import { AgentRef, MessageVia, ProviderUsage } from '../../protocol.js';
 import { z } from 'zod';
 
 /**
@@ -119,6 +119,8 @@ export const TaskRequest = z.object({
    * up, else on their default agent and says so; an older Mac drops it and runs its default.
    */
   agent: AgentRef.optional(),
+  /** An external agent of the sender's asked. Shown on the card; their rules still judge the sender. */
+  via: MessageVia.optional(),
   ts: z.number().int().min(0),
 });
 export type TaskRequest = z.infer<typeof TaskRequest>;

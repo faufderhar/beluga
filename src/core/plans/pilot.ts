@@ -1,3 +1,4 @@
+import { outsideActingAgent } from '../acting-agent.js';
 import type { AgentRef } from '../../protocol.js';
 import type { CombineResult } from '../../workspaces/git.js';
 import type { Actor, BoardState, Issue } from '../board/model.js';
@@ -348,14 +349,17 @@ export class PlanPilot {
       clearTimeout(this.timer);
     }
     this.dueAt = at;
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      this.lastTick = Date.now();
-      const only = this.dueAll ? undefined : new Set(this.duePlans);
-      this.dueAll = false;
-      this.duePlans.clear();
-      this.tick(only);
-    }, wait);
+    // Armed from an external agent's call too, and what it then starts isn't that agent's.
+    this.timer = outsideActingAgent(() =>
+      setTimeout(() => {
+        this.timer = undefined;
+        this.lastTick = Date.now();
+        const only = this.dueAll ? undefined : new Set(this.duePlans);
+        this.dueAll = false;
+        this.duePlans.clear();
+        this.tick(only);
+      }, wait),
+    );
     this.timer.unref?.();
   }
 

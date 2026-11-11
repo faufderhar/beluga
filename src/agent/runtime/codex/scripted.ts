@@ -5,6 +5,16 @@ import type { CodexConnect, CodexConnection } from './app-server.js';
 import { handshake } from './app-server.js';
 import { CodexRpc } from './rpc.js';
 
+/** What codex-cli says opening a thread on its unelevated Windows sandbox under a profile that denies reads (#425). */
+const UNELEVATED_WINDOWS =
+  'error creating thread: failed to load AGENTS.md instructions for environment local: failed to prepare fs sandbox: failed to prepare windows sandbox wrapper: windows unelevated restricted-token sandbox cannot enforce deny-read restrictions directly; refusing to run unsandboxed';
+
+/** A thread's permissions profile denies a read somewhere. */
+const deniesReads = (params: Record<string, unknown>): boolean => {
+  const profiles = Object.entries((params.config ?? {}) as Record<string, unknown>).filter(([k]) => k.startsWith('permissions.'));
+  return profiles.some(([, p]) => Object.values((p as { filesystem?: Record<string, string> }).filesystem ?? {}).includes('deny'));
+};
+
 /** The words a scripted agent reads from a built prompt: its last line. */
 export const scriptedWords = (prompt: string): string => prompt.trim().split('\n').at(-1)!.trim();
 
@@ -54,6 +64,11 @@ export class ScriptedCodex {
   readonly mcpSignedIn = new Set<string>();
   /** How a sign-in ends once its page is "opened": true signs in, false fails, undefined waits forever. */
   mcpLoginEnds: boolean | undefined = true;
+  /**
+   * Codex's unelevated Windows sandbox (#425: a standard account, without MXC or the elevated
+   * sandbox): a thread whose profile denies any read won't open, in codex-cli's words.
+   */
+  unelevatedWindows = false;
 
   readonly connect: CodexConnect = async () => {
     this.connections++;
@@ -185,12 +200,14 @@ export class ScriptedCodex {
         case 'initialize':
           return { userAgent: 'fake', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
         case 'thread/start': {
+          if (this.unelevatedWindows && deniesReads(params)) throw new Error(UNELEVATED_WINDOWS);
           const id = randomUUID();
           this.threads.add(id);
           return { thread: { id }, model: 'gpt-fake' };
         }
         case 'thread/resume':
           if (!this.threads.has(String(params.threadId))) throw new Error('no rollout found');
+          if (this.unelevatedWindows && deniesReads(params)) throw new Error(UNELEVATED_WINDOWS);
           return { thread: { id: params.threadId }, model: 'gpt-fake' };
         case 'turn/start': {
           const id = randomUUID();

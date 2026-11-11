@@ -4,7 +4,7 @@ import { type Action, type DomainState, reduceDomain } from '../core/store.js';
 import type { PtyExit } from '../terminal/pty-host.js';
 import type { PtyLink } from '../terminal/emulator.js';
 import type { Args, Method } from './api.js';
-import { type ApiProxy, type ClientKind, type BelugaClient, type HelloKind, type PhoneMirror, type PhoneMirrorStatus, type PhoneTouchData, type PhoneVideoPiece, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, type HelloKind, type PhoneMirror, type PhoneMirrorStatus, type PhoneTouchData, type PhoneVideoPiece, apiProxy, toastsFailure } from './client.js';
 import type { Result } from './handlers.js';
 import { type Cap, type ClientFrame, type DaemonFrame, IPC_VERSION, encodeFrame, parseDaemonFrame } from './protocol.js';
 
@@ -281,7 +281,7 @@ export class SocketClient implements BelugaClient {
       while (list.length && list[list.length - 1] === undefined) list.pop();
       this.send({ t: 'call', id, method, args: list });
     });
-    promise.catch((err: unknown) => this.store.dispatch({ type: 'toast', text: `Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), level: 'error' }));
+    if (toastsFailure(method)) promise.catch((err: unknown) => this.store.dispatch({ type: 'toast', text: `Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), level: 'error' }));
     return promise;
   }
 

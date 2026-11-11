@@ -2,6 +2,7 @@ import path from 'node:path';
 import { type McpServerStatus, type Options, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerRow, McpSignIn } from '../../../shared/mcp.js';
 import { type OwnerMcpEntry, ownerMcpEntries } from './owner-mcp.js';
+import { claudeExecutable } from '../../claude-code.js';
 
 /** How long Claude Code gets to say how each server is (a local one may take a while to start). */
 const SETTLE_MS = 12_000;
@@ -17,15 +18,16 @@ export interface McpSession {
   close(): void;
 }
 
-export type OpenMcpSession = (cwd: string, servers: NonNullable<Options['mcpServers']>) => McpSession;
+/** `env`, when given, is Claude Code's whole environment (else Beluga's own). */
+export type OpenMcpSession = (cwd: string, servers: NonNullable<Options['mcpServers']>, env?: Readonly<Record<string, string | undefined>>) => McpSession;
 
 /** A Claude Code session that takes no prompt: only asked about its MCP servers. */
 export function claudeMcpSession(claudePath?: string): OpenMcpSession {
-  return (cwd, mcpServers) => {
+  return (cwd, mcpServers, env) => {
     const idle = (async function* () {
       await new Promise(() => undefined);
     })() as AsyncIterable<never>;
-    return query({ prompt: idle, options: { cwd, settingSources: [], mcpServers, ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}) } }) as unknown as McpSession;
+    return query({ prompt: idle, options: { cwd, settingSources: [], mcpServers, ...(env ? { env: { ...env } } : {}), ...claudeExecutable(claudePath) } }) as unknown as McpSession;
   };
 }
 
@@ -41,13 +43,22 @@ export class McpConnect {
 
   constructor(
     private readonly open: OpenMcpSession,
-    private readonly opts: { readonly env?: NodeJS.ProcessEnv; readonly home?: string; readonly settleMs?: number; readonly signInMs?: number; readonly pollMs?: number } = {},
+    private readonly opts: {
+      /** Where `${VAR}` in your servers' settings is read from (default: Beluga's own environment). */
+      readonly env?: NodeJS.ProcessEnv;
+      /** Your saved variables for a folder, over that (RuntimeOptions.ownEnv, #442): given to Claude Code too, as your runs are. */
+      readonly ownEnv?: (cwd: string) => Readonly<Record<string, string>>;
+      readonly home?: string;
+      readonly settleMs?: number;
+      readonly signInMs?: number;
+      readonly pollMs?: number;
+    } = {},
   ) {}
 
   /** Your servers for these folders (the first is where Claude Code starts), with how each is now. */
   async list(cwds: readonly string[]): Promise<McpServerRow[]> {
     const entries = this.entries(cwds);
-    const session = this.open(cwds[0] ?? process.cwd(), Object.fromEntries(entries.map((e) => [e.name, e.config])));
+    const session = this.openFor(cwds, entries);
     try {
       const statuses = await this.settle(session);
       return statuses.map((st) => toRow(st, entries.find((e) => e.name === st.name)));
@@ -62,7 +73,7 @@ export class McpConnect {
     if (!entries.some((e) => e.name === name)) return { error: `No MCP server named ${name}.` };
     this.signIns.get(name)?.session.close();
     this.signIns.delete(name);
-    const session = this.open(cwds[0] ?? process.cwd(), Object.fromEntries(entries.map((e) => [e.name, e.config])));
+    const session = this.openFor(cwds, entries);
     try {
       if (typeof session.mcpAuthenticate !== 'function') throw new Error('This Claude Code can’t sign in to MCP servers from Beluga. Update Claude Code, or sign in with /mcp there.');
       const res = await session.mcpAuthenticate(name);
@@ -94,7 +105,19 @@ export class McpConnect {
   }
 
   private entries(cwds: readonly string[]): OwnerMcpEntry[] {
-    return ownerMcpEntries(cwds, this.opts.env ?? process.env, this.opts.home);
+    return ownerMcpEntries(cwds, this.envAt(cwds), this.opts.home);
+  }
+
+  /** Where Claude Code starts (the first folder): Beluga's environment, with your saved variables there over it. */
+  private envAt(cwds: readonly string[]): NodeJS.ProcessEnv {
+    const base = this.opts.env ?? process.env;
+    return this.opts.ownEnv ? { ...base, ...this.opts.ownEnv(cwds[0] ?? process.cwd()) } : base;
+  }
+
+  private openFor(cwds: readonly string[], entries: readonly OwnerMcpEntry[]): McpSession {
+    const servers = Object.fromEntries(entries.map((e) => [e.name, e.config]));
+    const cwd = cwds[0] ?? process.cwd();
+    return this.opts.ownEnv ? this.open(cwd, servers, this.envAt(cwds)) : this.open(cwd, servers);
   }
 
   /** The statuses once none is still starting, or as they are when it took too long. */

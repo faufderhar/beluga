@@ -1,4 +1,10 @@
-export async function waitFor<T>(fn: () => T | undefined | false | null, timeoutMs = 3000): Promise<T> {
+/**
+ * How long waitFor waits when not told: longer on CI, whose shared runners can stall for seconds
+ * (only a wait that fails takes the extra time). Give a wait that has more to do its own.
+ */
+export const WAIT_MS = process.env.CI ? 10_000 : 3_000;
+
+export async function waitFor<T>(fn: () => T | undefined | false | null, timeoutMs = WAIT_MS): Promise<T> {
   const start = Date.now();
   for (;;) {
     const value = fn();

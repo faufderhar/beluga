@@ -159,11 +159,51 @@ describe('a Codex run', () => {
     const profile = config['permissions.beluga'] as { filesystem: Record<string, string>; network: { enabled: boolean } };
     expect(start.approvalPolicy).toBe('never');
     expect(profile.network.enabled).toBe(false);
-    expect(profile.filesystem[os.homedir()]).toBe('deny');
+    if (process.platform === 'linux') {
+      expect(profile.filesystem[':minimal']).toBe('read');
+      expect(profile.filesystem[os.homedir()]).toBeUndefined();
+    } else expect(profile.filesystem[os.homedir()]).toBe('deny');
     expect(profile.filesystem[`${cwd}/**/.env*`]).toBe('deny');
     expect(config).toMatchObject({ 'mcp_servers.figma.enabled': false, 'features.plugins': false, 'features.apps': false, 'shell_environment_policy.inherit': 'core' });
     // Beluga's own tools stay, gated by the friend's limits.
     expect(config['mcp_servers.beluga']).toBeDefined();
+  });
+
+  describe("on Codex's unelevated Windows sandbox, which can't deny reads (#425)", () => {
+    const profileOf = (p: Record<string, unknown>) => (p.config as Record<string, { filesystem: Record<string, string> }>)['permissions.beluga']!;
+    const windows = (): FakeCodex => Object.assign(new FakeCodex(), { unelevatedWindows: true });
+
+    it('your own worktree run opens with writes still confined, and says what it can read', async () => {
+      const codex = windows();
+      const run = input('hello', { place: { cwd, additionalDirectories: [], autoEdit: true, onSession: () => undefined } });
+      expect(await backend(codex).run(run)).toBe('echo: hello');
+      const [first, second] = codex.sent('thread/start');
+      expect(Object.values(profileOf(first!).filesystem)).toContain('deny');
+      expect(Object.values(profileOf(second!).filesystem)).not.toContain('deny');
+      expect(profileOf(second!).filesystem[cwd]).toBe('write');
+      expect(second!.developerInstructions).toMatch(/can't hide \.env files/);
+      expect(run.events.some(([k, t]) => k === 'progress' && /can read your \.env files/.test(t))).toBe(true);
+    });
+
+    it('learns it once: the next run, and a resumed thread, open without the denials straight away', async () => {
+      const codex = windows();
+      const sessions: string[] = [];
+      const b = backend(codex);
+      const place = (resume?: string) => ({ cwd, additionalDirectories: [], autoEdit: true, ...(resume ? { resume } : {}), onSession: (id: string) => void sessions.push(id) });
+      await b.run(input('hello', { place: place() }));
+      await b.run(input('again', { place: place(sessions[0]) }));
+      expect(codex.sent('thread/start')).toHaveLength(2);
+      expect(codex.sent('thread/resume')).toHaveLength(1);
+      expect(sessions[1]).toBe(sessions[0]);
+    });
+
+    it("refuses a friend's task rather than run it without its denials", async () => {
+      const codex = windows();
+      const err = await backend(codex).run(input('hello', { vetTool: () => undefined, viaAgent: true, scope: 'full' })).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/can’t keep this task away from/);
+      expect(codex.sent('thread/start').every((s) => Object.values(profileOf(s).filesystem).includes('deny'))).toBe(true);
+      expect(codex.sent('turn/start')).toHaveLength(0);
+    });
   });
 
   it("asks you before an edit outside the run's folders, in the same prompt as Claude's", async () => {

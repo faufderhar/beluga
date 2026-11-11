@@ -326,7 +326,7 @@ function Post({ author, at, what, body, url }: { author: string | undefined; at:
           </button>
         </Tip>
       </header>
-      <div className={s.postBody}>{body.trim() ? <Markdown text={body} /> : <p className={s.none}>No description.</p>}</div>
+      <div className={s.postBody}>{body.trim() ? <Markdown text={body} html /> : <p className={s.none}>No description.</p>}</div>
     </article>
   );
 }

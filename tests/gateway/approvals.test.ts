@@ -383,7 +383,7 @@ describe('a secret, with its own approval (BLG-209)', () => {
 
 /** Your Claude's gateway tools, as it would call them from conversation `channel`. */
 function toolsOf(n: Node, channel = 'ws:abc') {
-  const session = { host: { currentChannel: channel } } as unknown as Session;
+  const session = { host: { currentChannel: channel, viaIn: () => undefined } } as unknown as Session;
   attachGateway(session, n.gw);
   const defs = createGatewayToolDefs({ gateway: gatewayBridge(session) } as unknown as RoomBridge);
   return async (name: string, args: Record<string, unknown>): Promise<{ text: string; error: boolean }> => {

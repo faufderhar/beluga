@@ -106,6 +106,68 @@ describe('forking a friend’s worktree to your Mac', () => {
     expect(copying.at(-1)!.received).toBe(copying[0]!.total);
   }, 60_000 * SLOW);
 
+  it('forking before the project is on your Mac gets it here first, then forks', async () => {
+    net = await crowd();
+    const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
+    const kay = await mac(net, 'kay', { workspaces: await createDemoWorkspaces() });
+    macs.push(ata, kay);
+    await befriend(ata.person, kay.person);
+    const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
+    const theirs = project.workspaces.find((w) => w.kind === 'worktree' && !w.archived && !w.external && w.branch)!;
+    ata.session.sharing.shareWithFriend({ peerId: kay.id, projectId: project.id, role: 'contribute' });
+    // While kay's copy of it is still coming over.
+    const early = await settle(() => kay.store.getState().sharedProjects.find((p) => p.id === project.id)?.copy);
+    const seen: string[] = [];
+    const off = kay.store.subscribe(() => {
+      const f = kay.store.getState().forks[theirs.id];
+      if (f && f.state !== seen.at(-1)) seen.push(f.state);
+    });
+    await kay.shares.fork(ata.id, theirs.id, 'early');
+    const fork = await settle(() => {
+      const f = kay.store.getState().forks[theirs.id];
+      if (f?.state === 'failed') throw new Error(f.error);
+      return f?.state === 'ready' ? f : undefined;
+    });
+    off();
+    const copy = kay.store.getState().sharedProjects.find((p) => p.id === project.id)?.copy;
+    expect(copy?.state).toBe('ready');
+    const mine = kay.session.workspaces!.manager.find(fork.wsId!)!;
+    expect(mine.branch).toBe('beluga/early');
+    expect(kay.session.workspaces!.manager.list.find((p) => p.workspaces.some((w) => w.id === mine.id))?.id).toBe(copy?.projectId);
+    if (early.state === 'copying') expect(seen.slice(0, 2)).toEqual(['preparing', 'asking']);
+  }, 60_000 * SLOW);
+
+  it.skipIf(LOSES_A_MESSAGE_ON_WINDOWS)('a repository you can’t clone, shared a worktree at a time: the fork says why and what to ask for', async () => {
+    net = await crowd();
+    const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
+    const kay = await mac(net, 'kay', { workspaces: await createDemoWorkspaces() });
+    macs.push(ata, kay);
+    await befriend(ata.person, kay.person);
+    const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
+    const ws = project.workspaces.find((w) => w.kind === 'worktree' && !w.archived && !w.external && w.branch)!;
+    // A private repository kay can't reach (.invalid never resolves).
+    git(project.root!, 'remote', 'set-url', 'origin', 'https://git.nowhere.invalid/ata/bob-api');
+    ata.session.sharing.shareWithFriend({ peerId: kay.id, workspaceId: ws.id, role: 'contribute' });
+    await settle(() => kay.store.getState().shared.find((w) => w.id === ws.id));
+
+    // Its address follows the first message (it's looked up): fork once kay has it.
+    const deadline = Date.now() + 10_000 * SLOW;
+    for (;;) {
+      try {
+        await kay.shares.fork(ata.id, ws.id);
+        break;
+      } catch (err) {
+        if (!/share the whole project, and it’s copied here/.test(String(err)) || Date.now() > deadline) throw err;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    expect(kay.store.getState().forks[ws.id]?.state).toBe('preparing');
+    const failed = await settle(() => (kay.store.getState().forks[ws.id]?.state === 'failed' ? kay.store.getState().forks[ws.id] : undefined));
+    expect(failed.error).toBe('git.nowhere.invalid/ata/bob-api couldn’t be cloned here (it may be private, or you don’t have access). Ask ata to share the whole project, and it’s copied from their Mac');
+    // Nothing of it was sent over: ata only shared the worktree.
+    expect(kay.session.workspaces!.manager.list.some((p) => p.name === 'bob-api' && p.root.includes(`${path.sep}copies${path.sep}`))).toBe(false);
+  }, 60_000 * SLOW);
+
   it.skipIf(LOSES_A_MESSAGE_ON_WINDOWS)('someone who only follows along can’t fork', async () => {
     net = await crowd();
     const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });

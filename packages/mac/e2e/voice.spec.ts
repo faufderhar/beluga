@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { pick } from './helpers.js';
+import { openGroupChat, pick } from './helpers.js';
 
 /**
  * Speaking instead of typing (BLG-145, BLG-146): the microphone beside Send in the chat's box and
@@ -16,6 +16,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the chat box has a microphone beside Send', async ({ page }) => {
+  await openGroupChat(page);
   const mic = page.getByRole('button', { name: 'Speak instead of typing' }).first();
   await expect(mic).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send' }).first()).toBeVisible();

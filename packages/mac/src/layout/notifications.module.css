@@ -319,3 +319,8 @@
 .waiting:focus-within .time {
   visibility: visible;
 }
+
+/* What shows when the list can't be drawn (BLG-905): the reason, in the popover. */
+.broken {
+  padding: 28px 18px;
+}

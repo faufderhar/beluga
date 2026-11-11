@@ -147,17 +147,17 @@ test('sharing a screen puts it on the stage beside the chat; the chat in full sc
   // Which microphone and speaker, beside Mute (BLG-737).
   await strip(page).getByRole('button', { name: 'Microphone and Speaker' }).click();
   await expect(page.getByRole('menuitem', { name: 'Microphone' })).toBeVisible();
-  // Background noise is out of your voice in every call (BLG-744): the filter runs, so it's ticked.
+  // Noise Removal (BLG-744) is yours to turn on: until then the call sends the microphone itself.
   const quiet = page.getByRole('menuitem', { name: /^Noise Removal/ });
-  await expect(quiet).toHaveAttribute('data-checked', 'true');
+  await expect(quiet).not.toHaveAttribute('data-checked', 'true');
   await shot(page, '06c-devices');
-  // Off for this call, and back on.
+  // On (the filter runs here), and off again.
+  await quiet.click();
+  await strip(page).getByRole('button', { name: 'Microphone and Speaker' }).click();
+  await expect(quiet).toHaveAttribute('data-checked', 'true');
   await quiet.click();
   await strip(page).getByRole('button', { name: 'Microphone and Speaker' }).click();
   await expect(quiet).not.toHaveAttribute('data-checked', 'true');
-  await quiet.click();
-  await strip(page).getByRole('button', { name: 'Microphone and Speaker' }).click();
-  await expect(quiet).toHaveAttribute('data-checked', 'true');
   await page.keyboard.press('Escape');
   // Smooth for motion, and the whole display.
   // How the screen is sent is the sharer's, tucked behind •••.

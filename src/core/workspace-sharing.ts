@@ -90,6 +90,15 @@ export class WorkspaceSharing {
     return Object.keys(this.members(id));
   }
 
+  /**
+   * May `from`'s agent write this turn into this channel? The owner's always; a contributor's own
+   * agent too, for its own asks (a guest's "@claude" in a friend's worktree), never for someone else's.
+   */
+  agentMayWrite(from: string, channel: string, requester: string): boolean {
+    if (from === this.deps.selfId() || this.sharedFor(channel)?.owner === from) return true;
+    return wsIdOf(channel) !== undefined && requester === from && this.canPost(from, channel);
+  }
+
   /** May `from` post into (or ask Claude in) this channel? */
   canPost(from: string, channel: string): boolean {
     const id = wsIdOf(channel);

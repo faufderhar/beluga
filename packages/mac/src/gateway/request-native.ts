@@ -9,6 +9,7 @@ import { NOTIFICATION_TAP, macNoticeTarget } from '../lib/notices.js';
 import { popupPublisher } from './popup-bridge.js';
 import { type PopupItem, type PopupNeed, isNeedId, isPreviewId, popupNeeds, popupRequests, previewItems } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction, outsideStep, parseRequestMenuId, trayRequests } from './request-actions.js';
+import { t as translate } from '../i18n/index.js';
 
 /**
  * Friends' requests outside the window: the floating pop-up (Allow / Allow Always / Decline,
@@ -217,7 +218,7 @@ export function useRequestNative(client: SocketClient): void {
       .catch(() => undefined);
     let last = '';
     const update = (): void => {
-      const requests = trayRequests(client.store.getState().approvals);
+      const requests = trayRequests(client.store.getState().approvals).map((r) => ({ ...r, title: translate(r.title) }));
       const key = JSON.stringify(requests);
       if (key === last) return;
       last = key;

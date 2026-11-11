@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Location } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { Icon } from '../Icon.js';
+import { imageGone } from '../../chat/images.js';
 import { useBeluga } from '../../lib/beluga.js';
 import { sourceTag } from '../../machines/pane-model.js';
 import { resolveImage } from './md-paths.js';
@@ -101,7 +102,7 @@ export function MdImage({ src, alt = '', title, doc }: { src: string; alt?: stri
   const { url, error } = useImageUrl(version === undefined ? undefined : local, version || undefined);
   if (target.kind === 'remote') return <img className={m.image} src={target.url} alt={alt} title={title} loading="lazy" decoding="async" referrerPolicy="no-referrer" />;
   if (target.kind === 'blocked') return <Missing alt={alt} why="Only images next to this file, or on the web over https, are shown" />;
-  if (error) return <Missing alt={alt} why={`Can’t show ${target.path}: ${error}`} />;
+  if (error) return <Missing alt={alt} why={imageGone(error) ? `${target.path} was moved or deleted` : `Can’t show ${target.path}: ${error}`} />;
   if (!url) return <span className={m.imageLoading} role="img" aria-label={alt || 'Loading image'} />;
   return <img className={m.image} src={url} alt={alt} title={title ?? target.path} decoding="async" />;
 }

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathVariants } from './claude-sessions.js';
+import { belugaHome } from '../../../core/home.js';
 import type { AgentRef } from '../../../protocol.js';
 import { claudeCodeCommand, claudeCodeReady } from '../../claude-code.js';
 import type { PolicyContext } from '../../policy.js';
@@ -49,6 +50,28 @@ export function trustFolder(dir: string, file = claudeJson()): void {
   } catch {
     // Claude Code asks, as it always would
   }
+}
+
+/**
+ * Where a run's MCP config goes: it holds the run's token, which a command line would show to every
+ * process in `ps`. Under Beluga's home, as the worktree's scratch folder shows on your screens and
+ * to friends sharing it, and may not exist. A file left by a crash holds a token that died with the daemon.
+ */
+function writeMcpConfig(servers: unknown, home = belugaHome()): { file: string; remove(): void } {
+  const dir = path.join(home, 'terminal');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, `mcp-${randomUUID()}.json`);
+  writeFileSync(file, JSON.stringify({ mcpServers: servers }), { mode: 0o600, flag: 'wx' });
+  return {
+    file,
+    remove: () => {
+      try {
+        rmSync(file, { force: true });
+      } catch {
+        // its token stopped working when the run closed
+      }
+    },
+  };
 }
 
 let sharedHost: ToolHost | undefined;
@@ -109,7 +132,13 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
     (name, args) => gateTool(name, args, input, policy),
     async (hook) => terminalHookAnswer(hook, input, policy),
   );
+  let config: ReturnType<typeof writeMcpConfig> | undefined;
+  const close = (): void => {
+    mounted.close();
+    config?.remove();
+  };
   try {
+    config = writeMcpConfig(mounted.servers, opts.home);
     const { args: session, session: id, fresh } = sessionArgs(place.resume, Boolean(place.forkSession));
     const model = input.model ?? opts.model;
     const instructions = runInstructions({ ...input, terminal: true }, opts.bridge.selfName(), opts.agentOf?.(input) ?? place.agent);
@@ -119,7 +148,7 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
       '--setting-sources',
       'user',
       '--mcp-config',
-      JSON.stringify({ mcpServers: mounted.servers }),
+      config.file,
       // Beluga's own tools are checked by Beluga (the tool host's gate: its rules, and you for the
       // risky ones), as in a chat run: Claude Code doesn't ask about them a second time.
       '--allowedTools',
@@ -143,10 +172,10 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
       env: { ...input.env, [GATE_URL_ENV]: mounted.hookUrl ?? '', [GATE_TOKEN_ENV]: mounted.token },
       session: id,
       fresh,
-      close: () => mounted.close(),
+      close,
     };
   } catch (err) {
-    mounted.close();
+    close();
     throw err;
   }
 }

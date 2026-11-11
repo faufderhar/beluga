@@ -14,7 +14,7 @@ afterEach(() => {
 
 /** A tiny server like a dev server: listens on a free port and says which. */
 function serve(cwd: string, env: NodeJS.ProcessEnv, host = '127.0.0.1'): Promise<{ child: ChildProcess; port: number }> {
-  const child = spawn(process.execPath, ['-e', `require('http').createServer().listen(0, '${host}', function () { console.log(this.address().port) })`], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
+  const child = spawn(process.execPath, ['-e', `require('http').createServer().listen(0, '${host}', function () { process.stdout.write(String(this.address().port) + '\\n') })`], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
   stops.push(() => child.kill('SIGKILL'));
   return new Promise((resolve, reject) => {
     child.stdout!.once('data', (d: Buffer) => resolve({ child, port: Number(String(d).trim()) }));

@@ -43,6 +43,7 @@ export async function oneShot(req: OneShot, deps: OneShotDeps = {}): Promise<{ r
   // Each call's tool and input as OpenCode says them (a read's path comes in an update, not its permission request).
   const calls = new Map<string, { tool: string; raw: Record<string, unknown> }>();
   try {
+    if (req.signal?.aborted) throw new Error('aborted');
     const { rpc } = conn;
     rpc.onNotification((method, params) => {
       if (method !== 'session/update' || params.sessionId !== sid) return;

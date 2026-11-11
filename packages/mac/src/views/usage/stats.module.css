@@ -17,7 +17,8 @@
   --m-tokens: var(--claude);
   --a-codex: var(--series-1);
   --a-opencode: var(--series-4);
-  --a-grok: var(--series-5);
+  --a-copilot: var(--series-5);
+  --a-grok: var(--series-6);
   --a-local: var(--series-3);
 }
 .head {

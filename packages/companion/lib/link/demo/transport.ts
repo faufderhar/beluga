@@ -569,6 +569,19 @@ export class DemoTransport implements Transport {
         }
         return ok(method === 'workbench.setAgent' ? true : null);
       }
+      case 'external.agents':
+        return ok([{ id: 'demo0grokbot', name: 'GrokBot', level: 'trusted', route: 'local', lastSeen: Date.now() - 60_000 }]);
+      case 'external.activity':
+        return ok([
+          { ts: Date.now() - 60_000, agent: 'GrokBot', tool: 'beluga_chat_send', target: 'chat:fix-rate-limit', decidedBy: 'rule', argsHash: 'a', kind: 'allowed' },
+          { ts: Date.now() - 120_000, agent: 'GrokBot', tool: 'beluga_chat_update', target: 'chat:fix-rate-limit', decidedBy: 'person', argsHash: 'b', kind: 'asked' },
+          { ts: Date.now() - 180_000, agent: 'GrokBot', tool: 'beluga_chat_launch', target: 'project:landing', decidedBy: 'rule', argsHash: 'c', kind: 'refused' },
+        ]);
+      case 'external.stopAgent':
+      case 'external.revoke':
+        return ok(true);
+      case 'external.stopAll':
+        return ok(1);
       case 'host.stopRun': {
         const c = w.convs.get(`conv:${str(0)}`);
         const last = c?.turns.at(-1);

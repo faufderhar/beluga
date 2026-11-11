@@ -17,7 +17,7 @@ this is the rest.
 ## Install
 
 ```sh
-curl -fsSL https://github.com/kayraucklnc/beluga/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/beluga-labs/beluga/releases/latest/download/install.sh | sh
 ```
 
 It puts Beluga, with its own Node, in `~/.beluga/server` and links the `beluga` command into
@@ -30,12 +30,12 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 Run that, then open a new terminal (or `source ~/.bashrc`).
 
 To install a particular release (its tag from the
-[releases page](https://github.com/kayraucklnc/beluga/releases)), or link the command into another
+[releases page](https://github.com/beluga-labs/beluga/releases)), or link the command into another
 folder, set these before `sh`:
 
 ```sh
-curl -fsSL https://github.com/kayraucklnc/beluga/releases/latest/download/install.sh | BELUGA_VERSION=<tag> sh
-curl -fsSL https://github.com/kayraucklnc/beluga/releases/latest/download/install.sh | BELUGA_BIN_DIR="$HOME/bin" sh
+curl -fsSL https://github.com/beluga-labs/beluga/releases/latest/download/install.sh | BELUGA_VERSION=<tag> sh
+curl -fsSL https://github.com/beluga-labs/beluga/releases/latest/download/install.sh | BELUGA_BIN_DIR="$HOME/bin" sh
 ```
 
 ## Set up
@@ -108,7 +108,7 @@ beluga service install
 ## Your phone
 
 Get the Beluga phone app (Android: `Beluga-<version>.apk` on the
-[releases page](https://github.com/kayraucklnc/beluga/releases/latest)). Setup pairs one phone;
+[releases page](https://github.com/beluga-labs/beluga/releases/latest)). Setup pairs one phone;
 for another, on the server:
 
 ```sh

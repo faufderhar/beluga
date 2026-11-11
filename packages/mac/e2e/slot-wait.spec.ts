@@ -21,7 +21,7 @@ test('a message past the limit waits for a free Claude, and says so', async ({ p
   await expect(sidebar(page)).toBeVisible();
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Agent' }).click();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   const slider = settings.getByRole('slider', { name: 'Conversations at once' });
   await expect(slider).toHaveValue('10');
   await slider.scrollIntoViewIfNeeded();
@@ -34,7 +34,8 @@ test('a message past the limit waits for a free Claude, and says so', async ({ p
   await expect(settings).toBeHidden();
 
   await open(page, 'add-auth');
-  await composer(page).fill('Write the whole auth module with tests, slowly');
+  // A long run (the demo's "take your time" script, src/agent/mock.ts): a quick one would free the agent before Start now.
+  await composer(page).fill('Write the whole auth module with tests, take your time');
   await page.keyboard.press('Enter');
   await open(page, 'webhook-retries');
   await composer(page).fill('can you continue');

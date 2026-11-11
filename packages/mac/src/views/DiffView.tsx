@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { type DiffLine as Line, parseDiff } from '@beluga/shared/diff-lines.js';
 import type { ChangedFile } from '@beluga/workspaces/git.js';
 import { Icon } from '../components/Icon.js';
@@ -15,6 +15,7 @@ import { revealInFinder } from '../lib/files.js';
 import { quoteInBox } from '../chat/message-menu.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { ChangedFileView, canShowFile, fileLookLabel, onlyAsFile, useChangeLocation } from './ChangedFile.js';
+import { CommentButton, type DiffComments, useDiffComments, useWaitingHere } from './DiffComment.js';
 import s from './diff.module.css';
 import { revealLabel } from '../lib/os-words.js';
 import { useRevealFileLabel } from '../lib/remote-open.js';
@@ -128,10 +129,12 @@ export function useFileItems(): (f: ChangedFile, index: number) => ActionItem[] 
 
 /**
  * A diff, one column: the old and new line numbers, then the line. `compact` (the right panel):
- * one line number (the new one, or the old one for a removed line) and long lines wrap.
+ * one line number (the new one, or the old one for a removed line) and long lines wrap. Given
+ * `comments`, a line's + comments on it (DiffComment.tsx), the box opening under it.
  */
-export function UnifiedDiff({ lines, compact }: { lines: readonly Line[]; compact?: boolean }) {
+export function UnifiedDiff({ lines, compact, comments }: { lines: readonly Line[]; compact?: boolean; comments?: DiffComments }) {
   const cols = compact ? 2 : 3;
+  const picked = comments?.picked;
   return (
     <table className={cx(s.table, compact && s.compact)}>
       {/* Fixed layout takes its widths from here (the first row may be a hunk across both). */}
@@ -148,20 +151,74 @@ export function UnifiedDiff({ lines, compact }: { lines: readonly Line[]; compac
               <td colSpan={cols}>{l.kind === 'meta' ? noteOf(l.text) : l.text}</td>
             </tr>
           ) : (
-            <tr key={i} className={s[`l_${l.kind}`]}>
-              {compact ? (
-                <td className={s.num}>{l.new ?? l.old ?? ''}</td>
-              ) : (
-                <>
-                  <td className={s.num}>{l.old ?? ''}</td>
-                  <td className={s.num}>{l.new ?? ''}</td>
-                </>
-              )}
-              <td className={s.text}>
-                <span className={s.sign}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
-                {l.text || ' '}
-              </td>
+            <Fragment key={i}>
+              <tr className={cx(s[`l_${l.kind}`], comments?.marked.has(i) && s.commented, picked && i >= picked.from && i <= picked.to && s.picked)}>
+                {compact ? (
+                  <td className={s.num}>{l.new ?? l.old ?? ''}</td>
+                ) : (
+                  <>
+                    <td className={s.num}>{l.old ?? ''}</td>
+                    <td className={s.num}>{l.new ?? ''}</td>
+                  </>
+                )}
+                <td className={s.text}>
+                  {comments ? <CommentButton row={i} line={l} comments={comments} /> : null}
+                  <span className={s.sign}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
+                  {l.text || ' '}
+                </td>
+              </tr>
+              {picked?.to === i ? (
+                <tr className={s.commentRow}>
+                  <td colSpan={cols}>{comments?.box}</td>
+                </tr>
+              ) : null}
+            </Fragment>
+          ),
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+/** Side by side, with a + on each side's lines to comment on them. */
+function SplitDiff({ lines, comments }: { lines: readonly Line[]; comments: DiffComments }) {
+  const rowOf = useMemo(() => new Map(lines.map((l, i) => [l, i])), [lines]);
+  const rows = useMemo(() => splitRows([...lines]), [lines]);
+  const picked = comments.picked;
+  const on = (i: number | undefined): boolean => i !== undefined && !!picked && i >= picked.from && i <= picked.to;
+  const endsPick = (l: Line | undefined): boolean => !!l && !!picked && rowOf.get(l) === picked.to;
+  const side = (l: Line | undefined, n: number | undefined) => {
+    const i = l ? rowOf.get(l) : undefined;
+    return (
+      <>
+        <td className={cx(s.num, l && s[`l_${l.kind}`], i !== undefined && comments.marked.has(i) && s.commented, on(i) && s.picked)}>{n ?? ''}</td>
+        <td className={cx(s.text, l ? s[`l_${l.kind}`] : s.blank, on(i) && s.picked)}>
+          {l && i !== undefined ? <CommentButton row={i} line={l} comments={comments} /> : null}
+          {l?.text ?? ''}
+        </td>
+      </>
+    );
+  };
+  return (
+    <table className={cx(s.table, s.split)}>
+      <tbody>
+        {rows.map((r, k) =>
+          r.full ? (
+            <tr key={k} className={cx(s.hunk, r.full.kind === 'meta' && s.note)}>
+              <td colSpan={4}>{r.full.kind === 'meta' ? noteOf(r.full.text) : r.full.text}</td>
             </tr>
+          ) : (
+            <Fragment key={k}>
+              <tr>
+                {side(r.left, r.left?.old)}
+                {side(r.right, r.right?.new)}
+              </tr>
+              {endsPick(r.left) || endsPick(r.right) ? (
+                <tr className={s.commentRow}>
+                  <td colSpan={4}>{comments.box}</td>
+                </tr>
+              ) : null}
+            </Fragment>
           ),
         )}
       </tbody>
@@ -179,6 +236,8 @@ export function DiffView() {
   const prefs = usePrefs();
   const located = useChangeLocation(review?.data?.files[review.selected]?.path);
   const lines = useMemo(() => (review?.diff ? parseDiff(review.diff) : []), [review?.diff]);
+  const comments = useDiffComments(review?.data?.files[review.selected]?.path, lines);
+  const waiting = useWaitingHere();
   const files = review?.data?.files ?? [];
   const totals = files.reduce((t, f) => ({ add: t.add + f.added, del: t.del + f.removed }), { add: 0, del: 0 });
   const mine = view.kind === 'workspace';
@@ -192,6 +251,12 @@ export function DiffView() {
   // A picture or a PDF as itself; anything else its diff (Unified or Split) or the file (Markdown formatted).
   const asFile = !!at && !!file && (onlyAsFile(file.path) || prefs.changeLook === 'file');
   const mode = asFile ? 'file' : layout;
+  // The message box is the conversation's: back there (out of the full-size diff, too) to send it.
+  const toChat = (): void => {
+    if (view.kind === 'workspace') actions.run({ type: 'open_ws', id: view.id, tab: 'chat' });
+    else if (view.kind === 'shared') actions.run({ type: 'open_shared', owner: view.owner, id: view.id, tab: 'chat' });
+    setTimeout(() => document.dispatchEvent(new CustomEvent('beluga:focus-composer')), 60);
+  };
   const setMode = (m: 'unified' | 'split' | 'file'): void => {
     if (m === 'file') return setPrefs({ changeLook: 'file' });
     setLayout(m);
@@ -269,32 +334,25 @@ export function DiffView() {
             />
           )}
         </div>
+        {waiting && mode !== 'file' ? (
+          <div className={s.waiting}>
+            <Icon name="chat" size={12} />
+            {waiting} comment{waiting === 1 ? '' : 's'} waiting to send
+            <span className={s.flex} />
+            <Button size="small" variant="quiet" onClick={toChat}>
+              Go to Chat
+            </Button>
+          </div>
+        ) : null}
         <div className={cx(s.code, mode === 'file' && s.asFile, 'selectable')} tabIndex={0} aria-label={mode === 'file' ? 'The file' : 'The changes'}>
           {mode === 'file' && at ? (
             <ChangedFileView at={at} variant="focus" wrap={false} />
           ) : !review.diff ? (
             <div className={s.loadingDiff}>Loading the diff…</div>
           ) : mode === 'unified' ? (
-            <UnifiedDiff lines={lines} />
+            <UnifiedDiff lines={lines} comments={comments} />
           ) : (
-            <table className={cx(s.table, s.split)}>
-              <tbody>
-                {splitRows(lines).map((r, i) =>
-                  r.full ? (
-                    <tr key={i} className={cx(s.hunk, r.full.kind === 'meta' && s.note)}>
-                      <td colSpan={4}>{r.full.kind === 'meta' ? noteOf(r.full.text) : r.full.text}</td>
-                    </tr>
-                  ) : (
-                    <tr key={i}>
-                      <td className={cx(s.num, r.left && s[`l_${r.left.kind}`])}>{r.left?.old ?? ''}</td>
-                      <td className={cx(s.text, r.left ? s[`l_${r.left.kind}`] : s.blank)}>{r.left?.text ?? ''}</td>
-                      <td className={cx(s.num, r.right && s[`l_${r.right.kind}`])}>{r.right?.new ?? ''}</td>
-                      <td className={cx(s.text, r.right ? s[`l_${r.right.kind}`] : s.blank)}>{r.right?.text ?? ''}</td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
+            <SplitDiff lines={lines} comments={comments} />
           )}
         </div>
       </section>

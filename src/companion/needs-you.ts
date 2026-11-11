@@ -1,3 +1,4 @@
+import { isExternalRequester } from '../core/trust.js';
 import type { Approval, DomainState } from '../core/store.js';
 import { OFFER_DETAIL, knockWords, offerWords } from '../core/team/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
@@ -47,9 +48,10 @@ function threadPlace(state: DomainState, channel: string | undefined): Pick<Need
 }
 
 function approvalItem(state: DomainState, a: Approval): NeedsYou {
-  const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : agentOf(state, undefined, '');
+  const from = a.asker ?? (a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : agentOf(state, undefined, ''));
   // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
-  const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
+  // An external agent's own place has no chat to open.
+  const topic = a.channel && !isExternalRequester(a.channel) ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
   return {
     id: `approval:${a.id}`,
     ...threadPlace(state, a.channel),

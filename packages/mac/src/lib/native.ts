@@ -28,12 +28,12 @@ import { newChatProject } from './project-home.js';
 import { type MenuBarCounts, SPOUT_EVERY_MS, spoutStep, trayTitle } from '../menubar/menubar-look.js';
 import { shownState } from '../network/net-model.js';
 import { SHOW_TILE, boardLinkOf } from './widget-links.js';
+import { t } from '../i18n/index.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
 const GO: Record<string, PlaceKind> = {
   'go-tasks': 'tasks',
-  'go-room': 'room',
   'go-files': 'files',
   'go-overview': 'overview',
   'go-search': 'search',
@@ -418,7 +418,7 @@ export function useMenuState(client: SocketClient): void {
         const st = commandState(state, id);
         enabled[id] = st.enabled;
         if (st.checked !== undefined) checked[id] = st.checked;
-        if (st.label) labels[id] = st.label;
+        if (st.label) labels[id] = t(st.label);
       }
       const key = JSON.stringify([enabled, checked, labels]);
       if (key === last) return;

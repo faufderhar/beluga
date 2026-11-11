@@ -40,6 +40,8 @@ export const COMMANDS = {
   version: { usage: ['beluga version'], summary: 'show the version', options: {} },
   help: { usage: ['beluga help [command]'], summary: 'show this help, or one command’s', options: {} },
   daemon: { usage: ['beluga daemon [--keep-alive] [demo]'], summary: "run Beluga's engine for the Mac app", options: {}, internal: true, passThrough: true },
+  mcp: { usage: ['beluga mcp <command>'], summary: "external agents' server: pair, list, stop and revoke them (beluga mcp --help)", options: {}, passThrough: true },
+  chat: { usage: ['beluga chat <command>'], summary: 'start and follow chats from a script (beluga chat --help)', options: {}, passThrough: true },
   'mcp-serve': { usage: ['beluga mcp-serve <suite>'], summary: "one suite of Beluga's tools over stdio, for a run", options: {}, internal: true, passThrough: true },
 } as const satisfies Record<string, CommandSpec>;
 

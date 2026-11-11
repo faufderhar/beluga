@@ -6,6 +6,8 @@ import { openCodeRuntime } from './opencode/index.js';
 import { findOpenCode } from './opencode/connection.js';
 import { grokRuntime } from './grok/index.js';
 import { findGrok } from './grok/connection.js';
+import { copilotRuntime } from './copilot/index.js';
+import { findCopilot } from './copilot/connection.js';
 import type { AgentRuntime, RuntimeId, RuntimeStatus } from './types.js';
 
 /** The runtime an agent runs on when none is named. */
@@ -16,9 +18,10 @@ const RUNTIMES: ReadonlyMap<RuntimeId, AgentRuntime> = new Map([
   [codexRuntime.id, codexRuntime],
   [openCodeRuntime.id, openCodeRuntime],
   [grokRuntime.id, grokRuntime],
+  [copilotRuntime.id, copilotRuntime],
 ]);
 
-/** The runtime an AgentRef names ('claude', 'codex', 'opencode', 'grok'); undefined for one this Beluga doesn't know. */
+/** The runtime an AgentRef names ('claude', 'codex', 'opencode', 'grok', 'copilot'); undefined for one this Beluga doesn't know. */
 export function runtimeFor(id: RuntimeId = DEFAULT_RUNTIME): AgentRuntime | undefined {
   return RUNTIMES.get(id);
 }
@@ -38,11 +41,12 @@ export async function runtimeStatuses(deps: { readonly claude?: () => Promise<Ru
   return [...(claude ? [{ id: claudeRuntime.id, ...claude }] : []), ...others];
 }
 
-/** How to sign in to a runtime, as a command for Terminal (Claude Code: `claude auth login`; Codex: `codex login`; OpenCode: `opencode auth login`, a model provider); undefined for one with no sign-in. */
+/** How to sign in to a runtime, as a command for Terminal (Claude Code: `claude auth login`; Codex: `codex login`; OpenCode: `opencode auth login`, a model provider; Copilot: `copilot login`, your GitHub account); undefined for one with no sign-in. */
 export function signInCommand(id: RuntimeId): readonly string[] | undefined {
   if (id === claudeRuntime.id) return claudeSignInCommand();
   if (id === codexRuntime.id) return [findCodex() ?? 'codex', 'login'];
   if (id === openCodeRuntime.id) return [findOpenCode() ?? 'opencode', 'auth', 'login'];
   if (id === grokRuntime.id) return [findGrok() ?? 'grok', 'login'];
+  if (id === copilotRuntime.id) return [findCopilot() ?? 'copilot', 'login'];
   return undefined;
 }

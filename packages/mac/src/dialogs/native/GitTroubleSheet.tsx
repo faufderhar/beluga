@@ -13,7 +13,7 @@ import { openExternal } from '../../lib/system.js';
 import { whileBusy } from '../../lib/ws-busy.js';
 import s from './git-trouble.module.css';
 
-const KIND_ICON: Record<GitTroubleKind, IconName> = { ssh_denied: 'lock', host_key: 'lock', no_access: 'eyeOff', https_auth: 'person', gh_missing: 'download', gh_logged_out: 'person', no_remote: 'branch', offline: 'globe' };
+const KIND_ICON: Record<GitTroubleKind, IconName> = { ssh_denied: 'lock', host_key: 'lock', no_access: 'eyeOff', https_auth: 'person', https_broken: 'lock', gh_missing: 'download', gh_logged_out: 'person', no_remote: 'branch', offline: 'globe' };
 
 /** Fixes that run in the worktree's GitHub terminal, where you see them and answer what they ask. */
 const IN_TERMINAL = new Set<GitFix['id']>(['install_gh', 'gh_login', 'add_ssh_key', 'check_host']);

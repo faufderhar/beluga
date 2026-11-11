@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { EFFORTS, type Effort } from '@beluga/shared/settings-schema.js';
-import { useState } from 'react';
+import { type CSSProperties, useState } from 'react';
 import type { AppState } from '@beluga/core/store.js';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import { type HandoffMode, limitHit, needsHandoff } from '@beluga/shared/agent-handoff.js';
@@ -56,7 +56,7 @@ export function modelInfo(st: Pick<AppState, 'runtimes' | 'models'>, runtime: st
 }
 
 /** The maker a runtime's models usually come from: its own models carry no second mark. */
-const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode', grok: 'grok' };
+const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode', copilot: 'copilot', grok: 'grok' };
 
 /** A model's maker mark when it isn't its runtime's own (a local runtime serving a GPT model); else none. */
 export function foreignMark(model: string, runtime: string): AgentMark | undefined {
@@ -128,10 +128,11 @@ interface Move {
 }
 
 /**
- * The agent for this conversation, and how hard it thinks, in one popover (BLG-446): your default
- * agent's models first, as rows with what they're good at; the other runtimes one tap away under
- * Other agents, each with its models, or greyed with what's missing. Effort is five steps with plain
- * names. `draft`: a new worktree's pick (it has no conversation yet), kept by the New Worktree box.
+ * The agent for this conversation, and how hard it thinks, in one compact popover (BLG-446): the
+ * agents down a rail on the left (each with its mark, a dot on the one at work here, greyed when it
+ * isn't set up), the shown agent's models on the right, one line each with what they're good at,
+ * scrolling inside a popover that never outgrows the window; effort below, Auto then Low to Max
+ * on one track, what the level means above it. `draft`: a new worktree's pick (it has no conversation yet), kept by the New Worktree box.
  */
 export function ModelPicker({ channel, draft, onDraft }: { channel: string; draft?: AgentRef; onDraft?: (agent: AgentRef | undefined) => void }) {
   const api = useApi();
@@ -148,22 +149,20 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
     (a, b) => a.inChat === b.inChat && a.effort === b.effort,
   );
   const carried = useApp((st) => carriedOf(st, channel), sameCarried);
-  const [others, setOthers] = useState(() => picker.groups.some((g) => !g.isDefault && g.current));
+  const [seen, setSeen] = useState<string>();
   const [move, setMove] = useState<Move>();
   const conversation = picker.conversation;
   const groups = picker.groups;
   const home = groups.find((g) => g.isDefault);
-  const rest = groups.filter((g) => !g.isDefault);
   const model = groups.find((g) => g.current)?.models.find((m) => m.on);
   // Some models take only some effort levels.
   const allowed = new Set((model?.efforts ?? EFFORTS) as readonly string[]);
   const label = picker.label;
   const inChat = place.inChat;
   const pinned = inChat && place.effort !== undefined;
-  // The chip says what the next message uses. The meter highlights a pin, or Settings when this isn’t a chat.
-  const shown = pinned ? place.effort : globalEffort;
-  const meter = pinned ? place.effort : inChat ? undefined : globalEffort;
-  const chip = `${label}${shown ? ` · ${EFFORT_INFO[shown].label}` : ''}`;
+  // The chip and the track show what the next message uses: this conversation's pin, else Settings.
+  const effort = pinned ? place.effort : globalEffort;
+  const chip = `${label}${effort ? ` · ${EFFORT_INFO[effort].label}` : ''}`;
   const pick = (g: PickerGroup, value: string): void => {
     if (onDraft && !conversation) {
       // A new worktree: your default's model is the default for new ones; another runtime is this worktree's own.
@@ -188,36 +187,36 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
     if (move && conversation) void api.workbench.setAgent(conversation, move.agent, mode);
     setMove(undefined);
   };
+  // The agent whose models show: the one at work here, until you look at another.
+  const shown = groups.find((g) => g.runtime === seen) ?? groups.find((g) => g.current) ?? home ?? groups[0];
   const rows = (g: PickerGroup) => (
     <div className={s.models} role="radiogroup" aria-label={`${g.label} models`}>
       {g.models.map((m) => {
         const maker = foreignMark(m.value, g.runtime);
+        const desc = m.why ?? (m.description || flavor(m.value, m.label, g.label));
         return (
-          <button key={m.value || 'default'} type="button" role="radio" aria-checked={m.on} disabled={Boolean(m.why) && !m.on} title={m.why} className={cx(s.model, m.on && s.modelOn, m.why && s.modelOff)} onClick={() => pick(g, m.value)}>
-            <span className={s.radio}>{m.on ? <Icon name="check" size={11} /> : null}</span>
-            <span className={s.modelText}>
-              <span className={s.modelName}>
-                {maker ? <Icon name={maker} size={12} className={s.maker} /> : null}
-                {m.label}
-              </span>
-              <span className={s.modelDesc}>{m.why ?? (m.description || flavor(m.value, m.label, g.label))}</span>
-            </span>
+          <button key={m.value || 'default'} type="button" role="radio" aria-checked={m.on} disabled={Boolean(m.why) && !m.on} title={desc || m.label} className={cx(s.model, m.on && s.modelOn, m.why && s.modelOff)} onClick={() => pick(g, m.value)}>
+            <span className={s.radio}>{m.on ? <Icon name="check" size={9} /> : null}</span>
+            {maker ? <Icon name={maker} size={12} className={s.maker} /> : null}
+            <span className={s.modelName}>{m.label}</span>
+            {desc ? <span className={s.modelDesc}>{desc}</span> : null}
           </button>
         );
       })}
     </div>
   );
   // Narrow (a side panel): the effort alone, the whole of it in the tooltip; never two lines.
-  const words = shown ? (
+  const words = effort ? (
     <>
       <span className={s.chipModel}>{label} · </span>
-      {EFFORT_INFO[shown].label}
+      {EFFORT_INFO[effort].label}
     </>
   ) : (
     label
   );
+  const level = effort ? EFFORTS.indexOf(effort) : -1;
   return (
-    <Popover.Root onOpenChange={(open) => !open && setMove(undefined)}>
+    <Popover.Root onOpenChange={(open) => !open && (setMove(undefined), setSeen(undefined))}>
       <Popover.Trigger asChild>
         <button type="button" className={s.chip} aria-label="Agent, model and effort" title={chip} data-shrink="">
           <Icon name={runtimeMark(picker.runtime)} size={12} />
@@ -232,78 +231,50 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
           ) : (
             <>
               <div className={s.heading}>
-                {home ? <Icon name={runtimeMark(home.runtime)} size={12} className={s.mark} /> : null}
-                {home?.label ?? 'Model'}
+                Agent
                 <span className={s.scope}>{conversation ? 'for this conversation' : onDraft ? 'for this worktree' : 'for new conversations'}</span>
               </div>
-              {home ? (home.available ? rows(home) : <div className={s.why}>{home.why}</div>) : null}
-              {rest.length ? (
-                <>
-                  <button type="button" className={s.others} aria-expanded={others} onClick={() => setOthers(!others)}>
-                    <Icon name={others ? 'chevronDown' : 'chevronRight'} size={10} />
-                    Other agents
-                  </button>
-                  {others
-                    ? rest.map((g) => (
-                        <div key={g.runtime} className={cx(s.group, !g.available && s.groupOff)} aria-disabled={!g.available || undefined}>
-                          <div className={s.groupName}>
-                            <Icon name={runtimeMark(g.runtime)} size={11} className={s.mark} />
-                            {g.label}
-                          </div>
-                          {g.available ? rows(g) : <div className={s.why}>{g.why}</div>}
-                        </div>
-                      ))
-                    : null}
-                </>
-              ) : null}
-              <div className={s.heading}>
-                Thinking
-                <span className={s.scope}>{pinned ? 'for this conversation' : inChat ? 'follows Settings' : 'for every conversation'}</span>
-              </div>
-              <div className={s.meterRow}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={inChat ? !pinned : !globalEffort}
-                  className={cx(s.auto, (inChat ? !pinned : !globalEffort) && s.autoOn)}
-                  onClick={() => (inChat ? void api.workbench.setEffort(channel, '') : void api.session.setPrefs({ effort: null }))}
-                >
-                  {inChat ? 'Settings' : 'Auto'}
-                </button>
-                <div className={s.meter} role="radiogroup" aria-label="Thinking effort">
-                  {EFFORTS.map((e, i) => {
-                    const level = meter ? EFFORTS.indexOf(meter) : -1;
-                    return (
-                      <button
-                        key={e}
-                        type="button"
-                        role="radio"
-                        aria-checked={meter === e}
-                        disabled={!allowed.has(e)}
-                        className={s.step}
-                        onClick={() => (inChat ? void api.workbench.setEffort(channel, e) : void api.session.setPrefs({ effort: e }))}
-                      >
-                        <span className={cx(s.bar, i <= level && s.barOn)} style={{ height: 6 + i * 5 }} />
-                        <span className={cx(s.stepLabel, meter === e && s.stepLabelOn)}>{EFFORT_INFO[e].label}</span>
-                      </button>
-                    );
-                  })}
+              <div className={s.body}>
+                <div className={s.rail} role="tablist" aria-label="Agents" aria-orientation="vertical">
+                  {groups.map((g) => (
+                    <button
+                      key={g.runtime}
+                      type="button"
+                      role="tab"
+                      aria-selected={g === shown}
+                      aria-label={g.label}
+                      title={g.available ? (g.current ? `${g.label}, at work here` : g.label) : g.why}
+                      className={cx(s.agent, g === shown && s.agentOn, !g.available && s.agentOff)}
+                      onClick={() => setSeen(g.runtime)}
+                    >
+                      <Icon name={runtimeMark(g.runtime)} size={13} className={s.agentMark} />
+                      <span className={s.agentName}>{g.label}</span>
+                      {g.current ? <span className={s.inUse} aria-hidden /> : null}
+                    </button>
+                  ))}
+                </div>
+                <div className={s.pane} role="tabpanel" aria-label={shown?.label ?? 'Models'}>
+                  {shown ? (shown.available ? rows(shown) : <div className={s.why}>{shown.why}</div>) : null}
                 </div>
               </div>
-              <div className={s.effortDetail}>
-                {pinned && place.effort ? (
-                  <>
-                    <strong>{EFFORT_INFO[place.effort].label}</strong> · {EFFORT_INFO[place.effort].detail}
-                  </>
-                ) : inChat ? (
-                  <>
-                    <strong>Settings</strong> · {globalEffort ? `Follows Settings (${EFFORT_INFO[globalEffort].label})` : 'Follows Settings, where your agent decides how much to think'}
-                  </>
-                ) : (
-                  <>
-                    <strong>{globalEffort ? EFFORT_INFO[globalEffort].label : 'Auto'}</strong> · {globalEffort ? EFFORT_INFO[globalEffort].detail : 'Your agent decides how much to think, case by case'}
-                  </>
-                )}
+              <div className={s.thinking}>
+                <div className={s.thinkingHead}>
+                  <span className={s.thinkingLabel}>Thinking</span>
+                  <span className={s.thinkingDetail}>{inChat && !pinned ? (globalEffort ? `Follows Settings (${EFFORT_INFO[globalEffort].label})` : 'Follows Settings') : effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}</span>
+                </div>
+                {/* Auto, then Low to Max: a thumb that slides to the level picked, a warm fill behind it as deep as the level. */}
+                <div className={s.track} role="radiogroup" aria-label="Thinking effort" style={{ '--at': level + 1, '--heat': level < 0 ? 0 : (level + 1) / EFFORTS.length } as CSSProperties}>
+                  <span className={s.fill} aria-hidden />
+                  <span className={s.thumb} aria-hidden />
+                  <button type="button" role="radio" aria-checked={!effort} className={cx(s.level, !effort && s.levelOn)} title={inChat ? 'Follow Settings' : 'Your agent decides how much to think, case by case'} onClick={() => (inChat ? void api.workbench.setEffort(channel, '') : void api.session.setPrefs({ effort: null }))}>
+                    Auto
+                  </button>
+                  {EFFORTS.map((e) => (
+                    <button key={e} type="button" role="radio" aria-checked={effort === e} disabled={!allowed.has(e)} title={allowed.has(e) ? EFFORT_INFO[e].detail : 'This model doesn’t take this level'} className={cx(s.level, effort === e && s.levelOn)} onClick={() => (inChat ? void api.workbench.setEffort(channel, e) : void api.session.setPrefs({ effort: e }))}>
+                      {EFFORT_INFO[e].label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -330,23 +301,23 @@ function MoveChoice({ move, limited, onPick, onBack }: { move: Move; limited: bo
       <div className={s.why}>
         {move.to} can’t read {move.from}’s conversation, so it needs to be told where things stand.
       </div>
-      <div className={s.models} role="group" aria-label={`How to move to ${move.to}`}>
-        <button type="button" className={s.model} onClick={() => onPick('quiet')} autoFocus>
+      <div className={s.choices} role="group" aria-label={`How to move to ${move.to}`}>
+        <button type="button" className={s.choice} onClick={() => onPick('quiet')} autoFocus>
           <span className={s.choiceIcon}>
             <Icon name="arrowRight" size={12} />
           </span>
-          <span className={s.modelText}>
-            <span className={s.modelName}>Just switch</span>
-            <span className={s.modelDesc}>Nothing runs now. {move.to} gets the recent conversation with your next message.</span>
+          <span className={s.choiceText}>
+            <span className={s.choiceName}>Just switch</span>
+            <span className={s.choiceDesc}>Nothing runs now. {move.to} gets the recent conversation with your next message.</span>
           </span>
         </button>
-        <button type="button" className={cx(s.model, limited && s.modelOff)} disabled={limited} onClick={() => onPick('note')}>
+        <button type="button" className={cx(s.choice, limited && s.modelOff)} disabled={limited} onClick={() => onPick('note')}>
           <span className={s.choiceIcon}>
             <Icon name="pencil" size={12} />
           </span>
-          <span className={s.modelText}>
-            <span className={s.modelName}>Write a handoff note first</span>
-            <span className={s.modelDesc}>{limited ? `${move.from} is at its plan limit, so it can’t write one.` : `${move.from} sums up what’s done and what’s left, using your ${move.from} plan.`}</span>
+          <span className={s.choiceText}>
+            <span className={s.choiceName}>Write a handoff note first</span>
+            <span className={s.choiceDesc}>{limited ? `${move.from} is at its plan limit, so it can’t write one.` : `${move.from} sums up what’s done and what’s left, using your ${move.from} plan.`}</span>
           </span>
         </button>
       </div>

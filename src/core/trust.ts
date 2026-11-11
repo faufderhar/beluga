@@ -53,3 +53,35 @@ export function trustOf(state: TrustState, peerId: string): TrustLevel {
 export function reachOf(state: TrustState & Pick<DomainState, 'access'>, peerId: string): 'folder' | 'full' {
   return trustOf(state, peerId) === 'full' ? 'full' : (state.access[peerId] ?? 'folder');
 }
+
+/** What one requester of a run may do: its level and how far it reaches. */
+export interface RequesterTrust {
+  readonly level: TrustLevel;
+  readonly reach: 'folder' | 'full';
+}
+
+/** An external agent as a requester: `ext:<grant id>`. It is you on another screen, with its own grant, name, Stop and Revoke. */
+const EXTERNAL_PREFIX = 'ext:';
+export const externalRequester = (grantId: string): string => `${EXTERNAL_PREFIX}${grantId}`;
+export const isExternalRequester = (requester: string): boolean => requester.startsWith(EXTERNAL_PREFIX);
+
+/** A live grant, as a run sees it. */
+export interface ExternalAgent {
+  readonly name: string;
+  readonly level: TrustLevel;
+}
+/** The live grant behind an `ext:` requester. Undefined: revoked, expired or never there. */
+export type ExternalLookup = (requester: string) => ExternalAgent | undefined;
+
+/**
+ * The one place a run asks who its requester is worth: each check on a run reads its answer. An
+ * external agent's worth is its grant's, read each time, so the people book can't change it and a
+ * grant that's gone is worth nothing.
+ */
+export function requesterTrust(state: Pick<DomainState, 'policy' | 'levels' | 'self' | 'access'>, requester: string, external?: ExternalLookup): RequesterTrust {
+  if (isExternalRequester(requester)) {
+    const level = external?.(requester)?.level ?? 'blocked';
+    return { level, reach: level === 'full' ? 'full' : 'folder' };
+  }
+  return { level: trustOf(state, requester), reach: reachOf(state, requester) };
+}

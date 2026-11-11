@@ -429,7 +429,7 @@ export function resolveInWorkspace(root: string, rel: string): string {
   const parts = cleaned.split('/').filter((p) => p && p !== '.');
   if (!parts.length) throw new FileEditError('No file given');
   if (parts.includes('..')) throw new FileEditError('Only files inside the workspace can be changed');
-  if (parts[0] === '.git') throw new FileEditError('Git’s own files can’t be changed here');
+  if (parts[0]?.toLowerCase() === '.git') throw new FileEditError('Git’s own files can’t be changed here');
   let realRoot: string;
   try {
     realRoot = realpathSync(root);

@@ -80,6 +80,8 @@ interface MeshEvents {
   team: [string, unknown];
   /** A call frame from someone you're linked to (core/calls checks it, and that you share its conversation). */
   call: [string, unknown];
+  /** A leaderboard frame from a friend (core/leaderboard checks it): their day sums. */
+  stats: [string, unknown];
   /** A link to someone came up (what waited for them can go now). */
   link: [string];
   /** Someone's Claude started or stopped answering message `for` in a conversation. */
@@ -594,6 +596,22 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return true;
   }
 
+  /** Hand a leaderboard frame to a friend's link; false when they're not linked now. */
+  sendStats(peerId: string, payload: unknown): boolean {
+    const link = this.links.get(peerId);
+    if (!link?.isOpen || !this.friends.has(peerId)) return false;
+    link.send({ t: 'stats', p: payload });
+    return true;
+  }
+
+  /** Friends linked right now. */
+  linkedFriends(): string[] {
+    return this.friends
+      .all()
+      .map((f) => f.peerId)
+      .filter((id) => this.isLinked(id));
+  }
+
   /** Hand a call frame to someone linked now (a friend, or someone in a group with you); false when they're not. */
   sendCall(peerId: string, payload: unknown): boolean {
     const link = this.links.get(peerId);
@@ -933,6 +951,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
         return;
       case 'call':
         this.emit('call', from, msg.p);
+        return;
+      case 'stats':
+        if (this.friends.has(from)) this.emit('stats', from, msg.p);
         return;
       case 'live': {
         const conversation = msg.g ? groupConversation(msg.g) : dmConversation(from);

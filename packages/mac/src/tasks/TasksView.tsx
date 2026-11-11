@@ -20,6 +20,7 @@ import { revealSubTasks, setTasksPrefs, useBoard, useSelfId, useSolo, useTaskAct
 import t from './tasks.module.css';
 import g from '../components/graph/graph.module.css';
 import { TeamOffers } from '../team/Team.js';
+import { BoardPeople } from './BoardPeople.js';
 import { NoProjects } from '../work/NoProjects.js';
 import { isShortcut } from '../lib/shortcuts.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
@@ -179,16 +180,18 @@ export function TasksView() {
             options={[{ value: '', label: 'Everyone' }, ...people.map((p) => ({ value: p.key, label: p.label })), { value: 'nobody', label: 'No one yet' }, ...(hasPrivate ? [{ value: 'private', label: 'Private (only you see them)' }] : [])]}
           />
         ) : null}
-        {/* Which worktree works on what: only its tasks. */}
-        {project && worktrees.length ? (
-          <Select
-            label="Worktree"
-            size="small"
-            value={worktree}
-            onChange={(w) => openWorktreeTasks(project, w || undefined)}
-            options={[{ value: '', label: 'Every worktree', short: 'Worktrees' }, ...worktrees.map((w) => ({ value: w.id, label: w.name }))]}
-          />
+        {/* Opened on one worktree's tasks (its Info panel's Tasks): which, and × for every task again. */}
+        {project && worktree ? (
+          <span className={cx(t.repoFilter, t.repoFilterOn)}>
+            <Icon name="branch" size={11} />
+            <span>{worktrees.find((w) => w.id === worktree)?.name}</span>
+            <button type="button" className={t.findClear} aria-label="Show every worktree’s tasks" onClick={() => openWorktreeTasks(project)}>
+              <Icon name="x" size={10} />
+            </button>
+          </span>
         ) : null}
+        {/* Who's on this board: their faces, and Add Friend for a teammate who isn't one yet (BLG-906). */}
+        {solo ? null : <BoardPeople repos={repos} />}
         </div>
         <div className={cx(t.barGroup, t.barActions)}>
         <label className={t.find}>

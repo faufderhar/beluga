@@ -7,7 +7,7 @@ describe('room bridge per conversation', () => {
   const fake = () => {
     const sent: Array<{ text: string; channel: string }> = [];
     const session = {
-      host: { currentChannel: 'room' },
+      host: { currentChannel: 'room', viaIn: () => undefined },
       sendChat: (text: string, _byAgent: boolean, channel: string) => sent.push({ text, channel }),
       store: { getState: () => ({ self: { name: 'Kayra' }, peers: [] }) },
     } as unknown as Session;

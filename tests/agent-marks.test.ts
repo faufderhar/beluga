@@ -36,8 +36,9 @@ describe('the agents you can pick', () => {
 
   it('every runtime with its models; one not set up stays, greyed, saying why', () => {
     const options = agentChoices(runtimes, claude);
-    expect(options.map((o) => o.label)).toEqual(['Claude', 'Claude · Opus', 'Codex', 'Codex · GPT-5.5', 'OpenCode', 'Grok Build', 'Local model']);
+    expect(options.map((o) => o.label)).toEqual(['Claude', 'Claude · Opus', 'Codex', 'Codex · GPT-5.5', 'OpenCode', 'Copilot', 'Grok Build', 'Local model']);
     expect(options.find((o) => o.runtime === 'opencode')).toMatchObject({ disabled: true, why: "OpenCode isn't set up on this Mac yet", mark: 'opencode' });
+    expect(options.find((o) => o.runtime === 'copilot')).toMatchObject({ disabled: true, why: "GitHub Copilot CLI isn't set up on this Mac yet", mark: 'copilot' });
     expect(options.find((o) => o.runtime === 'local')).toMatchObject({ disabled: true, why: 'No local model endpoint is set', mark: 'localModel' });
     expect(options.find((o) => o.value === 'codex:gpt-5.5')).toMatchObject({ group: 'Codex', mark: 'codex', model: 'gpt-5.5' });
   });

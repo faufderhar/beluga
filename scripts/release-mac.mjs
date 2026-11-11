@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const REPO = 'kayraucklnc/beluga';
+export const REPO = 'beluga-labs/beluga';
 /** What people download is named for the app, whatever the build's productName still says. */
 export const APP = 'Beluga';
 const root = path.resolve(import.meta.dirname, '..');

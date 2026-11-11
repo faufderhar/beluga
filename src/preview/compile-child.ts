@@ -12,23 +12,38 @@
 export const COMPILE_CHILD = String.raw`
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import nodeModule, { createRequire, syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+// Tailwind 4.1 registers an import hook as it loads (to re-import a changed plugin), and import
+// hooks run on a worker this process may not start. Every compile here is fresh, so it does without.
+nodeModule.register = () => undefined;
+syncBuiltinESMExports();
 
 const IDLE_MS = 60000;
 let idle = setTimeout(() => process.exit(0), IDLE_MS);
 
 async function load(root, name, from) {
+  return (await tryLoad(root, name, from)).mod;
+}
+async function tryLoad(root, name, from) {
+  let error;
   for (const base of [root, ...(from ? [from] : [])]) {
     try {
       const file = createRequire(path.join(base, 'package.json')).resolve(name);
       const mod = await import(pathToFileURL(file).href);
       const inner = mod.default && typeof mod.default === 'object' ? mod.default : undefined;
-      return inner ? { ...inner, ...mod } : mod;
-    } catch {}
+      return { mod: inner ? { ...inner, ...mod } : mod };
+    } catch (err) { error ??= err; }
   }
-  return undefined;
+  return { error };
+}
+// A part of Tailwind it has but can't load: said as that, never as Tailwind not being installed.
+async function need(root, name, from) {
+  const { mod, error } = await tryLoad(root, name, from);
+  if (mod) return mod;
+  throw new Error('Tailwind couldn’t start for the preview: ' + name + ' didn’t load (' + (error?.message ?? String(error)) + ')');
 }
 const dirOf = (root, pkg) => {
   try { return path.dirname(createRequire(path.join(root, 'package.json')).resolve(pkg + '/package.json')); } catch { return undefined; }
@@ -38,17 +53,15 @@ async function tailwind(root, file, major) {
   const css = readFileSync(file, 'utf8');
   if (major >= 4) {
     const via = dirOf(root, '@tailwindcss/vite') ?? dirOf(root, '@tailwindcss/postcss');
-    const node = await load(root, '@tailwindcss/node', via);
-    const oxide = await load(root, '@tailwindcss/oxide', via);
-    if (!node || !oxide) return undefined;
+    const node = await need(root, '@tailwindcss/node', via);
+    const oxide = await need(root, '@tailwindcss/oxide', via);
     const compiler = await node.compile(css, { base: path.dirname(file), from: file, onDependency: () => undefined });
     const start = compiler.root === 'none' ? [] : compiler.root === null ? [{ base: root, pattern: '**/*', negated: false }] : [{ ...compiler.root, negated: false }];
     const scanner = new oxide.Scanner({ sources: [...start, ...compiler.sources] });
     return compiler.build(scanner.scan());
   }
-  const postcss = await load(root, 'postcss');
-  const tw = await load(root, 'tailwindcss');
-  if (!postcss || !tw) return undefined;
+  const postcss = await need(root, 'postcss');
+  const tw = await need(root, 'tailwindcss');
   const config = ['tailwind.config.ts', 'tailwind.config.js', 'tailwind.config.cjs', 'tailwind.config.mjs'].map((n) => path.join(root, n)).find((p) => existsSync(p));
   const run = postcss.default ?? postcss;
   const plugin = tw.default ?? tw;

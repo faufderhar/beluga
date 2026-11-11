@@ -126,11 +126,11 @@ const STEP_EVERY_MS = 400;
 const MAX_SCREENSHOTS = 4;
 const QUESTION_WAIT_MS = 15 * 60_000;
 /** A friend's task stops after this many turns, or this long, whichever comes first (BLG-427). */
-const MAX_TURNS = 50;
-const RUN_LIMIT_MS = 20 * 60_000;
+export const MAX_TURNS = 50;
+export const RUN_LIMIT_MS = 20 * 60_000;
 /** Times one task may ask you to approve a step, and declines in a row that stop it (BLG-427). */
-const MAX_TOOL_ASKS = 8;
-const MAX_DECLINES = 2;
+export const MAX_TOOL_ASKS = 8;
+export const MAX_DECLINES = 2;
 
 const NEED_WORDS: Readonly<Record<Need, string>> = { project: 'work in a project', shell: 'run commands', files: 'read or write files', screen: 'see the screen', device: 'read device information' };
 
@@ -245,6 +245,7 @@ export class TaskServer {
       ...(req.summary?.trim() ? { summary: oneLine(req.summary, 140) } : {}),
       needs: req.needs,
       by: req.by,
+      ...(req.via ? { via: req.via.name } : {}),
       state: 'queued',
       steps: [],
       createdAt: now,
@@ -329,7 +330,7 @@ export class TaskServer {
     } else {
       allowedBy = decided.by === 'rule' ? 'a rule of yours allows it' : 'you trust them';
       const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your agent to: ${requestGist(req, 80)}`;
-      ctx.notify(`${name}${req.by === 'agent' ? "'s agent" : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
+      ctx.notify(`${name}${req.by === 'agent' ? "'s agent" : ''}${req.via ? ` (via ${oneLine(req.via.name)})` : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
     }
     if (this.isOver(task.id)) return;
     this.update(task.id, { allowedBy });

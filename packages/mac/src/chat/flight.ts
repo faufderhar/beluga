@@ -21,6 +21,8 @@ export interface Flight {
   readonly text: string;
   readonly from: DOMRect;
   readonly at: number;
+  /** A turn was going in that conversation when you sent it: then it may land above the turn's live part. */
+  readonly live: boolean;
 }
 
 /** Unclaimed flights are forgotten after this (the row never came: an error, another screen). */
@@ -72,11 +74,11 @@ const norm = (text: string): string =>
     .trim();
 
 /** You pressed Return: note where the words leave from. */
-export function launchFlight(input: { channel: string; target: 'chat' | 'queue'; text: string; from: HTMLElement | null }): void {
+export function launchFlight(input: { channel: string; target: 'chat' | 'queue'; text: string; from: HTMLElement | null; live: boolean }): void {
   const text = norm(input.text);
   if (!text || !input.from) return;
   const now = Date.now();
-  flights = [...flights.filter((x) => now - x.at < FLIGHT_TTL_MS), { id: ++nextId, channel: input.channel, target: input.target, text, from: input.from.getBoundingClientRect(), at: now }];
+  flights = [...flights.filter((x) => now - x.at < FLIGHT_TTL_MS), { id: ++nextId, channel: input.channel, target: input.target, text, from: input.from.getBoundingClientRect(), at: now, live: input.live }];
   // The box empties with a soft fade instead of blinking clear.
   if (!reducedMotion()) input.from.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
   // Make sure the chat is at its newest message, where this one lands.
@@ -105,8 +107,9 @@ function landsAboveOthers(row: HTMLElement): boolean {
 
 /** Fly a copy of `row` from where the box was into the row's place, then show the row. */
 function land(flight: Flight, row: HTMLElement): void {
-  // Landing among other rows: it just fades in where it goes, over nothing else.
-  if (landsAboveOthers(row)) {
+  // Landing among other rows (said while a turn was going): it just fades in where it goes, over
+  // nothing else. With none going, a row below is its own answer, already started: it still flies.
+  if (flight.live && landsAboveOthers(row)) {
     row.dataset.flown = 'in-place';
     if (!reducedMotion()) row.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
     return;

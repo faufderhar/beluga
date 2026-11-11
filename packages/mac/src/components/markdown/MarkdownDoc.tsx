@@ -256,7 +256,7 @@ export const MarkdownDoc = memo(function MarkdownDoc({ text, at, variant, nav }:
   }, [shown, at.path]);
 
   return (
-    <div className={cx(m.reader, m[variant])}>
+    <div className={cx(m.reader, m[variant])} data-md>
       <article ref={article} className={cx(m.doc, 'selectable')} data-markdown-doc="">
         {yaml ? <FrontMatter yaml={yaml} /> : null}
         <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} remarkRehypeOptions={TO_HTML} components={components}>

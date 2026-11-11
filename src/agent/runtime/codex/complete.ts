@@ -27,6 +27,7 @@ export async function codexComplete(req: CompletionRequest, deps: { readonly con
   const stop = (): void => void conn.proc.kill();
   req.signal?.addEventListener('abort', stop, { once: true });
   try {
+    if (req.signal?.aborted) throw new Error('aborted');
     const { rpc } = conn;
     let answer = '';
     const done = new Promise<Turn>((resolve) =>
@@ -47,7 +48,8 @@ export async function codexComplete(req: CompletionRequest, deps: { readonly con
       ephemeral: true,
       approvalPolicy: 'never',
       baseInstructions: req.system,
-      config: { ...confined.config, ...RUN_FEATURES_OFF, ...(mounted ? mcpConfig(mounted.servers) : {}) },
+      // No project docs: `system` is its whole instructions, and none to read under a sandbox that can't (#425).
+      config: { ...confined.config, ...RUN_FEATURES_OFF, project_doc_max_bytes: 0, ...(mounted ? mcpConfig(mounted.servers) : {}) },
     });
     await rpc.request('turn/start', {
       threadId: thread.thread.id,

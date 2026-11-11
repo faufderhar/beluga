@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceError } from './manager.js';
 import { git, tryGit } from './git.js';
+import { cloneableOrigin, repoName } from '../shared/repo-key.js';
 
 /** Where new projects go unless you pick somewhere: the first of these that exists, else ~/Projects. */
 const HOMES = ['Projects', 'projects', 'Developer', 'code', 'Code', 'dev', 'repos', 'GitHub'];
@@ -96,6 +97,58 @@ export async function createProject(name: string, parent?: string): Promise<stri
     if (!existed) rmSync(dir, { recursive: true, force: true });
     else rmSync(path.join(dir, '.git'), { recursive: true, force: true });
     throw e;
+  }
+  return dir;
+}
+
+/** How long a clone may take before it's given up (a big repository over a slow line). */
+const CLONE_MS = 15 * 60_000;
+
+/** `parent/name`, or `name-2`… when that's taken. */
+function freeFolder(parent: string, name: string): string {
+  let dir = path.join(parent, name);
+  for (let i = 2; existsSync(dir); i++) dir = path.join(parent, `${name}-${i}`);
+  return dir;
+}
+
+/** git's trouble cloning `address`, in plain words. */
+export function cloneError(output: string, address: string): string {
+  if (/permission denied \(publickey\)|host key verification failed/i.test(output)) return "This Mac's SSH key can't get at that repository. Try its https address, or add your key where it's hosted.";
+  if (/could not read username|authentication failed|terminal prompts disabled|denied to|403/i.test(output)) {
+    return "That repository needs a sign-in git doesn't have here. If it's on GitHub, run gh auth login and gh auth setup-git in a terminal, then try again.";
+  }
+  if (/repository not found|not found|does not exist/i.test(output)) return "Can't find that repository: check the address, or it may be private.";
+  if (/could not resolve host|network is unreachable|timed out|connection refused/i.test(output)) return `Can't reach ${address} right now.`;
+  if (/no space left/i.test(output)) return 'This Mac is out of disk space.';
+  const last = output.trim().split('\n').filter(Boolean).pop();
+  return last ? `Cloning failed: ${last.replace(/^fatal:\s*/, '').slice(0, 200)}` : 'Cloning failed';
+}
+
+/**
+ * A project from its git address: cloned into `parent` (your code folder unless you pick one) under
+ * the repository's own name (name-2… when that's taken). Git never asks for a password (git.ts): an
+ * address it can't read fails in plain words and leaves no folder behind. An empty repository gets
+ * a README in a first commit on main, so worktrees can branch from it straight away.
+ */
+export async function cloneProject(url: string, parent?: string): Promise<string> {
+  const address = url.trim();
+  if (!cloneableOrigin(address)) throw new WorkspaceError("That isn't a git address. Paste one like https://github.com/owner/repo or git@github.com:owner/repo.git");
+  const name = repoName(address);
+  if (!name) throw new WorkspaceError("That address doesn't end in a repository's name");
+  const home = path.resolve(parent || defaultProjectsHome());
+  mkdirSync(home, { recursive: true });
+  const dir = freeFolder(home, name);
+  try {
+    await git(home, ['clone', '--quiet', '--', address, dir], CLONE_MS);
+  } catch (e) {
+    rmSync(dir, { recursive: true, force: true });
+    throw new WorkspaceError(cloneError(e instanceof Error ? e.message : String(e), address));
+  }
+  if (!(await tryGit(dir, ['rev-parse', '--verify', '--quiet', 'HEAD']))) {
+    await git(dir, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    writeFileSync(path.join(dir, 'README.md'), `# ${name}\n`);
+    await git(dir, ['add', 'README.md']);
+    await git(dir, [...(await author(dir)), 'commit', '-m', `Start ${name}`]);
   }
   return dir;
 }

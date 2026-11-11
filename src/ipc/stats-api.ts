@@ -12,6 +12,8 @@ const MAX_PNG_B64 = 12_000_000;
 export const STATS_API = {
   // Everything counted, by day, project and agent, with pull requests → StatsSnapshot.
   'stats.get': { args: z.tuple([]) },
+  // You and your friends on prompt characters, merged PRs and agent time, a day at a time → LeaderboardView (BLG-904).
+  'stats.leaderboard': { args: z.tuple([]) },
   // You pasted text into the composer (its length only), or dictated for `ms`.
   'stats.note': {
     args: z.tuple([

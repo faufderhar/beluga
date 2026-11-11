@@ -241,6 +241,20 @@ export function milestoneRoute(from: Point, to: Point, exitY: number, enterY: nu
   return tidy([from, { x: from.x, y: exitY }, { x: lane, y: exitY }, { x: lane, y: enterY }, { x: to.x, y: enterY }, to]);
 }
 
+/**
+ * A line into a milestone that waits on several, cut where they all meet: at `y` (the run across above
+ * its lock) straight over its end. The line stops there; the stem goes on from there into the lock. A
+ * line whose lane runs straight down onto the lock has one long last stretch (its corners tidied away),
+ * so it's cut at that height, never at its top.
+ */
+export function joinAt(points: readonly Point[], y: number): { readonly line: Point[]; readonly stem: readonly [Point, Point] } | undefined {
+  const end = points[points.length - 1];
+  if (points.length < 2 || !end) return undefined;
+  // Never on the lock itself: a stem stays long enough for its arrowhead.
+  const knot = { x: end.x, y: Math.min(y, end.y - 12) };
+  return { line: tidy([...points.slice(0, -1), knot]), stem: [knot, end] };
+}
+
 /** A small open arrowhead at a line's end, pointing the way its last stretch runs (an SVG path). */
 export function arrowHead(points: readonly Point[], size = 5): string {
   const tip = points[points.length - 1];
