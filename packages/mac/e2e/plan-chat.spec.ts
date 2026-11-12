@@ -67,9 +67,11 @@ test('messages sent right after the page opens and while Claude is busy all reac
 });
 
 test('while Claude works the box still sends, and Stop ends its turn (BLG-10)', async ({ page }) => {
+  test.setTimeout(90_000);
   await newPlan(page, 'A plan to stop halfway');
   await expect(page.getByRole('button', { name: 'Approve Plan' }).first()).toBeVisible({ timeout: 30_000 });
-  await box(page).fill('add a retry budget');
+  // "take your time" keeps this revision running (src/agent/mock.ts) so Stop is still there to click.
+  await box(page).fill('add a retry budget, take your time');
   await box(page).press('Enter');
   // Claude works on it: the box says it reaches Claude now, and Stop is there.
   const stop = chat(page).getByRole('button', { name: 'Stop the agent' });

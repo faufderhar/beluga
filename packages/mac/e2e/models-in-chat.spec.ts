@@ -26,7 +26,7 @@ test('the home and a conversation offer only the models turned on, and effort ca
 
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Agent' }).click();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   const models = settings.getByRole('heading', { name: 'Models in chat' });
   await expect(models).toBeVisible();
   await expect(settings.getByText('Only these appear in the chat’s model menu.')).toBeVisible();
@@ -49,13 +49,16 @@ test('the home and a conversation offer only the models turned on, and effort ca
   await expect(page.locator('textarea:not(.xterm-helper-textarea)')).toHaveAttribute('placeholder', /add-auth/);
   await expect(chip(page)).toHaveText(/High/);
   await chip(page).click();
-  await expect(page.getByText('follows Settings', { exact: true })).toBeVisible();
-  await expect(page.getByRole('radio', { name: 'Settings' })).toHaveAttribute('aria-checked', 'true');
+  // Unpinned: the track shows Settings' effort (High), and Auto is how you come back to it.
+  await expect(page.getByText('Follows Settings (High)', { exact: true })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'High', exact: true })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('radio', { name: /Haiku/ })).toHaveCount(0);
   await page.getByRole('radio', { name: 'Low', exact: true }).click();
-  await expect(page.locator('span').getByText('for this conversation', { exact: true })).toHaveCount(2);
+  await expect(page.getByText('for this conversation', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Answers fast; best for small, clear asks', { exact: true })).toBeVisible();
   await expect(chip(page)).toHaveText(/Low/);
-  await page.getByRole('radio', { name: 'Settings' }).click();
+  await page.getByRole('radio', { name: 'Auto', exact: true }).click();
+  await expect(page.getByText('Follows Settings (High)', { exact: true })).toBeVisible();
   await expect(chip(page)).toHaveText(/High/);
   await expect(chip(page)).not.toHaveText(/Low/);
 });

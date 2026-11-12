@@ -17,6 +17,7 @@ async function open(page: Page, name: string, project = 'bob-api'): Promise<void
 }
 
 test('a message past the limit waits for a free Claude, and says so', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
   await page.keyboard.press('Meta+,');
@@ -32,11 +33,19 @@ test('a message past the limit waits for a free Claude, and says so', async ({ p
   await slider.blur();
   await page.keyboard.press('Escape');
   await expect(settings).toBeHidden();
+  // The number is saved, not only shown: closing and opening reads it back.
+  await page.keyboard.press('Meta+,');
+  await expect(settings).toBeVisible();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
+  await expect(settings.getByRole('slider', { name: 'Conversations at once' })).toHaveValue('1');
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
 
   await open(page, 'add-auth');
-  // A long run (the demo's "take your time" script, src/agent/mock.ts): a quick one would free the agent before Start now.
-  await composer(page).fill('Write the whole auth module with tests, take your time');
+  // Holds the slot until this test ends (src/agent/mock.ts). A paced script can finish while the next chat opens.
+  await composer(page).fill('hold the slot');
   await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: /Reading src\/server\.ts/ })).toBeVisible();
   await open(page, 'webhook-retries');
   await composer(page).fill('can you continue');
   await page.keyboard.press('Enter');

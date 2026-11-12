@@ -14,8 +14,11 @@ export function ParallelSettings() {
   // The slider moves freely; the setting is saved when you let go.
   const [n, setN] = useState(saved);
   useEffect(() => setN(saved), [saved]);
-  const commit = (): void => {
-    if (n !== saved) void api.session.setPrefs({ parallelRuns: n });
+  // The number on the control, not the state closed over: Home changes the value and
+  // keyup can run before the next render, which would otherwise save the old number.
+  const commit = (next: number): void => {
+    const value = clampParallelRuns(next);
+    if (value !== saved) void api.session.setPrefs({ parallelRuns: value });
   };
   return (
     <Group title="Working at once">
@@ -34,9 +37,9 @@ export function ParallelSettings() {
             step={1}
             value={n}
             onChange={(e) => setN(Number(e.target.value))}
-            onPointerUp={commit}
-            onKeyUp={commit}
-            onBlur={commit}
+            onPointerUp={(e) => commit(e.currentTarget.valueAsNumber)}
+            onKeyUp={(e) => commit(e.currentTarget.valueAsNumber)}
+            onBlur={(e) => commit(e.currentTarget.valueAsNumber)}
           />
           <span>More</span>
         </span>
