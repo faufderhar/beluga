@@ -323,6 +323,9 @@ async function mockPlanning(input: AgentRunInput, plan: NonNullable<AgentRunInpu
     plan.gate(check[1]!, 'pass', '1. ✓ Checked the tasks’ pull requests and handoffs.\n2. ✓ `npm test` passes (27 tests).');
     return `Checked **${check[1]}**: every pass criterion holds. ${/autopilot/i.test(plan.get()) ? 'Moving on.' : 'It’s yours to pass.'}`;
   }
+  // Stop has to be clickable (e2e/plan-chat.spec.ts): at the demo's fast pace the steps below
+  // finish before a click lands, so this revision stays here, with nothing else redrawing, until stopped.
+  if (/take your time/i.test(input.prompt)) await sleep(20_000, input.signal);
   for (const step of ['Glob src/**/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'task_list']) {
     await sleep(350 * pace, input.signal);
     input.onEvent('tool', step);
@@ -874,6 +877,13 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   };
 
   async function runScript(input: AgentRunInput): Promise<string> {
+    // Holds the one slot for another conversation to show it is waiting (e2e/slot-wait.spec.ts).
+    // Not paced: at the demo's fast pace a long script can finish while the next chat opens.
+    if (/^hold the slot$/i.test(input.prompt.trim())) {
+      input.onEvent('tool', 'Read src/server.ts');
+      await sleep(45_000, input.signal);
+      return 'Slot held.';
+    }
     const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
     if (/^\/compact/.test(input.prompt.trim())) return context.compact(input, (ms) => sleep(ms * pace, input.signal));
     // Claude Code's sign-in ran out mid-run (BLG-589): the failed card offers Sign In's choices.

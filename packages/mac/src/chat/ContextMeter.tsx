@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { contextFacts } from '@beluga/ui/context-facts.js';
 import { cacheHitOf, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import { tokensOf } from '@beluga/workspaces/usage-days.js';
 import { LOCAL_RUNTIME, speedWords } from '@beluga/shared/local-endpoints.js';
 import { cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -43,7 +44,7 @@ function useLocalRun(channel: string): { tokens: number; tps?: number } | undefi
       const ws = channel.startsWith('ws:') ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(3)) : undefined;
       if (ws?.agent?.runtime !== LOCAL_RUNTIME) return undefined;
       const u = ws.usage;
-      return { tokens: u ? u.input + u.output + u.cacheWrite : 0, ...(u?.local?.tps ? { tps: u.local.tps } : {}) };
+      return { tokens: tokensOf(u), ...(u?.local?.tps ? { tps: u.local.tps } : {}) };
     },
     (a, b) => a?.tokens === b?.tokens && a?.tps === b?.tps,
   );

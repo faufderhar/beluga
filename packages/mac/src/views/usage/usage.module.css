@@ -208,6 +208,29 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Name | badges | menu. A long plan ("SuperGrok Heavy") wraps as whole pills in the middle, so the name stays one line and a chip never collapses into a circle. */
+.providerHead {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 22px;
+  margin-bottom: 10px;
+}
+.providerHead .cardTitle {
+  white-space: nowrap;
+}
+.providerBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.providerMore {
+  display: flex;
+}
 .planBadge {
   padding: 1px 7px;
   border-radius: 999px;
@@ -215,6 +238,8 @@
   font-weight: 650;
   letter-spacing: 0.02em;
   text-transform: capitalize;
+  white-space: nowrap;
+  flex: none;
   color: var(--claude);
   background: color-mix(in srgb, var(--claude) 13%, transparent);
 }
@@ -229,6 +254,8 @@
   font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
+  white-space: nowrap;
+  flex: none;
   color: var(--text-2);
   background: color-mix(in srgb, var(--text-3) 12%, transparent);
   cursor: default;

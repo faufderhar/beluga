@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { formatTokens } from '@beluga/ui/work-models.js';
+import { tokensOf } from '@beluga/workspaces/usage-days.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { cacheHitOf, contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { contextFacts } from '@beluga/ui/context-facts.js';
@@ -185,7 +186,7 @@ function WorkspaceDetails({ id }: { id: string }) {
   const { ws, st, pr, ctx, setup } = state;
   if (!ws || !st) return null;
   const members = Object.entries(state.members ?? {});
-  const tokens = ws.usage ? ws.usage.input + ws.usage.output + ws.usage.cacheWrite : 0;
+  const tokens = tokensOf(ws.usage);
   const cache = cacheHitOf(ws.usage);
   const project = state.projects.find((p) => p.id === ws.projectId);
   return (

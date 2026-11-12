@@ -7,6 +7,7 @@ import { COMPUTER, type ComputerKind, FILE_MANAGER } from '../shared/assistant.j
 import { formatBytes } from '../shared/format.js';
 import { fallbackFor, runtimeHere } from '../shared/runtime-fallbacks.js';
 import type { Project, Workspace } from '../workspaces/types.js';
+import { tokensOf } from '../workspaces/usage-days.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
 import { steerWaiting } from '../shared/claude-notices.js';
@@ -709,7 +710,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     : [{ text: '─'.repeat(width), color: theme.border }];
   const meter = state.prefs.contextMeter ? contextMeter(state, `ws:${ws.id}`, 12) : [];
   const disk = state.disk[ws.id];
-  const tokens = ws.usage ? ws.usage.input + ws.usage.output + ws.usage.cacheWrite : 0;
+  const tokens = tokensOf(ws.usage);
   const space: Line = [disk !== undefined ? formatBytes(disk) : '', tokens ? `${tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tokens` : ''].filter(Boolean).length
     ? [{ text: [disk !== undefined ? formatBytes(disk) : '', tokens ? `${tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tokens` : ''].filter(Boolean).join(' · '), color: theme.muted }, { text: meter.length ? '   ' : '' }]
     : [];

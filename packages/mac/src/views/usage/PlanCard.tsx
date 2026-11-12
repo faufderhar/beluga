@@ -83,22 +83,22 @@ const runtimeName = (runtime: string): string => (runtime === 'claude' ? 'Claude
 function ProviderBox({ card, now }: { card: ProviderCard; now: number }) {
   const [details, setDetails] = useState(false);
   return (
-    <Card
-      label={`${card.agent.label} usage`}
-      title={
-        <span className={s.agentTitle}>
-          <Icon name={agentMark(card.agent)} size={13} />
-          {card.agent.label}
-        </span>
-      }
-      aside={
-        <>
+    <Card label={`${card.agent.label} usage`}>
+      <header className={s.providerHead}>
+        <h2 className={s.cardTitle}>
+          <span className={s.agentTitle}>
+            <Icon name={agentMark(card.agent)} size={13} />
+            {card.agent.label}
+          </span>
+        </h2>
+        <span className={s.providerBadges}>
           {card.plan ? <span className={s.planBadge}>{card.plan}</span> : null}
           <DefaultChip card={card} />
+        </span>
+        <span className={s.providerMore}>
           <IconButton icon="more" label={details ? 'Hide details' : 'Details'} active={details} onClick={() => setDetails(!details)} />
-        </>
-      }
-    >
+        </span>
+      </header>
       {!card.signedIn ? (
         <p className={s.quiet}>Not signed in. Sign in to {card.agent.label} on {thisComputer()} to use it.</p>
       ) : card.shape === 'quota' ? (

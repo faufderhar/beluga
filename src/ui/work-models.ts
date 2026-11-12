@@ -5,7 +5,7 @@ import { unreadCount } from '../core/work-store.js';
 import { snippet } from '../core/search.js';
 import { formatBytes } from '../shared/format.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
-import type { Workspace } from '../workspaces/types.js';
+import { tokensOf } from '../workspaces/usage-days.js';
 import { type Line, type Seg, lineWidth, pad, plain, truncate } from './text.js';
 import { glyph, theme } from './theme.js';
 import { type Model, type UiAction, type Zone, split } from './workspace-models.js';
@@ -117,8 +117,6 @@ const bar = (value: number, max: number, cells: number, color: string): Seg[] =>
   ];
 };
 
-const tokensOf = (w: Workspace): number => (w.usage ? w.usage.input + w.usage.output + w.usage.cacheWrite : 0);
-
 /**
  * Every workspace's disk space and Claude usage side by side, as bars, biggest first.
  * Archiving a worktree frees its space (the branch and conversation are kept).
@@ -127,7 +125,7 @@ export function usageModel(state: AppState, width: number): Model {
   const lines: Line[] = [];
   const zones: Zone[] = [];
   const rows = state.projects
-    .flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w, disk: state.disk[w.id] ?? 0, tokens: tokensOf(w), cost: w.usage?.cost ?? 0 })))
+    .flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w, disk: state.disk[w.id] ?? 0, tokens: tokensOf(w.usage), cost: w.usage?.cost ?? 0 })))
     .filter((r) => r.disk > 0 || r.tokens > 0)
     .sort((a, b) => b.disk - a.disk || b.tokens - a.tokens);
   const totalDisk = rows.filter((r) => r.w.kind !== 'main').reduce((n, r) => n + r.disk, 0);

@@ -26,9 +26,9 @@ describe('usage by day', () => {
     expect(keys[0]).toBe(dayKey(at(2026, 1, 6)));
   });
 
-  it('counts the tokens a run made (cache reads are nearly free, so they are left out)', () => {
+  it('counts every token a run made: input, output, cache reads and cache writes', () => {
     const run = { input: 100, output: 20, cacheWrite: 5, cacheRead: 9000 };
-    expect(tokensOf(run)).toBe(125);
+    expect(tokensOf(run)).toBe(9125);
     expect(tokensOf(undefined)).toBe(0);
   });
 
@@ -57,7 +57,7 @@ describe('WorkspaceManager.addUsage', () => {
     mgr.addUsage(chat.id, { input: 1000, output: 200, cacheRead: 5000, cacheWrite: 300, cost: 0.05, session: 's1' }, yesterday);
     // The same conversation reports a running total: only the growth counts, on the day it happened.
     const u = mgr.addUsage(chat.id, { input: 1500, output: 300, cacheRead: 6000, cacheWrite: 300, cost: 0.08, session: 's1' }, today);
-    expect(u?.days).toEqual({ '2026-10-17': { tokens: 1500, cost: 0.05 }, '2026-10-18': { tokens: 600, cost: expect.closeTo(0.03, 6) } });
+    expect(u?.days).toEqual({ '2026-10-17': { tokens: 6500, cost: 0.05 }, '2026-10-18': { tokens: 1600, cost: expect.closeTo(0.03, 6) } });
     expect(u?.lastAt).toBe(today);
     expect(u).toMatchObject({ input: 1500, output: 300, runs: 2 });
     // The session total is the running report, not the sum of both reports.
