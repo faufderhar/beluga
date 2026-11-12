@@ -51,6 +51,19 @@ describe('observing workspaces', () => {
     expect(today).toMatchObject({ tokens: 500, cost: 0.5, archived: 1, worktrees: 1 });
   });
 
+  it('does not book cache reads already stored as tokens spent today', () => {
+    const old = usage(1000, 1);
+    const file = observeWorkspaces(emptyStats(NOW), [project([ws('a', { usage: old })])], agentOf, NOW);
+    const { countedReads: _already, ...prior } = file;
+    const withCache = ws('a', { usage: { ...old, cacheRead: 9_000 } });
+    const next = observeWorkspaces(prior, [project([withCache])], agentOf, NOW);
+    expect(totalsOf(snapshotOf(next, false), '').tokens).toBe(1000);
+    expect(next.seen.a).toMatchObject({ t: 10_000 });
+    expect(next.countedReads).toBe(true);
+    const grown = observeWorkspaces(next, [project([ws('a', { usage: { ...old, input: 1_100, cacheRead: 9_000 } })])], agentOf, NOW);
+    expect(totalsOf(snapshotOf(grown, false), '').tokens).toBe(1100);
+  });
+
   it('counts a workspace with no real date on the last day it was used, never in 1970', () => {
     const lastAt = NOW - 2 * DAY;
     const list = [ws('dateless', { createdAt: 0, usage: { ...usage(100, 0.1), lastAt } }), ws('never-used', { createdAt: 0 })];

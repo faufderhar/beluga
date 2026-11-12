@@ -455,7 +455,7 @@ describe('models, usage, space and search', () => {
     expect(kay.workspaces.find(ws!.id)?.usage).toMatchObject({ input: 1000, output: 200, cacheWrite: 300 });
     await kay.bench.measureDisk();
     expect(kay.state().disk[ws!.id]).toBeGreaterThan(0);
-    expect(kay.bench.describe(ws!.id)).toMatch(/KB · 2k tokens$/);
+    expect(kay.bench.describe(ws!.id)).toMatch(/KB · 7k tokens$/);
   });
 
   it('searches open, saved and archived conversations', async () => {

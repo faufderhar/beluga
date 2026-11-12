@@ -46,6 +46,8 @@ const counted = (w: Workspace): boolean => !w.pending && (w.kind !== 'worktree' 
  * ones archived since. The first time this is the backfill from every record Beluga keeps.
  */
 export function observeWorkspaces(file: StatsFile, projects: readonly Project[], agentOf: (ws: Workspace, project: Project) => string, now: number): StatsFile {
+  // A file counted before cache reads were included: move each workspace's baseline, and don't book that jump as spent today.
+  const rebaseline = file.countedReads !== true;
   let out = file;
   let seen = file.seen;
   for (const p of projects) {
@@ -61,15 +63,16 @@ export function observeWorkspaces(file: StatsFile, projects: readonly Project[],
         out = madeWith(out, w, root, agent, madeAt(w, now));
         if (archived && w.kind === 'worktree') out = count(out, w.archive?.at ?? w.usage?.lastAt ?? madeAt(w, now), root, agent, { archived: 1 });
       } else {
-        const dt = Math.max(0, tokens - was.t);
+        const dt = rebaseline ? 0 : Math.max(0, tokens - was.t);
         const dc = Math.max(0, cost - was.c);
-        if (dt || dc) out = count(out, now, root, agent, { tokens: dt, cost: dc });
+        if (dt || dc) out = count(out, now, root, agent, { ...(dt ? { tokens: dt } : {}), ...(dc ? { cost: dc } : {}) });
         if (archived && !was.a && w.kind === 'worktree') out = count(out, w.archive?.at ?? now, root, agent, { archived: 1 });
       }
       if (!was || was.t !== tokens || was.c !== cost || Boolean(was.a) !== archived) seen = { ...seen, [w.id]: { t: tokens, c: cost, ...(archived ? { a: 1 as const } : {}) } };
     }
   }
-  return seen === file.seen ? out : { ...out, seen };
+  if (!rebaseline) return seen === file.seen ? out : { ...out, seen };
+  return { ...out, seen, countedReads: true };
 }
 
 /** A workspace counted for the first time: made on its day, and its tokens on the days they were spent (the rest on the day it was made). */

@@ -32,13 +32,18 @@ export const StatsFileSchema = z.object({
   prsAt: z.record(z.string(), z.number()).default({}),
   /** Plan windows as they went (oldest first, the open ones too). */
   plan: z.array(PlanWindowSchema).default([]),
+  /**
+   * Token totals include cache reads. Absent on a file counted before that: the next look
+   * rebaselines each workspace and does not book the jump as tokens spent today.
+   */
+  countedReads: z.boolean().optional(),
 });
 export type StatsFile = z.infer<typeof StatsFileSchema>;
 export type Seen = z.infer<typeof Seen>;
 
 export const statsPath = (): string => path.join(belugaHome(), 'stats.json');
 
-export const emptyStats = (now: number): StatsFile => ({ v: 1, startedAt: now, days: {}, prs: {}, hours: Array.from({ length: 168 }, () => 0), seen: {}, history: false, prsAt: {}, plan: [] });
+export const emptyStats = (now: number): StatsFile => ({ v: 1, startedAt: now, days: {}, prs: {}, hours: Array.from({ length: 168 }, () => 0), seen: {}, history: false, prsAt: {}, plan: [], countedReads: true });
 
 /**
  * The file, or a new one starting now when there's none. One that fails its checks (a bad value
@@ -96,7 +101,7 @@ export function salvage(raw: unknown, now: number): StatsFile {
   }
   const hours = StatsFileSchema.shape.hours.safeParse(o.hours);
   const plan = Array.isArray(o.plan) ? o.plan.flatMap((w) => PlanWindowSchema.safeParse(w).data ?? []) : [];
-  return {
+  const kept = {
     ...empty,
     days,
     prs: goodEntries(o.prs, Pr),
@@ -107,6 +112,9 @@ export function salvage(raw: unknown, now: number): StatsFile {
     prsAt: goodEntries(o.prsAt, z.number()),
     plan,
   };
+  // A file from before cache reads were counted must rebaseline; a new empty file must not.
+  if (o.countedReads !== true) delete kept.countedReads;
+  return kept;
 }
 
 export function saveStats(data: StatsFile, file: string): void {

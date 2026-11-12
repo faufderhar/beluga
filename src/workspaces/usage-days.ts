@@ -19,9 +19,9 @@ export function addDay(days: Readonly<Record<string, UsageDay>> | undefined, key
   return Object.fromEntries(kept.map((k) => [k, next[k]!]));
 }
 
-/** The tokens Claude used (cache reads are nearly free and would drown the rest, so they're left out). */
-export function tokensOf(u: Pick<WorkspaceUsage, 'input' | 'output' | 'cacheWrite'> | undefined): number {
-  return u ? u.input + u.output + u.cacheWrite : 0;
+/** Every token a run counted: input, output, cache reads and cache writes. */
+export function tokensOf(u: Pick<WorkspaceUsage, 'input' | 'output' | 'cacheRead' | 'cacheWrite'> | undefined): number {
+  return u ? u.input + u.output + u.cacheRead + u.cacheWrite : 0;
 }
 
 export interface DayTotal {

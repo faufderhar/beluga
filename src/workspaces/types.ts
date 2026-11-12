@@ -32,7 +32,7 @@ export interface WorkspaceUsage {
   readonly lastAt?: number;
 }
 
-/** Claude usage on one day: tokens (input, output and cache writes) and estimated cost in USD. */
+/** Usage on one day: tokens (input, output, cache reads and cache writes) and estimated cost in USD. */
 export interface UsageDay {
   readonly tokens: number;
   readonly cost: number;

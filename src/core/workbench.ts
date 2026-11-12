@@ -11,6 +11,7 @@ import { editorCommand } from './editor-command.js';
 import { tilde } from './paths.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
+import { tokensOf } from '../workspaces/usage-days.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, resetTo } from '../workspaces/git.js';
@@ -1893,7 +1894,7 @@ export class Workbench {
     const state = this.deps.store.getState();
     const ws = this.manager.find(wsId);
     const disk = state.disk[wsId];
-    const tokens = ws?.usage ? ws.usage.input + ws.usage.output + ws.usage.cacheWrite : 0;
+    const tokens = tokensOf(ws?.usage);
     return [disk !== undefined ? formatBytes(disk) : '', tokens ? `${Math.round(tokens / 1000)}k tokens` : ''].filter(Boolean).join(' · ');
   }
 

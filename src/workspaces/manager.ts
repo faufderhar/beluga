@@ -22,7 +22,7 @@ import { dropOpenCodeFolder, dropOpenCodeSession } from '../agent/runtime/openco
 import { dropGrokSession } from '../agent/runtime/grok/sessions.js';
 import { foldSessionCache } from '../shared/context-usage.js';
 import { dropCopilotFolder, dropCopilotSession } from '../agent/runtime/copilot/sessions.js';
-import { addDay, dayKey } from './usage-days.js';
+import { addDay, dayKey, tokensOf } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { DeletePlan, MergeWait, Project, ProjectGroup, PullHead, ProjectSync, ProjectsConfig, RenameResult, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
 import type { ForkOf } from './github.js';
@@ -1363,8 +1363,8 @@ export class WorkspaceManager {
       ...(run.free ? { local: { ...((run.tps ?? prev.local?.tps) ? { tps: run.tps ?? prev.local?.tps } : {}) } } : {}),
       ...(run.session ? { lastSession: run.session, last: { input: run.input, output: run.output, cacheRead: run.cacheRead, cacheWrite: run.cacheWrite, cost: run.cost } } : {}),
       ...(session ? { session } : {}),
-      // Per day too, for the Usage screen's chart and "this week".
-      days: addDay(prev.days, dayKey(now), { tokens: delta('input') + delta('output') + delta('cacheWrite'), cost: delta('cost') }),
+      // Per day too, for the Usage screen's chart and "this week". Days saved before cache reads were counted keep that older total.
+      days: addDay(prev.days, dayKey(now), { tokens: tokensOf({ input: delta('input'), output: delta('output'), cacheRead: delta('cacheRead'), cacheWrite: delta('cacheWrite') }), cost: delta('cost') }),
       lastAt: now,
     };
     this.patchRecord(id, { usage: next });
