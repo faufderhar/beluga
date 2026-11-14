@@ -313,7 +313,13 @@ test('out of a task: Back stays at the top while scrolling; Esc, ⌘[ and a two-
   await row.click();
   await expect(title).toBeVisible();
   await page.mouse.move(500, 300);
-  for (let i = 0; i < 12; i++) await page.mouse.wheel(-20, 0);
+  // A pause of SWIPE_END_MS (140) ends the gesture. Awaiting each wheel waits out a round trip, so on a
+  // busy runner the flicks never add up. One burst, in the page, is the same trackpad swipe.
+  await page.evaluate(() => {
+    const target = document.elementFromPoint(500, 300);
+    if (!target) throw new Error('nothing under the swipe');
+    for (let i = 0; i < 12; i++) target.dispatchEvent(new WheelEvent('wheel', { deltaX: -20, deltaY: 0, bubbles: true, cancelable: true, clientX: 500, clientY: 300 }));
+  });
   await page.screenshot({ path: info.outputPath('task-swipe.png') }).catch(() => undefined);
   await expect(list).toBeVisible();
   // Typing in the title keeps Esc for the title.
