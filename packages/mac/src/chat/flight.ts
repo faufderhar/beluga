@@ -1,6 +1,7 @@
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 import f from './flight.module.css';
 import { reducedMotion } from '../lib/reduced-motion.js';
+import { type Starting, startingShows } from './starting-model.js';
 
 /**
  * Your message flying from the box you typed it in to where it lands, so sending doesn't feel
@@ -8,8 +9,8 @@ import { reducedMotion } from '../lib/reduced-motion.js';
  * words are noted; when the message's row (in the chat, or in the queue tray when Claude is
  * busy) appears, a copy of it starts where the box was and settles into place, then the row
  * itself shows. With reduced motion, or landing above other rows (said while Claude works), the
- * row just fades in where it goes. For a message to Claude,
- * "Claude is starting…" shows under it until Claude's card appears.
+ * row just fades in where it goes. For a message to Claude, once it has landed,
+ * "Claude is starting…" shows under it until Claude's card appears (starting-model.ts).
  */
 
 export interface Flight {
@@ -120,6 +121,19 @@ function land(flight: Flight, row: HTMLElement): void {
     return;
   }
   row.classList.add(WAITING);
+  // "Claude is starting…" waits until it's down (see startingShows).
+  const into = flight.target === 'chat' ? flight.channel : undefined;
+  let down = !into;
+  const touchDown = (): void => {
+    if (down || !into) return;
+    down = true;
+    setLanding(into, -1);
+  };
+  if (into) {
+    setLanding(into, 1);
+    // A hidden window draws no frames: the line still comes, a little after the flight would have.
+    setTimeout(touchDown, FLIGHT_MS + 600);
+  }
   // Two frames later: the virtualized list has measured the rows that changed with it (a turn
   // split around it, BLG-22) and placed it; a frame earlier its place can still be the old one.
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -127,13 +141,17 @@ function land(flight: Flight, row: HTMLElement): void {
     const show = (): void => {
       row.classList.remove(WAITING);
       row.dataset.flown = 'true';
+      touchDown();
     };
     if (!to.width || !to.height) return show();
     const clone = pictureOf(row);
     clone.classList.remove(WAITING);
     clone.classList.add(FLYING);
     clone.dataset.sendFlight = flight.target;
-    Object.assign(clone.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px` });
+    // Out of the page's flow whatever classes the row carries: one that places the row
+    // (`position: relative` from reactions) once won over `.flight`, and the copy then took its
+    // room in the chat's flex row, squeezing the list to nothing until it landed (a blank flash).
+    Object.assign(clone.style, { position: 'fixed', margin: '0', left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px` });
     (row.closest<HTMLElement>('[data-flight-layer]') ?? document.body).appendChild(clone);
     // Start where the words were in the box: its left edge, its bottom line.
     const dx = flight.from.left - to.left;
@@ -166,20 +184,29 @@ export function useFlightLanding(ref: React.RefObject<HTMLElement | null>, chann
 
 // ---- "Claude is starting…" until Claude's card shows
 
-interface Starting {
-  readonly channel: string;
-  /** Claude cards in the conversation when you sent it: one more means Claude has started. */
-  readonly cardsBefore: number;
-  readonly at: number;
-}
 let starting: Starting | undefined;
+/** Flights flying into a chat now, by conversation (the row shows when they land). */
+let landing: ReadonlyMap<string, number> = new Map();
 const listeners = new Set<() => void>();
 const notify = (): void => {
   for (const l of listeners) l();
 };
+const subscribe = (l: () => void): (() => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
 
-export function expectClaude(channel: string, cardsBefore: number): void {
-  const mine: Starting = { channel, cardsBefore, at: Date.now() };
+function setLanding(channel: string, by: number): void {
+  const next = new Map(landing);
+  const n = (next.get(channel) ?? 0) + by;
+  if (n > 0) next.set(channel, n);
+  else next.delete(channel);
+  landing = next;
+  notify();
+}
+
+export function expectClaude(channel: string, cardsBefore: number, lastMineBefore: string | undefined): void {
+  const mine: Starting = { channel, cardsBefore, lastMineBefore, at: Date.now() };
   starting = mine;
   notify();
   setTimeout(() => {
@@ -190,13 +217,8 @@ export function expectClaude(channel: string, cardsBefore: number): void {
 }
 
 /** Whether to show "Claude is starting…" at the end of this conversation. */
-export function useClaudeStarting(channel: string, cards: number): boolean {
-  const s = useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => starting,
-  );
-  return Boolean(s && s.channel === channel && cards <= s.cardsBefore);
+export function useClaudeStarting(channel: string, cards: number, lastMine: string | undefined): boolean {
+  const s = useSyncExternalStore(subscribe, () => starting);
+  const inAir = useSyncExternalStore(subscribe, () => landing.get(channel) ?? 0);
+  return startingShows(s, { channel, cards, lastMine, landing: inAir });
 }

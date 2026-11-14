@@ -90,6 +90,74 @@ export const LEFT: SoundSpec = { notes: [chime(0, 81, 0.16, 0.55), chime(0.1, 74
 let ctx: AudioContext | undefined;
 const buffers = new Map<SoundSpec, AudioBuffer>();
 
+/**
+ * Where a sound heard in a call goes: as a stream into a hidden <audio>, the way the call's voices
+ * play. Once your microphone is open (from the Call click on), macOS's voice processing turns down
+ * everything else this window plays, and WebKit plays streams through that processing itself: the
+ * ringback played straight out of Web Audio went unheard by the one calling.
+ */
+interface CallOut {
+  readonly node: MediaStreamAudioDestinationNode;
+  readonly el: HTMLAudioElement;
+  playing: number;
+}
+let callOut: CallOut | undefined;
+let callSpeaker: string | undefined;
+
+/** The speaker picked for calls (undefined: macOS's own): call sounds go where the voices do. */
+export function setCallSpeaker(id: string | undefined): void {
+  callSpeaker = id;
+  if (callOut) sinkTo(callOut.el, id ?? '');
+}
+
+function sinkTo(el: HTMLMediaElement, id: string): void {
+  const media = el as HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> };
+  if (typeof media.setSinkId === 'function') void media.setSinkId(id).catch(() => undefined);
+}
+
+function callOutput(c: AudioContext): CallOut | undefined {
+  if (callOut) return callOut;
+  if (typeof document === 'undefined' || typeof c.createMediaStreamDestination !== 'function') return undefined;
+  const node = c.createMediaStreamDestination();
+  const el = document.createElement('audio');
+  el.dataset['callSounds'] = '';
+  el.style.display = 'none';
+  el.srcObject = node.stream;
+  document.body.append(el);
+  if (callSpeaker) sinkTo(el, callSpeaker);
+  callOut = { node, el, playing: 0 };
+  return callOut;
+}
+
+/**
+ * Connect a sound to the speakers: in a call through the call's stream (falling back to the plain
+ * output if it can't play), else straight out. Returns what to call when it's done.
+ */
+function connectOut(c: AudioContext, node: AudioNode, inCall: boolean): () => void {
+  const out = inCall ? callOutput(c) : undefined;
+  if (!out) {
+    node.connect(c.destination);
+    return () => node.disconnect();
+  }
+  node.connect(out.node);
+  out.playing++;
+  let done = false;
+  void out.el.play().catch(() => {
+    if (done) return;
+    // Refused: heard the plain way rather than not at all (never both).
+    node.disconnect();
+    node.connect(c.destination);
+  });
+  return () => {
+    if (done) return;
+    done = true;
+    node.disconnect();
+    out.playing--;
+    // Nothing of the call's sounds left: the element rests instead of playing silence.
+    if (!out.playing) out.el.pause();
+  };
+}
+
 function context(): AudioContext | undefined {
   if (typeof AudioContext === 'undefined') return undefined;
   ctx ??= new AudioContext();
@@ -117,20 +185,27 @@ export function wakeSound(): void {
   if (c && c.state !== 'running') void c.resume().catch(() => undefined);
 }
 
+/** How a call sound plays: `inCall` while your microphone is open (heard through the call's stream). */
+export interface PlayOptions {
+  readonly volume?: number;
+  readonly inCall?: boolean;
+}
+
 /** Play a call sound once. */
-export function playOnce(spec: SoundSpec, volume = 0.8): void {
+export function playOnce(spec: SoundSpec, { volume = 0.8, inCall = false }: PlayOptions = {}): void {
   const c = context();
   const buffer = bufferOf(spec, volume);
   if (!c || !buffer) return;
   void c.resume().catch(() => undefined);
   const source = c.createBufferSource();
   source.buffer = buffer;
-  source.connect(c.destination);
+  const release = connectOut(c, source, inCall);
+  source.onended = release;
   source.start();
 }
 
 /** Play it again every `every` seconds until stopped (scheduled ahead, so it never stutters). */
-export function loop(spec: SoundSpec, every: number, volume = 0.8): () => void {
+export function loop(spec: SoundSpec, every: number, { volume = 0.8, inCall = false }: PlayOptions = {}): () => void {
   const c = context();
   const buffer = bufferOf(spec, volume);
   if (!c || !buffer) return () => undefined;
@@ -139,7 +214,7 @@ export function loop(spec: SoundSpec, every: number, volume = 0.8): () => void {
   // A short swell in, so the first ring doesn't startle.
   gain.gain.setValueAtTime(0, c.currentTime);
   gain.gain.linearRampToValueAtTime(1, c.currentTime + 0.15);
-  gain.connect(c.destination);
+  const release = connectOut(c, gain, inCall);
   const sources: AudioBufferSourceNode[] = [];
   let next = c.currentTime + 0.05;
   const schedule = (): void => {
@@ -162,7 +237,7 @@ export function loop(spec: SoundSpec, every: number, volume = 0.8): () => void {
     gain.gain.setTargetAtTime(0, c.currentTime, 0.12);
     setTimeout(() => {
       for (const s of sources) s.stop();
-      gain.disconnect();
+      release();
     }, 700);
   };
 }

@@ -39,12 +39,21 @@ describe('the projects ahead of the disk', () => {
     const row = pendingWorktree({ id: 'wt-new', project: p, name: 'quick', now: 5 });
     expect(row).toMatchObject({ id: 'wt-new', projectId: 'p', projectRoot: '/p', name: 'quick', kind: 'worktree', base: 'origin/main', pending: true, external: false });
     ahead.making.set(row.id, row);
-    expect(withAhead([p], ahead)[0]!.workspaces.at(-1)).toBe(row);
+    expect(withAhead([p], ahead)[0]!.workspaces).toContain(row);
     // Made: only the real one, never both.
     const made = withAhead([project('p', ws('wt-new', { name: 'quick' }))], ahead)[0]!.workspaces.filter((w) => w.id === 'wt-new');
     expect(made).toHaveLength(1);
     expect(made[0]!.pending).toBeUndefined();
     // On a branch you picked.
     expect(pendingWorktree({ id: 'x', project: p, name: 'y', base: 'origin/feature' }).base).toBe('origin/feature');
+  });
+
+  it('a worktree being made shows where the real one will be: first of the worktrees, never jumping when it’s made', () => {
+    const ahead = nothingAhead();
+    const p = project('p', ws('older', { createdAt: 1 }), ws('a-chat', { kind: 'chat', createdAt: 2 }), ws('gone', { archived: true, createdAt: 3 }));
+    const fork = pendingWorktree({ id: 'wt-fork', project: p, name: 'older-2', forkedFrom: 'older', now: 10 });
+    expect(fork.forkedFrom).toBe('older');
+    ahead.making.set(fork.id, fork);
+    expect(withAhead([p], ahead)[0]!.workspaces.map((w) => w.id)).toEqual(['p-main', 'wt-fork', 'older', 'a-chat', 'gone']);
   });
 });

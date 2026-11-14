@@ -23,7 +23,8 @@
     "components",
     "../../src/companion/protocol.ts",
     "../../src/shared/view-spec.ts",
-    "../../src/net/hyperdht.d.ts"
+    "../../src/net/hyperdht.d.ts",
+    "../../src/net/mesh/modules.d.ts"
   ],
   "exclude": [
     "node_modules",

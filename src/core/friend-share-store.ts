@@ -32,6 +32,8 @@ export interface SharedProject {
   readonly updatedAt: number;
   /** Shared whole: your own copy of it (BLG-258), while it's made and once it's in your Projects. */
   readonly copy?: SharedCopy;
+  /** The owner's plain chats (no project folder), each shared on its own: no copy, no fork. */
+  readonly chats?: true;
 }
 
 /** Your copy of a project a friend shared whole: where it goes, and how far it got. */

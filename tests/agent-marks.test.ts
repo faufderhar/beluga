@@ -28,6 +28,21 @@ describe('agent marks', () => {
     expect(modelMark('openai/gpt-5.5', 'opencode')).toBe('openai');
     expect(modelMark('opencode/big-pickle', 'opencode')).toBe('opencode');
   });
+
+  it('DeepSeek and Kimi by their marks, from their own provider, a router or a local runtime (BLG-945)', () => {
+    for (const mark of ['deepseek', 'kimi'] as const) expect(AGENT_MARKS[mark].d).toMatch(/^M/);
+    expect(modelMark('deepseek/deepseek-chat', 'opencode')).toBe('deepseek');
+    expect(modelMark('openrouter/deepseek/deepseek-r1:free', 'opencode')).toBe('deepseek');
+    expect(modelMark('deepseek-r1:14b', 'local')).toBe('deepseek');
+    expect(modelMark('moonshotai/kimi-k2-0905-preview', 'opencode')).toBe('kimi');
+    expect(modelMark('moonshotai-cn/kimi-k2-turbo-preview', 'opencode')).toBe('kimi');
+    expect(modelMark('kimi-for-coding/kimi-k2-thinking', 'opencode')).toBe('kimi');
+    expect(modelMark('opencode/kimi-k2', 'opencode')).toBe('kimi');
+    expect(modelMark('openrouter/moonshotai/kimi-k2', 'opencode')).toBe('kimi');
+    // A router serving another maker's model: that maker's.
+    expect(modelMark('openrouter/anthropic/claude-sonnet-4.5', 'opencode')).toBe('anthropic');
+    expect(modelMark('openrouter/openai/gpt-5', 'opencode')).toBe('openai');
+  });
 });
 
 describe('the agents you can pick', () => {

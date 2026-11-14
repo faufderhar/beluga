@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -135,5 +135,40 @@ describe('signNonce / verifyNonce', () => {
     expect(verifyNonce(other.publicKey, 'n1', other.peerId, sig)).toBe(false);
     const junk = Buffer.from('junk').toString('base64');
     expect(verifyNonce(junk, 'n1', peerIdFor(junk), sig)).toBe(false);
+  });
+});
+
+describe('a broken identity.json at start', () => {
+  it('starts with a one-off identity, leaves the file as it is and says where it is', async () => {
+    const { identitiesAtStart } = await import('../src/machines/identity-load.js');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-identity-start-'));
+    const file = path.join(dir, 'identity.json');
+    writeFileSync(file, 'not json');
+    const said: string[] = [];
+    const { local, you } = identitiesAtStart(dir, (m) => said.push(m));
+    expect(local.peerId).toBeTruthy();
+    expect(you.peerId).toBe(local.peerId);
+    expect(readFileSync(file, 'utf8')).toBe('not json');
+    expect(said.join('\n')).toContain(file);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('identity.json read again after a handover', () => {
+  it('falls back to a one-off identity and says why when the kept file is broken', async () => {
+    const { identityOrOneOff } = await import('../src/machines/identity-load.js');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-identity-letgo-'));
+    const file = path.join(dir, 'identity.json');
+    writeFileSync(file, '{broken');
+    const said: string[] = [];
+    expect(identityOrOneOff(file, (m) => said.push(m)).peerId).toHaveLength(32);
+    expect(said.join('\n')).toMatch(/invalid/i);
+    expect(readFileSync(file, 'utf8')).toBe('{broken');
+    // A good file is read as it is, with nothing said.
+    const fresh = path.join(dir, 'fresh.json');
+    const good = loadIdentity(fresh);
+    expect(identityOrOneOff(fresh, (m) => said.push(m)).peerId).toBe(good.peerId);
+    expect(said).toHaveLength(1);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

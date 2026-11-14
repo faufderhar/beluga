@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
+import { chatsToMention } from '@beluga/core/chat-links/resolve.js';
+import { parseChatRef } from '@beluga/shared/chat-ref.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { isOpen } from '@beluga/core/board/model.js';
 import type { TaskMention } from '@beluga/shared/task-refs.js';
-import { TaskChip } from '../tasks/TaskRef.js';
+import { CHAT_KIND, ChatChip, TaskChip } from '../tasks/TaskRef.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
@@ -16,8 +18,8 @@ import s from './mention.module.css';
  * project, the worktree, the file, the task).
  */
 
-const ICON: Readonly<Record<MentionKind, IconName>> = { friend: 'person', claude: 'claude', project: 'grid', workspace: 'branch', folder: 'folder', file: 'file', task: 'task', image: 'image', worktree: 'branch' };
-const WHAT: Readonly<Record<MentionKind, string>> = { friend: 'Friend', claude: 'Agent', project: 'Project', workspace: 'Worktree', folder: 'Folder', file: 'File', task: 'Task', image: 'Image', worktree: 'Worktree' };
+const ICON: Readonly<Record<MentionKind, IconName>> = { friend: 'person', claude: 'claude', project: 'grid', workspace: 'branch', folder: 'folder', file: 'file', task: 'task', chat: 'chat', image: 'image', worktree: 'branch' };
+const WHAT: Readonly<Record<MentionKind, string>> = { friend: 'Friend', claude: 'Agent', project: 'Project', workspace: 'Worktree', folder: 'Folder', file: 'File', task: 'Task', chat: 'Chat', image: 'Image', worktree: 'Worktree' };
 
 /** The worktree a conversation is in ("ws:<id>"), if it is one. */
 export const worktreeOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
@@ -64,9 +66,21 @@ export function useMentionWorld(channel: string | undefined, { tasks: withTasks 
   }, [friends, peers, projects, selfId, dirCache, ws, tasks]);
 }
 
+/**
+ * The chats "@" can name in `channel`. `on`: only while an "@" is being typed, as each title reads
+ * the log. Text, not the list: a pick built fresh each time never settles (#185).
+ */
+export function useChatMentions(channel: string, on: boolean): ReadonlyArray<{ readonly title: string; readonly ref: string; readonly hint: string }> {
+  const picked = useApp((st) => (on ? JSON.stringify(chatsToMention(st, channel).map((c) => ({ title: c.title, ref: c.ref, hint: c.ownership === 'shared' ? 'Shared with you' : CHAT_KIND[c.kind] }))) : ''));
+  return useMemo(() => (picked ? (JSON.parse(picked) as Array<{ title: string; ref: string; hint: string }>) : []), [picked]);
+}
+
 export function MentionPill({ mention }: { mention: MentionRef }) {
   // A task is the board's own live chip (its status, key and title; a click opens it).
   if (mention.kind === 'task') return <TaskChip taskKey={mention.id ?? mention.label} />;
+  // A chat is its live chip too (its title of now; a click opens it).
+  const chat = mention.kind === 'chat' ? parseChatRef(mention.id ?? '') : undefined;
+  if (chat) return <ChatChip target={chat} raw={mention.label} />;
   return <Pill mention={mention} />;
 }
 

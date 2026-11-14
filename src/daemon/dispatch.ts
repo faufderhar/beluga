@@ -5,6 +5,7 @@ import type { Session } from '../core/session.js';
 import { isMethod, parseArgs } from '../ipc/api.js';
 import { HANDLERS } from '../ipc/handlers.js';
 import { routeToAlwaysOn } from '../machines/friends.js';
+import { featureCounter } from '../telemetry/features.js';
 
 export type CallOutcome = { readonly ok: true; readonly value?: unknown } | { readonly ok: false; readonly error: string };
 
@@ -28,10 +29,12 @@ export async function dispatchCall(session: Session, clientId: string, method: s
     const handler = HANDLERS[method] as (s: Session, ...a: unknown[]) => unknown;
     const value = await runAsClient(clientId, () => handler(session, ...(args as unknown[])));
     blackbox.call(method, performance.now() - began);
+    featureCounter.call(method, performance.now() - began, true);
     return { ok: true, ...(value === undefined ? {} : { value }) };
   } catch (err) {
     // The black box keeps the method and the error, never the arguments (they're people's words and files).
     blackbox.call(method, performance.now() - began, errorText(err));
+    featureCounter.call(method, performance.now() - began, false);
     return { ok: false, error: errorText(err) };
   }
 }

@@ -65,11 +65,18 @@ jobs:
         working-directory: packages/mac
       - name: Beluga's engine and Node, bundled
         if: runner.os != 'Windows'
+        env:
+          # Usage statistics only in a release (an ingest-only Ratel key): other runs build without them.
+          BELUGA_TELEMETRY_URL: ${{ github.event_name == 'release' && secrets.BELUGA_TELEMETRY_URL || '' }}
+          BELUGA_TELEMETRY_KEY: ${{ github.event_name == 'release' && secrets.BELUGA_TELEMETRY_KEY || '' }}
         run: node scripts/build-sidecar.mjs
       - name: Beluga's engine and Node, bundled (Windows)
         # PowerShell: its tar is Windows' own (Git Bash's GNU tar reads C:\ as a host).
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          BELUGA_TELEMETRY_URL: ${{ github.event_name == 'release' && secrets.BELUGA_TELEMETRY_URL || '' }}
+          BELUGA_TELEMETRY_KEY: ${{ github.event_name == 'release' && secrets.BELUGA_TELEMETRY_KEY || '' }}
         run: node scripts/build-sidecar.mjs
       - name: The app
         working-directory: packages/mac

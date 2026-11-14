@@ -7,7 +7,8 @@ import { useApp } from '../lib/beluga.js';
 import { useMyAgentName } from '../lib/agent-words.js';
 import { AskBox, AskCard, type Region } from './AskClaude.js';
 import { type Ink, MAX_POINTS, NO_INK, applyInk, boxPoints, draw, hasInk, holdSketch, pictureBox, releaseSketch, sketchBox, tidyInk } from './ink.js';
-import { PointerMark, Pointers } from './Pointers.js';
+import { PointerMark, ownTag } from './PointerMark.js';
+import { Pointers } from './Pointers.js';
 import { CallChatPops } from './ChatPops.js';
 import { CameraStrip } from './Cameras.js';
 import { useCallEngine, useCallLive, useCallPlace } from './use-call.js';
@@ -65,6 +66,9 @@ export function Stage({ call }: { call: CallView }) {
   const [showMine, setShowMine] = useState(false);
   /** Your own mark, moved straight under your mouse (no React on each move). */
   const mineMark = useRef<HTMLDivElement | null>(null);
+  /** Its name opens as you move or click and folds as you rest, as the others see it (BLG-912). */
+  const [mineTag] = useState(() => ownTag(() => mineMark.current));
+  useEffect(() => () => mineTag.stop(), [mineTag]);
   const press = useRef<Press | undefined>(undefined);
   const stroke = useRef<{ id: string; pts: number[]; sent: number } | undefined>(undefined);
   const lastSent = useRef(0);
@@ -188,7 +192,10 @@ export function Stage({ call }: { call: CallView }) {
   const onMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const [x, y] = fraction(e);
     const now = performance.now();
-    if (showMine) placeMine(e);
+    if (showMine) {
+      placeMine(e);
+      mineTag.moved(x, y);
+    }
     const p = press.current;
     if (!p) {
       // Just moving: your pointer, for everyone, if you chose to show it.
@@ -225,6 +232,7 @@ export function Stage({ call }: { call: CallView }) {
     // A click: a ripple there, for everyone.
     const [x, y] = fraction(e);
     engine.stageSend({ k: 'ping', by: me, x, y });
+    if (showMine) mineTag.clicked(x, y);
   };
   const onLeave = (): void => {
     if (mineMark.current) mineMark.current.style.opacity = '0';

@@ -681,6 +681,11 @@ button.head:focus-visible {
   padding: 3px 6px 4px 18px;
   color: var(--text-3);
   line-height: 1.5;
+  transition: color var(--dur, 190ms) ease;
+}
+/* The newest thing it said, while it works: what it's up to, a little stronger (it folds away with the answer). */
+.remarkNow {
+  color: var(--text-2);
 }
 .remark :is(p, li, h1, h2, h3, h4, strong, a) {
   color: inherit;

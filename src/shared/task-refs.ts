@@ -160,10 +160,18 @@ function rankOf(typed: string, task: TaskMention, strict = false): number | unde
       if (have.digits.startsWith(want.digits)) return 2;
     } else if (!want.digits && want.prefix.length >= 2 && prefixHit) return 3;
   }
-  // A word of the title ("@login", "@dark-mode"); never digits alone ("@24" is a key or nothing).
+  return titleRank(typed, task.title);
+}
+
+/**
+ * How well a title answers what's typed: a word of it ("@login", "@dark-mode"), else a piece of
+ * three letters or more; never digits alone ("@24" is a key or nothing).
+ */
+export function titleRank(typed: string, of: string): 4 | 5 | undefined {
   if (typed.length < 2 || /^[\d-]+$/.test(typed)) return undefined;
   const words = typed.toLowerCase().replace(/[-_.]+/g, ' ').trim();
-  const title = task.title.toLowerCase();
+  // The same for the title: "@checkout-events" finds a chat with that very name.
+  const title = of.toLowerCase().replace(/[-_.]+/g, ' ');
   if (!words) return undefined;
   if (title.split(/[^\p{L}\p{N}]+/u).some((w) => w.startsWith(words)) || title.includes(` ${words}`) || title.startsWith(words)) return 4;
   if (words.length >= 3 && title.includes(words)) return 5;

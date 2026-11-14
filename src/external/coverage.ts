@@ -29,6 +29,7 @@ const STATS = 'The Usage tab counts the person\'s work in every project, past an
 const WEB_SESSION = 'A browser session can answer approvals and read secret values, which no agent does (BLG-244).';
 const WINDOW_LOAD = 'The window notes a part of itself that did not load: an agent has no window.';
 const PREVIEW = 'A live preview is built for a window\'s frame and drawn there: an agent has no frame.';
+const MCP_APP = 'An MCP App is drawn in a window\'s frame: an agent has no frame.';
 const SAVE_PANEL = 'It writes a file where a person chose in the Save panel.';
 const COMPUTERS = 'It manages your other computers, or moves work between them: a person does that from the app.';
 const NO_TOOL = 'No tool reaches it yet: a tool for it comes with its own decision.';
@@ -211,6 +212,12 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'env.testDatabase': 'gated',
   'env.importDotenv': 'gated',
   'env.newKeysBack': 'gated',
+  'env.worktree': { refused: SECRET_VALUES },
+  'env.setWorktree': { refused: ENV_LIST },
+  'env.carryWorktree': 'gated',
+  'env.overview': 'gated',
+  'env.addToExample': 'gated',
+  'env.exampleSync': 'gated',
   'env.endpoints': 'gated',
   'env.saveEndpoint': { refused: SECRET_VALUES },
   'env.removeEndpoint': 'gated',
@@ -280,6 +287,11 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'stripe.disconnect': 'gated',
   'stripe.refresh': 'gated',
   'support.answer': 'gated',
+  // Consent to usage statistics is the person's own, made at a screen: never an agent's.
+  'telemetry.choose': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
+  'telemetry.answer': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
+  'telemetry.exclude': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
+  'telemetry.mark': { refused: 'Only Beluga\'s own screens report these.' },
   'claudeCode.steps': 'gated',
   'claudeCode.step': 'gated',
   'claudeCode.findAgent': 'gated',
@@ -567,6 +579,11 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'stats.saveImage': { refused: SAVE_PANEL },
   'preview.open': { refused: PREVIEW },
   'preview.snapshot': { refused: PREVIEW },
+  'apps.get': { refused: MCP_APP },
+  'apps.call': { refused: MCP_APP },
+  'apps.read': { refused: MCP_APP },
+  'apps.message': { refused: MCP_APP },
+  'apps.context': { refused: MCP_APP },
   'files.readRange': { refused: NO_TOOL },
   'machines.alwaysOn': { refused: COMPUTERS },
   'machines.alwaysOn.status': { refused: COMPUTERS },
@@ -637,4 +654,6 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'workspaces.moveReceive': { refused: COMPUTERS },
   'workspaces.moveUndo': { refused: COMPUTERS },
   'workspaces.ports': { refused: NO_TOOL },
+  'chats.resolve': { refused: NO_TOOL },
+  'chats.snapshot': { refused: NO_TOOL },
 };

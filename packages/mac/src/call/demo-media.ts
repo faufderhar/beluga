@@ -153,8 +153,17 @@ export function demoCamera(name: string): MediaStream {
   return stream;
 }
 
-/** Where a demo friend points on a shared screen at `ms`: a slow, wandering loop, as a person reads along (BLG-733). */
+/** The demo friend's rhythm (BLG-912): they read along a while, then rest on a spot and click it. */
+const DEMO_MOVE_MS = 3_500;
+const DEMO_CYCLE_MS = 9_500;
+const DEMO_CLICK_MS = 6_200;
+
+/** Where a demo friend points on a shared screen at `ms`: a slow, wandering loop, as a person reads along (BLG-733), with rests. */
 export function demoPointer(ms: number): readonly [number, number] {
-  const t = ms / 1000;
+  // Time spent moving so far: it stands still through each rest, and goes on from there after.
+  const t = (Math.floor(ms / DEMO_CYCLE_MS) * DEMO_MOVE_MS + Math.min(ms % DEMO_CYCLE_MS, DEMO_MOVE_MS)) / 1000;
   return [0.5 + 0.28 * Math.sin(t * 0.7) + 0.05 * Math.sin(t * 2.3), 0.45 + 0.2 * Math.sin(t * 0.9 + 1) + 0.04 * Math.cos(t * 3.1)];
 }
+
+/** Whether the demo friend clicked between `from` and `to` (ms): once each rest, on the spot they rest on. */
+export const demoClicked = (from: number, to: number): boolean => Math.floor((to - DEMO_CLICK_MS) / DEMO_CYCLE_MS) > Math.floor((from - DEMO_CLICK_MS) / DEMO_CYCLE_MS);

@@ -26,6 +26,10 @@ import {
   triggerOfKind,
   whenText,
   withEvery,
+  everySegment,
+  intervalOf,
+  withInterval,
+  INTERVAL_CHOICES,
   withModel,
   anyRunning,
   accessSentence,
@@ -187,11 +191,28 @@ describe('Sentinel on the Mac', () => {
     expect(runsFolderOf([{}])).toBeUndefined();
   });
 
+  it('every few minutes or hours: one "Through the day" segment, one Every menu', () => {
+    const hourly = { kind: 'schedule', every: 'hours', hours: 3, at: '00:00', missed: 'catch-up' } as const;
+    expect(INTERVAL_CHOICES.map((c) => c.label)).toEqual(['minute', '5 minutes', '10 minutes', '15 minutes', '30 minutes', 'hour', '2 hours', '3 hours', '6 hours', '12 hours']);
+    expect(intervalOf(hourly)).toBe('3h');
+    const quarter = withInterval(hourly, '15m');
+    expect(quarter).toEqual({ kind: 'schedule', every: 'minutes', minutes: 15, at: '00:00', missed: 'catch-up' });
+    expect(intervalOf(quarter)).toBe('15m');
+    expect(everySegment(quarter)).toBe('hours');
+    expect(everySegment(hourly)).toBe('hours');
+    expect(everySegment({ ...hourly, every: 'week' })).toBe('week');
+    expect(withInterval(quarter, '1h')).toEqual({ kind: 'schedule', every: 'hours', hours: 1, at: '00:00', missed: 'catch-up' });
+    // Not one of the menu's: nothing changes.
+    expect(withInterval(quarter, '7m')).toBe(quarter);
+    expect(withInterval(quarter, 'soon')).toBe(quarter);
+  });
+
   it('changes a schedule: every, the weekday chips', () => {
     const day = { kind: 'schedule', every: 'day', at: '07:00', missed: 'skip' } as const;
     expect(withEvery(day, 'week')).toEqual({ kind: 'schedule', every: 'week', at: '07:00', missed: 'skip', days: [1] });
     expect(withEvery(day, 'month')).toMatchObject({ every: 'month', day: 1 });
     expect(withEvery({ ...day, every: 'week', days: [1, 3] }, 'hours')).toEqual({ kind: 'schedule', every: 'hours', at: '07:00', missed: 'skip', hours: 3 });
+    expect(withEvery(day, 'minutes')).toEqual({ kind: 'schedule', every: 'minutes', at: '07:00', missed: 'skip', minutes: 30 });
     expect(toggleDay([1], 3)).toEqual([1, 3]);
     expect(toggleDay([1, 3], 1)).toEqual([3]);
     // One day stays on; Sunday sorts last, as the chips show.

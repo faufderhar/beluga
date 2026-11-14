@@ -39,8 +39,22 @@ export const keptPath = (home: string, issueId: string, proof: Pick<Proof, 'id'>
 
 const hasFile = (proof: Proof): proof is Proof & { readonly path: string } => Boolean(proof.path) && (proof.kind === 'image' || proof.kind === 'file');
 
-/** Whether a proof's file is one Beluga keeps (in ~/.beluga/proof). */
-export const isKept = (home: string, file: string): boolean => isInside(file, path.join(home, PROOF_FOLDER));
+/** Each home's proof folder with its links resolved (asked once: it doesn't move while Beluga runs). */
+const realFolders = new Map<string, string>();
+
+/**
+ * Whether a proof's file is one Beluga keeps (in ~/.beluga/proof). A path written under that
+ * folder is (Beluga writes the copies there itself): only any other is resolved on disk. Every
+ * task's proofs are checked on start, so this was a few calls on disk per proof (BLG-942).
+ */
+export const isKept = (home: string, file: string): boolean => {
+  const folder = path.join(home, PROOF_FOLDER);
+  if (file.startsWith(folder + path.sep)) return true;
+  let d = realFolders.get(folder);
+  if (d === undefined) realFolders.set(folder, (d = real(folder)));
+  const f = real(file);
+  return f === d || f.startsWith(d + path.sep);
+};
 
 /**
  * The proof with its file kept: copied into the task's folder when it's a file that's there (and

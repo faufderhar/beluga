@@ -22,7 +22,8 @@ describe('when to run tests', () => {
     expect(back.activity.at(-1)?.text).toMatch(/once per milestone/);
     expect(plans.setTestsAt(plan.id, 'milestone', me)).toBe(back);
     plans.setTestsAt(plan.id, 'end', me);
-    await new Promise((r) => setTimeout(r, 30));
+    // Written now, not after a guessed 30 ms (macOS CI's runner was slower than that).
+    plans.flush();
     const again = new Plans({ store: new Store(initialState('room')), dir });
     expect(again.get(plan.id)?.testsAt).toBe('end');
   });

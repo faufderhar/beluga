@@ -20,6 +20,8 @@ import { AgentRef } from '../../protocol.js';
  *   one): the friend makes their own copy (copy.ts). When they can't clone it, `copy_request` asks
  *   the owner's Mac for a bundle of it, and `copy_ready` says where to fetch it (or `copy_failed`).
  *   `repo`: that address for a project shared a worktree at a time too (a fork looks for it in yours).
+ * - `chats`: the owner's plain chats (no project folder), each shared on its own: a friend gets
+ *   their conversation and Scratch, never a copy or a fork.
  * - `fork_request`: a friend who works in one of your worktrees wants their own fork of it on their
  *   Mac (fork.ts), with the commits they `have` (left out of the pack). `fork_ready` says where to
  *   fetch the pack and how many `files` are in it, for its progress (or `fork_failed`, why not).
@@ -66,6 +68,7 @@ export const ShareMsg = z.discriminatedUnion('k', [
     members: z.array(z.object({ peerId, name: text(80), role })).max(100),
     copy: z.object({ url: repoUrl.optional() }).optional(),
     repo: repoUrl.optional(),
+    chats: z.literal(true).optional(),
   }),
   z.object({ k: z.literal('copy_request'), id }),
   z.object({ k: z.literal('copy_ready'), id, share: id, size: z.number().int().min(0) }),

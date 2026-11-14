@@ -1,8 +1,10 @@
 /**
  * How long waitFor waits when not told: longer on CI, whose shared runners can stall for seconds
- * (only a wait that fails takes the extra time). Give a wait that has more to do its own.
+ * (only a wait that fails takes the extra time). Give a wait that has more to do its own. 20 s: a
+ * macOS runner once took over 10 s to end a stopped run that ends at once here (BLG-721), and it
+ * stays under the 30 s a test gets (vitest.config.ts).
  */
-export const WAIT_MS = process.env.CI ? 10_000 : 3_000;
+export const WAIT_MS = process.env.CI ? 20_000 : 3_000;
 
 export async function waitFor<T>(fn: () => T | undefined | false | null, timeoutMs = WAIT_MS): Promise<T> {
   const start = Date.now();

@@ -4,6 +4,7 @@
  * Mac: each its own conversation (channel) and Claude session, deletable for good. Browser-safe:
  * the screens, the phone's views and the daemon all name them by these channels.
  */
+import { chatMentionsAsTitles } from './chat-ref.js';
 export const ASSISTANT_CHANNEL = 'mac:assistant';
 
 /** Which kind of computer Beluga runs on (its channels keep saying `mac:` everywhere). */
@@ -79,10 +80,10 @@ export const NO_ASSISTANT_CHATS: AssistantChats = { chats: [], active: FIRST_CHA
 /** The channel of the chat open now (the first chat's when there are none yet). */
 export const activeAssistantChannel = (a: AssistantChats): string => a.chats.find((c) => c.id === a.active)?.channel ?? a.chats[0]?.channel ?? ASSISTANT_CHANNEL;
 
-/** A chat's tab name: the first line you wrote in it, short; "New chat" until then. */
+/** A chat's tab name: the first line you wrote in it, short; "New chat" until then. A chat it names shows by its title, not its ref. */
 export function assistantChatTitle(channel: string, log: ReadonlyArray<{ readonly channel: string; readonly type: string; readonly byAgent?: boolean; readonly text?: string }>, max = 28): string {
   const first = log.find((l) => l.channel === channel && l.type === 'chat' && !l.byAgent && l.text?.trim());
-  const line = first?.text?.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const line = chatMentionsAsTitles(first?.text ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   if (!line) return 'New chat';
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 }

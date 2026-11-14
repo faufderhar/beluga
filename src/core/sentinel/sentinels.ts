@@ -70,6 +70,7 @@ import {
   RUN_STATES,
   lastRunOf,
   scheduleSentence,
+  frequentAgentNote,
   sentinelLabel,
   toSummary,
 } from './model.js';
@@ -819,7 +820,7 @@ export class Sentinels {
 
   /** An external agent's sentinel and dashboard tools: the lists show only what `visible` holds. They have the same limits as your own agent's: never turning one on. */
   toolsForAgent(visible: (sentinel: Sentinel) => boolean): { readonly tools: SentinelTools; readonly dashboard: DashboardTools } {
-    return { tools: this.toolsFor(undefined, undefined, undefined, visible), dashboard: this.dashboardTools(undefined, undefined, visible) };
+    return { tools: this.toolsFor(undefined, undefined, undefined, visible, true), dashboard: this.dashboardTools(undefined, undefined, visible) };
   }
 
   /** Where the Sentinel chat's Claude runs (its own folder and session), your runs only. */
@@ -917,12 +918,16 @@ export class Sentinels {
     return { channel };
   }
 
-  /** Your Claude's change (sentinel_update): a change to what it can do pauses one that was on. */
-  claudeUpdate(ref: string, patch: ToolPatch): { readonly sentinel: Sentinel; readonly paused: boolean } {
+  /**
+   * Your Claude's change (sentinel_update). In a conversation you're in, it keeps the state it had:
+   * on stays on, paused stays paused. Made with nobody watching (`unwatched`: inside a sentinel run,
+   * or by an external agent), a change to what it can do pauses it until you turn it on again.
+   */
+  claudeUpdate(ref: string, patch: ToolPatch, opts: { readonly unwatched?: boolean } = {}): { readonly sentinel: Sentinel; readonly paused: boolean } {
     const was = this.need(ref);
     const next = this.update(was.id, this.fromToolPatch(patch));
     // Paused already (after failures, say): it now says Claude changed it, so Resume runs nothing new unseen.
-    if (!claudeWidened(was, next)) return { sentinel: next, paused: false };
+    if (!opts.unwatched || !claudeWidened(was, next)) return { sentinel: next, paused: false };
     const paused: Sentinel = { ...next, paused: true, pausedWhy: CLAUDE_CHANGED, updatedAt: this.now() };
     this.replace(paused);
     return { sentinel: paused, paused: true };
@@ -2115,7 +2120,9 @@ export class Sentinels {
 
   // ------------------------------------------------------------------ Claude's tools
 
-  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void, visible: (sentinel: Sentinel) => boolean = () => true): SentinelTools {
+  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void, visible: (sentinel: Sentinel) => boolean = () => true, external = false): SentinelTools {
+    // Changes nobody watches (a sentinel run's, an external agent's) pause a sentinel they widen.
+    const unwatched = Boolean(active) || external;
     const line = (s: Sentinel): string => {
       const last = lastRunOf(this.state(), s.id);
       const next = this.nextAtOf(s);
@@ -2135,7 +2142,7 @@ export class Sentinels {
       create: (d: ToolDraft) => {
         const { name: _n, ...refs } = this.fromToolPatch({ trigger: d.trigger, steps: d.steps });
         const draft: SentinelDraft = { ...fromToolDraft(d), ...refs };
-        const made = (s: Sentinel): string => `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. Its steps: ${s.steps.map((st) => `${st.name} (step ${st.id})`).join(', ') || 'none'}. It runs once the user turns it on from its page (you can’t).`;
+        const made = (s: Sentinel): string => `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. Its steps: ${s.steps.map((st) => `${st.name} (step ${st.id})`).join(', ') || 'none'}. It runs once the user turns it on from its page (you can’t).${heedPlan(s)}`;
         if (!(draft.steps ?? []).some(isSourceStep)) {
           const s = this.create(draft);
           onMade?.(s.id);
@@ -2189,7 +2196,7 @@ export class Sentinels {
         if (active?.sentinel.id === this.get(ref)?.id) throw new Error('This run is that sentinel’s: it can’t change itself while it runs');
         const said = (s: Sentinel, paused: boolean): string => {
           const changed = Object.keys(patch).filter((k) => patch[k as keyof ToolPatch] !== undefined);
-          return `Changed “${s.name}” (${changed.join(', ') || 'nothing'}): ${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}; ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}.${paused ? ' It changed what it can do, so it is paused now: the user turns it on again from its page (say so).' : s.paused ? ' It is paused: the user turns it on from its page.' : ''} \`sentinel:${s.id}\``;
+          return `Changed “${s.name}” (${changed.join(', ') || 'nothing'}): ${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}; ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}.${paused ? ' It changed what it can do, so it is paused now: the user turns it on again from its page (say so).' : s.paused ? ' It is paused: the user turns it on from its page.' : ' It stays on: its next run uses the change.'}${heedPlan(s)} \`sentinel:${s.id}\``;
         };
         const was = this.need(ref);
         const next = this.fromToolPatch(patch);
@@ -2198,7 +2205,7 @@ export class Sentinels {
         // The sources it adds or changes (all of them in another project) run once before it's saved.
         const changed = (steps ?? (moved ? was.steps : [])).filter((st) => isSourceStep(st) && (moved || sourceOf(was.steps.find((w) => w.id === st.id)) !== sourceOf(st)));
         if (!changed.length) {
-          const { sentinel: s, paused } = this.claudeUpdate(ref, patch);
+          const { sentinel: s, paused } = this.claudeUpdate(ref, patch, { unwatched });
           return said(s, paused);
         }
         return (async () => {
@@ -2207,7 +2214,7 @@ export class Sentinels {
           const broken = checks.filter((c) => previewBroken(c.preview));
           if (broken.length) throw new Error(notSaved('Not changed', broken));
           // The steps as checked (their ids kept), so what the preview says is what was saved.
-          const { sentinel: s, paused } = this.claudeUpdate(ref, steps ? { ...patch, steps: steps as unknown as ToolPatch['steps'] } : patch);
+          const { sentinel: s, paused } = this.claudeUpdate(ref, steps ? { ...patch, steps: steps as unknown as ToolPatch['steps'] } : patch, { unwatched });
           return `${said(s, paused)}\n\nThe ${checks.length === 1 ? 'source it changed was' : 'sources it changed were'} run once. Show the user this preview, and fix any flagged column or ask them what it means; sentinel_test keeps what it finds:\n\n${redactSecrets(describePreviews(checks.map((c) => c.preview)))}`;
         })();
       },
@@ -2346,6 +2353,12 @@ export function fromToolDraft(d: ToolDraft): SentinelDraft {
     ...(d.notify ? { notify: d.notify } : {}),
     ...(d.keepChats ? { keepChats: d.keepChats } : {}),
   };
+}
+
+/** sentinel_create/update's word about a frequent schedule with an agent step (frequentAgentNote): for Claude to tell the user. */
+function heedPlan(s: Sentinel): string {
+  const note = frequentAgentNote(s);
+  return note ? ` Tell the user: ${note}` : '';
 }
 
 /** Claude's answer, its first lines (the page's box shows it). */

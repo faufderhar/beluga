@@ -51,12 +51,38 @@ export function worktreeShareRows(state: ShareState, wsId: string): WorktreeShar
   return rows;
 }
 
-/** What one row's line under the name says. */
-export function shareRowDetail(row: WorktreeShareRow, inRoom: boolean): string {
+/** Someone a worktree of yours is shared with, for its mark in the sidebar. */
+export interface SharedWithPerson {
+  readonly peerId: string;
+  readonly name: string;
+  readonly role: WsRole;
+}
+
+/**
+ * Who has this worktree now: friends it's shared with over the network (on its own or with its whole
+ * project), people from your room you let in, and anyone else still in its members. Empty: only you.
+ */
+export function worktreeSharedWith(state: ShareState, wsId: string): readonly SharedWithPerson[] {
+  const people: SharedWithPerson[] = worktreeShareRows(state, wsId).flatMap((r) => (r.access === 'none' ? [] : [{ peerId: r.peerId, name: r.name, role: r.access }]));
+  for (const [peerId, role] of Object.entries(state.members[wsId] ?? {})) {
+    if (peerId !== state.self?.peerId && !people.some((p) => p.peerId === peerId)) people.push({ peerId, name: 'someone', role });
+  }
+  return people;
+}
+
+/** What a shared worktree's mark says: "Shared with Bran", "Shared with Bran and Mia", "Shared with Bran and 2 others". */
+export function sharedWithWords(people: readonly Pick<SharedWithPerson, 'name'>[]): string {
+  const names = people.map((p) => p.name);
+  if (names.length <= 2) return `Shared with ${names.join(' and ')}`;
+  return `Shared with ${names[0]} and ${names.length - 1} others`;
+}
+
+/** What one row's line under the name says, about a worktree's sheet or a chat's (`what`). */
+export function shareRowDetail(row: WorktreeShareRow, inRoom: boolean, what: 'worktree' | 'chat' = 'worktree'): string {
   if (row.access === 'contribute') return row.wholeProject ? 'Works with your agent across the whole project' : 'Chats and asks your agent here';
   if (row.access === 'view') return row.wholeProject ? 'Follows the whole project, read-only' : 'Follows along, read-only';
   if (row.guest) return 'Guest';
-  return inRoom ? 'In your room, not in this worktree' : 'Not in this worktree';
+  return inRoom ? `In your room, not in this ${what}` : `Not in this ${what}`;
 }
 
 /** Someone a worktree can be handed to (BLG-341): in your room with their Claude, or a friend over the network. */

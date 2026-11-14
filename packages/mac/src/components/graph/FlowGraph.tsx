@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   applyNodeChanges,
   useNodesInitialized,
+  useOnViewportChange,
   useReactFlow,
   useUpdateNodeInternals,
 } from '@xyflow/react';
@@ -21,6 +22,7 @@ import { PACK_FROM, packedLayout, startView } from './graph-pack.js';
 import { cachedLayout, rememberLayout } from './layout-cache.js';
 import { layout } from './layout.js';
 import { useSharpZoom } from './sharp-zoom.js';
+import { BUSY_FROM, detailAt } from './detail.js';
 import { NODE_TYPES, type FlowNode, drawingOf } from './nodes.js';
 import { EDGE_TYPES, EdgeMarkers, type FlowEdge } from './edges.js';
 import { Inspector } from './Inspector.js';
@@ -142,6 +144,18 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
   });
   const [phase, setPhase] = useState<Phase>(cached ? 'ready' : 'measuring');
   const [hover, setHover] = useState<string>();
+  // While the view moves, cards sliding under a still pointer don't light up one after another (each
+  // relights the whole drawing): what's under it once the view stops does (BLG-931).
+  const moving = useRef(false);
+  const pointer = useRef<{ x: number; y: number }>(undefined);
+  const point = (id: string | undefined): void => {
+    if (!moving.current) setHover(id && graph.nodes.find((n) => n.id === id)?.type !== 'group' ? id : undefined);
+  };
+  const pointAgain = (): void => {
+    const at = pointer.current;
+    const under = at ? document.elementFromPoint(at.x, at.y)?.closest<HTMLElement>('.react-flow__node') : undefined;
+    point(under && wrap.current?.contains(under) ? (under.dataset.id ?? undefined) : undefined);
+  };
   const [selected, setSelected] = useState<string>();
   const [step, setStep] = useState<number>(startStep ?? -1);
   const stepRef = useRef(step);
@@ -162,6 +176,18 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
   const duration = motion ? 450 : 0;
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  const busy = graph.nodes.length >= BUSY_FROM;
+
+  // A busy graph's level of detail follows the zoom, set on the canvas itself: zooming never redraws React.
+  const detail = (zoom: number): void => {
+    const box = wrap.current;
+    const want = detailAt(graph.nodes.length, zoom);
+    if (!box || box.dataset.detail === want) return;
+    if (want) box.dataset.detail = want;
+    else delete box.dataset.detail;
+  };
+  useOnViewportChange({ onChange: (v) => detail(v.zoom) });
+  useEffect(() => detail(flow.getZoom()), [busy]);
 
   // The whole drawing, lines included (ELK's lines can reach past the nodes), framed in the canvas.
   const bounds = useRef<Size | undefined>(cached?.bounds);
@@ -451,19 +477,21 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
   const across = direction === 'right' || direction === 'left';
 
   return (
-    <div ref={wrap} className={g.canvas} data-mode={mode} data-phase={phase} data-ready={phase === 'ready' ? 'true' : 'false'} data-lit={lit ? 'true' : undefined} onKeyDown={onKeyDown} tabIndex={-1}>
+    <div ref={wrap} className={g.canvas} data-mode={mode} data-phase={phase} data-ready={phase === 'ready' ? 'true' : 'false'} data-lit={lit ? 'true' : undefined} onKeyDown={onKeyDown} onPointerMove={(e) => (pointer.current = { x: e.clientX, y: e.clientY })} onPointerLeave={() => (pointer.current = undefined)} tabIndex={-1}>
       <EdgeMarkers id={uid} />
       <ReactFlow<FlowNode, FlowEdge>
         nodes={shown}
         edges={edges}
+        // A busy graph laid out draws only what's in view (all of it while new nodes wait to be measured).
+        onlyRenderVisibleElements={busy && phase === 'ready' && !pending.size}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onNodeDragStart={(_e, n) => setMoved((m) => new Set([...m, n.id, ...graph.nodes.filter((x) => x.group === n.id).map((x) => x.id)]))}
         onNodeClick={(_e, n) => setSelected((s) => (s === n.id ? undefined : n.id))}
         {...(onOpen ? { onNodeDoubleClick: (_e: unknown, n: FlowNode) => onOpen(n.id) } : {})}
-        onNodeMouseEnter={(_e, n) => setHover(n.data.node.type === 'group' ? undefined : n.id)}
-        onNodeMouseLeave={() => setHover(undefined)}
+        onNodeMouseEnter={(_e, n) => point(n.id)}
+        onNodeMouseLeave={() => point(undefined)}
         onPaneClick={() => setSelected(undefined)}
         colorMode={theme}
         minZoom={floor}
@@ -480,6 +508,11 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         panOnScrollSpeed={1}
         onMoveStart={(e) => {
           if (e) touched.current = true;
+          moving.current = true;
+        }}
+        onMoveEnd={() => {
+          moving.current = false;
+          pointAgain();
         }}
         preventScrolling={!inline}
         // React Flow's Space-to-pan listens on the whole window and swallows Space there: inline (in a

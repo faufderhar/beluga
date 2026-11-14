@@ -190,3 +190,103 @@ test('the New Worktree box suggests commands and the project’s files', async (
   await task.press('Escape');
   await expect(list).toBeHidden();
 });
+
+/** A second connection to the demo daemon from the page (the app's own boot code), for driving it. */
+async function daemon<T>(page: Page, fn: string): Promise<T> {
+  return page.evaluate(
+    async (fn) => {
+      const w = window as unknown as { __refs?: Promise<unknown> };
+      w.__refs ??= import('/src/lib/boot.ts').then((m) => m.connect(m.capabilities(() => ({ ok: true, message: '' }))));
+      return new Function('c', `return (${fn})(c)`)(await w.__refs);
+    },
+    fn,
+  ) as Promise<T>;
+}
+
+/** A worktree that isn't a plan's, as "@" and its row name it. */
+async function aWorktree(page: Page): Promise<{ name: string; ref: string; id: string }> {
+  await page.goto('/');
+  return daemon(page, `(c) => { const s = c.store.getState(); const w = s.projects.flatMap((p) => p.workspaces).find((x) => x.kind === 'worktree' && !x.archived); return { name: w.name, id: w.id, ref: s.selfId + '/ws:' + w.id }; }`);
+}
+
+const options = (page: Page) => page.getByRole('listbox', { name: 'Suggestions' }).getByRole('option');
+
+/** A chat's mention as the box writes it (chat/chat-box.ts): its title in brackets, a chip over it, no ref. */
+const short = (title: string): string => `[@\u2007${title.replace(/\s+/g, '\u00a0')}]`;
+
+/** What the box would send: each short mention whole again, ref and all. */
+async function sentFrom(page: Page, box: ReturnType<typeof composer>): Promise<string> {
+  const value = await box.inputValue();
+  return daemon<string>(page, `(c) => import('/src/chat/chat-box.ts').then((m) => m.plainWords(${JSON.stringify(value)}, c.store.getState()))`);
+}
+
+/** What copying the whole box puts on the clipboard. */
+const copied = (box: ReturnType<typeof composer>): Promise<string> =>
+  box.evaluate((el: HTMLTextAreaElement) => {
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+    const data = new DataTransfer();
+    el.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }));
+    return data.getData('text/plain');
+  });
+
+test('"@" offers a chat by its title; the prompt holds the reference and the chat shows the chip', async ({ page }) => {
+  const { name, ref } = await aWorktree(page);
+  await sidebar(page).getByText('Your Mac', { exact: true }).click();
+  const box = page.getByRole('textbox', { name: 'Ask your Mac anything' });
+  await box.fill(`what happened in @${name}`);
+  const row = options(page).filter({ hasText: `@${name}` });
+  await expect(row).toBeVisible();
+  await expect(page.getByRole('listbox', { name: 'Suggestions' })).toContainText('Chats');
+  await row.click();
+  // The box shows the chat as a chip with its title only: no parentheses, no ref.
+  await expect(box).toHaveValue(`what happened in ${short(name)} `);
+  const chipInBox = page.locator(`[data-testid="mention-highlighter"] [data-kind="chat"]`);
+  await expect(chipInBox).toHaveText(new RegExp(name));
+  await expect(page.getByTestId('mention-highlighter')).not.toContainText('(chat:');
+  await expect(page.getByRole('group', { name: 'Chat mentioned' }).or(page.getByLabel('Chat mentioned'))).toContainText(name);
+  // Copied, and as sent, the words carry the ref.
+  expect(await copied(box)).toBe(`what happened in @${name} (chat: ${ref}) `);
+  expect(await sentFrom(page, box)).toBe(`what happened in @${name} (chat: ${ref}) `);
+  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.beluga/scratch/20-chat-in-at-list.png') });
+  await box.press('Enter');
+  await expect(box).toHaveValue('');
+  // The words sent keep the reference, the chat draws the chip, and the bubble shows no ref.
+  await expect.poll(() => daemon<string[]>(page, `(c) => c.store.getState().log.filter((l) => l.type === 'chat').map((l) => l.text)`)).toContainEqual(`what happened in @${name} (chat: ${ref})`);
+  const bubble = page.locator('main [data-mine="true"]').filter({ hasText: 'what happened in' }).last();
+  await expect(bubble.getByRole('button', { name: `Worktree ${name}` })).toBeVisible();
+  await expect(bubble).not.toContainText('(chat:');
+  await page.screenshot({ path: path.join(import.meta.dirname, '../../../.beluga/scratch/21-chat-chip-sent.png') });
+});
+
+test('a pasted chat link becomes a chip; Backspace takes the chip whole; copy keeps the ref', async ({ page }) => {
+  const { name, ref, id } = await aWorktree(page);
+  const link = `beluga://chat/${ref.split('/')[0]}/${encodeURIComponent(`ws:${id}`)}`;
+  await sidebar(page).getByText('Your Mac', { exact: true }).click();
+  const box = page.getByRole('textbox', { name: 'Ask your Mac anything' });
+  await box.fill('');
+  await pasteText(box, link);
+  await expect(box).toHaveValue(`${short(name)} `);
+  await box.press('Backspace');
+  await expect(box).toHaveValue(short(name));
+  await box.press('Backspace');
+  await expect(box).toHaveValue('');
+  // In the middle of words, without their punctuation; copied, it keeps its ref.
+  await pasteText(box, `see ${link}, please`);
+  await expect(box).toHaveValue(`see ${short(name)}, please`);
+  expect(await copied(box)).toBe(`see @${name} (chat: ${ref}), please`);
+});
+
+test('"@" doesn’t offer the chat you are in', async ({ page }) => {
+  await aWorktree(page);
+  for (const project of ['bob-api', 'landing']) await sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first().click();
+  const shown = await daemon<string[]>(page, `(c) => c.store.getState().projects.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && !w.archived).map((w) => w.name)`);
+  const here = await (async () => {
+    for (const w of shown) if (await sidebar(page).getByText(w, { exact: true }).count()) return w;
+    throw new Error('No worktree has a row');
+  })();
+  await sidebar(page).getByText(here, { exact: true }).first().click();
+  const box = page.getByRole('textbox', { name: `Tell Claude what to do in ${here}` });
+  await box.fill(`@${here}`);
+  await expect(options(page).filter({ hasText: `@${here}` }).filter({ hasText: 'Worktree' })).toHaveCount(0);
+});

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { FsEntry } from '../src/protocol.js';
+import { chatsToMention } from '../src/core/chat-links/resolve.js';
+import { parseInput } from '../src/core/mentions.js';
+import type { DomainState } from '../src/core/store.js';
+import type { FsEntry, PeerInfo } from '../src/protocol.js';
+import { chatLinksToMentions, chatMention, parseChatRef, withChatWords } from '../src/shared/chat-ref.js';
 import { linkMentions, parseMentionHref, resolveMention, splitMentions, type MentionWorld } from '../packages/mac/src/chat/mentions.js';
 import { mentionDir, suggest, typedMention } from '../src/ui/suggest.js';
 
@@ -46,6 +50,104 @@ describe('what a mention names', () => {
     const href = /\((beluga-mention:[^)]+)\)/.exec(first!)![1]!;
     expect(parseMentionHref(href)).toEqual({ kind: 'friend', label: 'mia', id: 'mia-peer-0001' });
     expect(parseMentionHref('beluga-mention:%7Bnope')).toBeUndefined();
+  });
+});
+
+describe('a chat in the words', () => {
+  const ref = 'peer-owner-0001/ws:wt-login';
+
+  it('is one piece, title and all, that keeps the text as written', () => {
+    expect(splitMentions(`read @Fix the login (chat: ${ref}), and @mia`, world)).toEqual([
+      { text: 'read ' },
+      { raw: `@Fix the login (chat: ${ref})`, ref: { kind: 'chat', label: 'Fix the login', id: ref } },
+      { text: ', and ' },
+      { raw: '@mia', ref: { kind: 'friend', label: 'mia', id: 'mia-peer-0001' } },
+    ]);
+    // A mention before it doesn't swallow the words up to it.
+    expect(splitMentions(`@mia see @Fix (chat: ${ref})`, world).map((p) => ('ref' in p ? p.ref.kind : 'text'))).toEqual(['friend', 'text', 'chat']);
+  });
+
+  it('stays words for a malformed ref, and for the room', () => {
+    for (const bad of ['nope', 'peer-owner-0001/room', 'peer-owner-0001/dm:bob']) expect(splitMentions(`@Fix (chat: ${bad})`, world)).toEqual([{ text: `@Fix (chat: ${bad})` }]);
+  });
+
+  it('becomes a mention link that names the chat', () => {
+    const href = /\((beluga-mention:[^)]+)\)/.exec(linkMentions(`@Fix (it) (chat: ${ref}) ok @Fix login (chat: ${ref})`, world))![1]!;
+    expect(parseMentionHref(href)).toEqual({ kind: 'chat', label: 'Fix login', id: ref });
+  });
+
+  it('is written from a title that cannot break it', () => {
+    expect(chatMention('Fix (the) @login\nnow', parseChatRef(ref)!)).toBe(`@Fix the login now (chat: ${ref})`);
+    expect(chatMention('  ()  ', parseChatRef(ref)!)).toBe(`@Chat (chat: ${ref})`);
+    expect(chatMention('Fix', { owner: 'x', channel: 'room' })).toBeUndefined();
+  });
+
+  it('a pasted link becomes one; other links and links in Markdown stay', () => {
+    const link = `beluga://chat/peer-owner-0001/${encodeURIComponent('ws:wt-login')}`;
+    const titleOf = (): string => 'Fix login';
+    expect(chatLinksToMentions(link, titleOf)).toBe(`@Fix login (chat: ${ref}) `);
+    expect(chatLinksToMentions(`see ${link}, and ${link}.`, titleOf)).toBe(`see @Fix login (chat: ${ref}), and @Fix login (chat: ${ref}).`);
+    for (const stays of [`[x](${link})`, `x${link}`, 'beluga://chat/peer-owner-0001/room', 'https://example.com', 'no link']) expect(chatLinksToMentions(stays, titleOf)).toBeUndefined();
+  });
+
+  it('goes in a draft apart from the words around it', () => {
+    expect(withChatWords('', 0, '@A')).toEqual({ text: '@A ', caret: 3 });
+    expect(withChatWords('see', 3, '@A')).toEqual({ text: 'see @A ', caret: 7 });
+    expect(withChatWords('see ', 4, '@A')).toEqual({ text: 'see @A ', caret: 7 });
+    expect(withChatWords('see this', 3, '@A')).toEqual({ text: 'see @A this', caret: 6 });
+    expect(withChatWords('see this', 0, '@A')).toEqual({ text: '@A see this', caret: 3 });
+  });
+
+  it('at the start of a message is no person to ask', () => {
+    const peers = [{ peerId: 'me', name: 'me', agent: true, shares: [] }, { peerId: 'b', name: 'Fix', agent: true, shares: [] }] as unknown as PeerInfo[];
+    expect(parseInput(`@Fix the login (chat: ${ref}) what happened?`, 'me', peers)).toMatchObject({ kind: 'chat', text: `@Fix the login (chat: ${ref}) what happened?` });
+    expect(parseInput(`@Fix (chat: ${ref}) what happened?`, 'me', peers)).toMatchObject({ kind: 'chat' });
+    expect(parseInput(`@claude @Fix the login (chat: ${ref}) what happened?`, 'me', peers)).toMatchObject({ kind: 'agent', prompt: `@Fix the login (chat: ${ref}) what happened?`, unknown: [] });
+    expect(parseInput('@Fix what happened?', 'me', peers)).toMatchObject({ kind: 'agent', prompt: 'what happened?' });
+  });
+});
+
+describe('offering chats', () => {
+  const ctx = {
+    peers: [],
+    selfId: 'me',
+    chats: [
+      { title: 'Fix the login', ref: 'peer-owner-0001/ws:wt-login', hint: 'Worktree' },
+      { title: 'Dark mode', ref: 'peer-other-0001/ws:wt-dark', hint: 'Shared' },
+    ],
+  };
+
+  it('finds a chat by a word of its title, and fills in the reference', () => {
+    expect(suggest('see @log', ctx)).toEqual([{ label: '@Fix the login', hint: 'Worktree', value: 'see @Fix the login (chat: peer-owner-0001/ws:wt-login) ', enter: 'complete', kind: 'chat' }]);
+    expect(suggest('@dark-mo', ctx).map((s) => s.label)).toEqual(['@Dark mode']);
+    expect(suggest('@checkout-ev', { ...ctx, chats: [{ title: 'checkout-events', ref: 'peer-owner-0001/ws:wt-c', hint: 'Worktree' }] }).map((s) => s.label)).toEqual(['@checkout-events']);
+    expect(suggest('@zzz', ctx)).toEqual([]);
+  });
+
+  it('offers none for a lone @ or inside a path', () => {
+    expect(suggest('@', ctx).filter((s) => s.kind === 'chat')).toEqual([]);
+    expect(suggest('@login/', ctx)).toEqual([]);
+  });
+
+  it('lists your chats and shared ones, not the one you are in, a main folder, an archived chat or a bad address', () => {
+    const state = {
+      selfId: 'peer-self-00001',
+      projectsLoaded: true,
+      log: [],
+      projects: [{ workspaces: [
+        { id: 'wt-a', name: 'Worktree A', kind: 'worktree' },
+        { id: 'wt-b', name: 'Worktree B', kind: 'worktree' },
+        { id: 'wt-c', name: 'Archived', kind: 'worktree', archived: true },
+        { id: 'main', name: 'main', kind: 'main' },
+      ] }],
+      assistant: { chats: [] },
+      sentinel: {},
+      shared: [{ owner: 'peer-mia-000001', id: 'wt-m', name: 'Theirs' }],
+    } as unknown as DomainState;
+    expect(chatsToMention(state, 'ws:wt-a').map((c) => [c.title, c.ref, c.kind, c.ownership])).toEqual([
+      ['Worktree B', 'peer-self-00001/ws:wt-b', 'worktree', 'own'],
+      ['Theirs', 'peer-mia-000001/ws:wt-m', 'worktree', 'shared'],
+    ]);
   });
 });
 

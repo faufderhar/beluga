@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { runtimeMark } from '@beluga/shared/agent-marks.js';
 import { agentPicker } from '@beluga/shared/agent-picker.js';
+import { MODEL_PAGE, SEARCH_MODELS_OVER, searchModels, shownCount } from '@beluga/shared/model-search.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
-import { foreignMark, myRuntime, pickerState, samePicker, setMyAgent } from '../../chat/ModelPicker.js';
+import { myRuntime, pickerState, samePicker, setMyAgent } from '../../chat/ModelPicker.js';
+import { foreignMark } from '../../chat/model-words.js';
+import ps from '../../chat/picker.module.css';
 import { Field, FormSheet, PickList, formStyles as f } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
 import { useMyAgentName } from '../../lib/agent-words.js';
@@ -22,6 +25,11 @@ export function ModelSheet({ menu, close }: NativeMenuProps<'model'>) {
   const models = group?.models ?? [];
   const current = picker.model;
   const [value, setValue] = useState(current);
+  // A long list (OpenCode with every provider, BLG-945): searched, the best first, and a page of it drawn.
+  const [query, setQuery] = useState('');
+  const searchable = models.length > SEARCH_MODELS_OVER;
+  const found = searchable ? searchModels(models, query, picker.runtime) : models;
+  const shown = found.slice(0, shownCount(found.length, MODEL_PAGE, query.trim() ? -1 : found.findIndex((m) => m.value === current)));
   const use = (v: string): void => {
     if (!group || models.find((m) => m.value === v)?.why) return;
     if (menu.channel === undefined) setMyAgent(api, group.runtime, group.label, v);
@@ -40,12 +48,18 @@ export function ModelSheet({ menu, close }: NativeMenuProps<'model'>) {
       onCancel={close}
       width={500}
     >
+      {searchable ? (
+        <label className={ps.searchRow}>
+          <Icon name="search" size={12} />
+          <input className={ps.search} type="search" value={query} placeholder={`Search ${models.length} models`} aria-label={`Search ${who} models`} spellCheck={false} autoComplete="off" autoFocus onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && shown[0] && (e.preventDefault(), setValue(shown[0].value))} />
+        </label>
+      ) : null}
       <PickList
         label={`${who} models`}
         value={value}
         onChange={setValue}
         onChoose={use}
-        rows={models.map((m) => ({
+        rows={shown.map((m) => ({
           value: m.value,
           leading: <Icon name={foreignMark(m.value, picker.runtime) ?? runtimeMark(picker.runtime)} size={13} />,
           name: m.label,
@@ -53,6 +67,8 @@ export function ModelSheet({ menu, close }: NativeMenuProps<'model'>) {
           trailing: m.value === current ? <Icon name="check" size={13} /> : undefined,
         }))}
       />
+      {searchable && found.length > shown.length ? <p className={f.hint}>{`${shown.length} of ${found.length} shown. Search to find the others.`}</p> : null}
+      {searchable && !found.length ? <p className={f.hint}>{`No ${who} model matches “${query.trim()}”.`}</p> : null}
     </FormSheet>
   );
 }

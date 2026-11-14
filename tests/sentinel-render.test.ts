@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '../src/core/sentinel/render.js';
-import { NO_SENTINEL, type RunSummary, type Sentinel, accessAllows, firstLine, reduceSentinel, scheduleSentence, sentinelOwnerOf, slugOf, stepRefusal, stepSentence } from '../src/core/sentinel/model.js';
+import { NO_SENTINEL, type RunSummary, type Sentinel, accessAllows, firstLine, frequentAgentNote, reduceSentinel, scheduleSentence, sentinelOwnerOf, slugOf, stepRefusal, stepSentence } from '../src/core/sentinel/model.js';
 
 /** Templates, the sentences every screen shows, and the state slice. */
 
@@ -47,6 +47,10 @@ describe('sentences', () => {
     expect(s({ every: 'month', day: 22, at: '17:30' })).toBe('Every month on the 22nd at 17:30');
     expect(s({ every: 'hours', hours: 3 })).toBe('Every 3 hours');
     expect(s({ every: 'hours', hours: 1 })).toBe('Every hour');
+    expect(s({ every: 'minutes', minutes: 15 })).toBe('Every 15 minutes');
+    expect(s({ every: 'minutes', minutes: 5 })).toBe('Every 5 minutes');
+    expect(s({ every: 'minutes' })).toBe('Every 30 minutes');
+    expect(s({ every: 'minutes', minutes: 1 })).toBe('Every minute');
     expect(scheduleSentence({ kind: 'manual' })).toBe('Only when you press Run');
     expect(scheduleSentence({ kind: 'after', sentinelId: 'sn_1', on: 'failure' }, () => 'Nightly tests')).toBe('After “Nightly tests” fails');
     expect(scheduleSentence({ kind: 'github', what: 'workflow-failed' })).toBe('When a workflow fails on GitHub');
@@ -102,5 +106,24 @@ describe('the state slice', () => {
     const state = { ...NO_SENTINEL, items: [item], runs: [run('r1', 'done', { worktreeId: 'w9', channel: 'ws:w9' })] };
     expect(sentinelOwnerOf(state, 'w9')?.id).toBe('sn_1');
     expect(sentinelOwnerOf(state, 'w1')).toBeUndefined();
+  });
+});
+
+describe('a schedule every few minutes with an agent step', () => {
+  const ask = { id: 's1', name: 'Ask', kind: 'claude', where: 'project', prompt: 'go' } as never;
+  const keep = { id: 's2', name: 'Keep', kind: 'measure' } as never;
+  const at = (minutes: number, perDay?: number, steps = [ask]) => frequentAgentNote({ trigger: { kind: 'schedule', every: 'minutes', minutes: minutes as 5, at: '00:00', missed: 'skip' }, steps, limits: { minutes: 10, pauseAfter: 3, ...(perDay ? { perDay } : {}) } });
+
+  it('says how many times a day it asks the agent', () => {
+    expect(at(15)).toMatch(/^Its agent step runs up to 96 times a day, which uses your plan’s limits quickly/);
+    expect(at(30)).toMatch(/up to 48 times a day/);
+    expect(at(1)).toMatch(/up to 1440 times a day/);
+    expect(at(5, 100)).toMatch(/up to 100 times a day \(its runs-per-day limit\)/);
+  });
+
+  it('says nothing when runs per day keeps it light, without an agent step, or on a slower schedule', () => {
+    expect(at(15, 12)).toBeUndefined();
+    expect(at(5, undefined, [keep])).toBeUndefined();
+    expect(frequentAgentNote({ trigger: { kind: 'schedule', every: 'hours', hours: 1, at: '00:00', missed: 'skip' }, steps: [ask], limits: { minutes: 10, pauseAfter: 3 } })).toBeUndefined();
   });
 });

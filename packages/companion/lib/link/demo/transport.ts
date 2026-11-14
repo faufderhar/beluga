@@ -692,6 +692,10 @@ export class DemoTransport implements Transport {
         return ok(true);
       }
 
+      // ---- a chat's address: the demo has none to find
+      case 'chats.resolve':
+        return ok(null);
+
       // ---- a live view's rows (the demo's shop.db), paged, sorted and filtered as the Mac does
       case 'companion.viewFetch': {
         const a = args[0] as { source?: { query?: string }; query: ViewQuery };

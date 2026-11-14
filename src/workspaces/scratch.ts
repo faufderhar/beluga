@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { SCRATCH_DIR, SHOWN_SCRATCH_DIRS } from '../shared/scratch-dir.js';
@@ -193,6 +193,26 @@ export async function tidyScratch(dir: string, opts: TidyOptions): Promise<strin
   }
   totals.delete(dir);
   return gone;
+}
+
+/**
+ * Copy one workspace's scratch folder into another's (a fork gets everything its source made), as
+ * clones where the disk can (APFS: instant, no space used). Links are left behind, never followed;
+ * nothing there yet copies nothing. Resolves whether there was a folder to copy.
+ */
+export async function copyScratch(fromDir: string, toDir: string): Promise<boolean> {
+  const from = path.join(fromDir, SCRATCH_DIR);
+  const st = await fs.lstat(from).catch(() => undefined);
+  if (!st?.isDirectory() || !(await noLinks(fromDir)) || !(await noLinks(toDir))) return false;
+  await fs.cp(from, path.join(toDir, SCRATCH_DIR), {
+    recursive: true,
+    mode: fsConstants.COPYFILE_FICLONE,
+    errorOnExist: false,
+    force: false,
+    filter: async (src) => !(await fs.lstat(src).catch(() => undefined))?.isSymbolicLink(),
+  });
+  totals.delete(toDir);
+  return true;
 }
 
 /**

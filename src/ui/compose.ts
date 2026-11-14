@@ -1,4 +1,5 @@
 import type { AppState } from '../core/store.js';
+import type { ChatOrigin } from '../protocol.js';
 import type { SlotWait } from '../shared/run-slots.js';
 import { isRunning } from './format.js';
 import type { UiState } from './keymap.js';
@@ -28,13 +29,15 @@ export interface QueuedMessage {
   readonly yours: boolean;
   /** It waits for a free Claude (its Claude works in as many conversations as it may), not for a run here. */
   readonly slotWait?: SlotWait;
+  /** An agent in another chat sent it, not you: never your words, so it can't go back in your box. */
+  readonly origin?: ChatOrigin;
 }
 
 /** What waits in this conversation for your Claude, and what you asked others' Claudes, in run order. */
 export function queueIn(state: Pick<AppState, 'log'>, channel: string, selfId: string): QueuedMessage[] {
   return state.log.flatMap((l) => {
     if (l.type !== 'agent' || l.channel !== channel || l.status !== 'queued' || !inYourQueue(l, selfId)) return [];
-    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBy(l, selfId), ...(l.slotWait ? { slotWait: l.slotWait } : {}) }];
+    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBy(l, selfId), ...(l.slotWait ? { slotWait: l.slotWait } : {}), ...(l.origin ? { origin: l.origin } : {}) }];
   });
 }
 

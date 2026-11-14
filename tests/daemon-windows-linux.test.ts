@@ -58,13 +58,16 @@ describe('the terminal on Windows', () => {
   it('keeps every Mac and Linux shell as it was: -l whenever it is a login shell', () => {
     for (const shell of ['/bin/zsh', '/opt/homebrew/bin/fish', '/usr/local/bin/pwsh', '/usr/local/bin/elvish', undefined]) {
       expect(shellArgs({ login: true, extra: [], ...(shell ? { shell } : {}) })).toEqual(['-l']);
-      expect(commandArgs(shell, 'npm i')).toEqual(['-l', '-c', 'npm i']);
+      expect(commandArgs(shell, 'npm i')[0]).toBe('-l');
     }
+    // An sh-like shell stays to end last (so a quick command's own exit can't hang up its terminal); others run it as is.
+    for (const shell of ['/bin/zsh', '/bin/bash', undefined]) expect(commandArgs(shell, 'touch .ready')).toEqual(['-l', '-c', 'touch .ready\nexit $?']);
+    for (const shell of ['/opt/homebrew/bin/fish', '/usr/local/bin/pwsh', '/usr/local/bin/elvish']) expect(commandArgs(shell, 'npm i')).toEqual(['-l', '-c', 'npm i']);
     expect(shellArgs({ login: false, extra: ['-i'], shell: '/bin/zsh' })).toEqual(['-i']);
   });
 
   it('runs one command line the way each Windows shell takes it', () => {
-    expect(commandArgs(BASH, 'npm i && npm run dev')).toEqual(['-l', '-c', 'npm i && npm run dev']);
+    expect(commandArgs(BASH, 'npm i && npm run dev')).toEqual(['-l', '-c', 'npm i && npm run dev\nexit $?']);
     expect(commandArgs(PWSH, 'npm i')).toEqual(['-NoLogo', '-Command', 'npm i']);
     expect(commandArgs(POWERSHELL, 'npm i')).toEqual(['-NoLogo', '-Command', 'npm i']);
     expect(commandArgs(CMD, 'npm i')).toEqual(['/d', '/s', '/c', 'npm i']);

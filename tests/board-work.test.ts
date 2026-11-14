@@ -353,6 +353,32 @@ describe('Claude and the board', () => {
     expect(work.forRun('room', 'p-me')!.brief).not.toContain('project_context');
   });
 
+  it('task_start: a worktree in another project starts the task it made there, its agent on it; once', async () => {
+    const { board, work, open, asked } = setup();
+    open(ws('wa', 'api', 'add-auth'));
+    const run = work.forRun('ws:wa', 'p-me')!;
+    expect(run.brief).toContain('task_start makes a task');
+    const made = run.tools!.create({ title: 'Hero copy', project: 'landing', goal: 'Say what Bob does.' });
+    expect(made).toMatch(/^Created LND-1/);
+    const said = await run.tools!.start('lnd-1');
+    const issue = board.need('LND-1');
+    const wsId = issue.worktrees.at(-1)!;
+    expect(said).toBe(`Started LND-1 in the worktree "lnd-1-hero-copy" in landing: its agent is working it from its brief now. Name both in your answer: \`task:LND-1\` and \`worktree:${wsId}\`.`);
+    expect(issue).toMatchObject({ status: 'in_progress', assignee: { kind: 'person', id: 'p-me' } });
+    expect(asked.at(-1)![1]).toBe(`ws:${wsId}`);
+    // A chat not in any project can start one too; a task already started points at its worktree.
+    await expect(work.forRun('room', 'p-me')!.tools!.start('LND-1')).rejects.toThrow(/already being worked on in lnd-1-hero-copy/);
+  });
+
+  it('task_start is never a friend’s: starting work runs an agent on this Mac', async () => {
+    const { board, work, open } = setup();
+    open(ws('w1', 'api', 'add-auth'));
+    board.create({ projectId: 'api', title: 'Retries', status: 'todo' }, work.me());
+    const friend = work.forRun('ws:w1', 'p-bob', { friend: { id: 'p-bob', name: 'Bob' } })!;
+    await expect(friend.tools!.start('BOB-1')).rejects.toThrow(/starting work is the owner’s/);
+    expect(board.need('BOB-1').status).toBe('todo');
+  });
+
   it('elsewhere: a note that the board is there, and tools that need a key', () => {
     const { work } = setup();
     const run = work.forRun('room', 'p-me')!;

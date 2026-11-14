@@ -10,6 +10,23 @@ Beluga can run [OpenCode](https://opencode.ai) as your agent, beside Claude, Cod
 
 Make it yours with the radio button, or pick it for one conversation in the agent picker above the message box. Its models are listed under OpenCode, each with the efforts it takes.
 
+## Many providers, and finding a model
+
+OpenCode lists every model of every provider you've set up, so the list can get long (OpenRouter alone brings hundreds). In the agent picker:
+
+- Each provider's models sit under its name: OpenCode Zen, Anthropic, DeepSeek, Moonshot AI (Kimi), OpenRouter…
+- **Search** sits on top of a long list, and has the cursor when the picker opens on it. Type any part of a model's name or its provider ("kimi", "deepseek free", "openrouter qwen"): the best matches come first, and **Enter** picks the first. The first **Esc** clears the search.
+- The list draws a page of models at a time, and more as you scroll, with the model you picked always shown.
+- **Choose the Model…** (in the command palette) has the same search. On the phone, the picker has a search field too. It shows the first 30 models, always with the one you picked, and says how many more are on your Mac.
+
+## DeepSeek and Kimi
+
+OpenCode runs DeepSeek's and Moonshot AI's Kimi models with your own API key, or through OpenRouter.
+
+1. Press **Add a provider** at the foot of OpenCode's models in the agent picker. It runs `opencode auth login` in Terminal.
+2. Pick **DeepSeek** or **Moonshot AI** (or **Moonshot AI (China)**, or **OpenRouter**), and paste your key.
+3. Back in Beluga, press **Look again** in the picker. The new models show under their provider, each with its own mark.
+
 ## What works
 
 - Worktrees and chats, with steps on the card as they happen: reads, edits, commands, searches and Beluga's own tools.

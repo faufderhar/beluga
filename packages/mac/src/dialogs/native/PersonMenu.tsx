@@ -3,6 +3,7 @@ import { type ReactNode, useState } from 'react';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
 import { defaultAgentOf } from '@beluga/protocol.js';
 import { agentName } from '@beluga/shared/agent-label.js';
+import { ContextRoot } from '../../components/ContextRoot.js';
 import { cx } from '../../components/ui.js';
 import { befriend, openFriendCard } from '../../network/use-net.js';
 import { useActions } from '../../lib/actions.js';
@@ -29,14 +30,14 @@ export function PersonContextMenu({ index, children }: { index: number; children
   const peer = useApp((st) => st.peers[index]);
   return (
     <>
-      <Context.Root modal={false}>
+      <ContextRoot>
         <Context.Trigger asChild>{children}</Context.Trigger>
         <Context.Portal>
           <Context.Content className={m.menu} collisionPadding={8}>
             <Items index={index} onRemove={setRemoving} onRun={() => setRunning(true)} />
           </Context.Content>
         </Context.Portal>
-      </Context.Root>
+      </ContextRoot>
       {running && peer ? <RunCommandSheet peer={peer} close={() => setRunning(false)} /> : null}
       {removing ? (
         <Alert

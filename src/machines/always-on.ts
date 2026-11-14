@@ -4,8 +4,8 @@ import { roleOf } from '../companion/device-crypto.js';
 import { deviceId } from '../companion/devices.js';
 import type { DeviceCert } from '../companion/protocol.js';
 import type { SwappableIdentity } from '../core/identity.js';
-import { type Identity, identityFromPem, identityPem, loadIdentity, saveIdentity } from '../net/crypto.js';
-import { STANDBY_IDENTITY, readIdentityFile, standbyIdentity } from './identity-load.js';
+import { type Identity, identityFromPem, identityPem, saveIdentity } from '../net/crypto.js';
+import { STANDBY_IDENTITY, identityOrOneOff, readIdentityFile, standbyIdentity } from './identity-load.js';
 import { StandInChanges, applyChanges, beginStandIn, changesSince, endStandIn } from './standin-settings.js';
 import { rmSync } from 'node:fs';
 import type { MessageSocket } from '../net/transport.js';
@@ -261,7 +261,8 @@ export class AlwaysOn {
     // identity.json holding a stand-in key (this Mac standing in) stays: it's what this Mac goes back to.
     const onDisk = readIdentityFile(path.join(dir, IDENTITY_FILE));
     wipeNetwork(dir, { keepIdentity: onDisk !== undefined && onDisk.peerId !== you.current().peerId });
-    you.swap(loadIdentity(path.join(dir, IDENTITY_FILE)));
+    // A stand-in key kept there but broken mustn't stop the handover halfway: a one-off, as at start.
+    you.swap(identityOrOneOff(path.join(dir, IDENTITY_FILE), (m) => this.opts.log?.(`always-on: ${m}`)));
   }
 
   private settled(): void {

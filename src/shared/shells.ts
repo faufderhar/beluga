@@ -67,11 +67,24 @@ export const shellArgs = (opts: { readonly login: boolean; readonly extra: reado
  * any shell on a Mac or Linux, as before), `-Command …` for PowerShell, `/d /s /c …` for cmd.
  */
 export function commandArgs(shell: string | undefined, command: string): string[] {
-  if (!shell || !WINDOWS_PROGRAM.test(shell)) return ['-l', '-c', command];
+  const line = heldOpen(shell, command);
+  if (!shell || !WINDOWS_PROGRAM.test(shell)) return ['-l', '-c', line];
   const name = base(shell).toLowerCase();
   if (name === 'pwsh' || name === 'powershell') return ['-NoLogo', '-Command', command];
   if (name === 'cmd') return ['/d', '/s', '/c', command];
-  return takesLoginFlag(shell) ? ['-l', '-c', command] : ['-c', command];
+  return takesLoginFlag(shell) ? ['-l', '-c', line] : ['-c', line];
+}
+
+/**
+ * An sh-like shell's command line, with the shell kept as the terminal's last process. Given one
+ * command, bash and zsh exec it in their place; a program that closes its own output just before it
+ * ends (`touch`, most of coreutils) then closes the terminal while it is still alive, the terminal
+ * hangs up, and Linux kills it with SIGHUP: a setup that worked reads as failed (2% of `touch .ready`
+ * on CI's runners). An `exit` after it keeps the shell there to end last, with the command's code.
+ * On its own line, so a comment at the end of the command can't swallow it.
+ */
+function heldOpen(shell: string | undefined, command: string): string {
+  return !shell || isPosixShell(shell) ? `${command}\nexit $?` : command;
 }
 
 /**

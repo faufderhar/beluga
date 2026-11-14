@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { copyFileSync, mkdirSync, promises as fs, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, promises as fs, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,25 +89,45 @@ export function expandChips(text: string, selfId: string, publish: (a: Attachmen
   return { text: out, attachments: used };
 }
 
+const IMAGE_LINK = /klaud-attachment:[^/\s)]+\/([^/\s)]+)/g;
+
 /** Images on this computer linked from a prompt (only files in the attachments folder count). */
 export function linkedImages(prompt: string, dir = attachmentsDir()): string[] {
   const out: string[] = [];
-  for (const m of prompt.matchAll(/klaud-attachment:[^/\s)]+\/([^/\s)]+)/g)) {
-    const name = m[1] ?? '';
-    if (!IMAGE_EXT.test(name) || name.startsWith('.')) continue;
-    for (const where of [dir, path.join(dir, 'room')]) {
-      const abs = path.join(where, name);
-      try {
-        if (statSync(abs).isFile() && !out.includes(abs)) {
-          out.push(abs);
-          break;
-        }
-      } catch {
-        // not here
-      }
-    }
+  for (const m of prompt.matchAll(IMAGE_LINK)) {
+    const abs = ownAttachment(m[1] ?? '', dir);
+    if (abs && !out.includes(abs)) out.push(abs);
   }
   return out;
+}
+
+/**
+ * Links to images you attached pointed at their files, for words that reach Claude as plain text
+ * (an answer to its question): it reads the file with Read, which policy.ts lets your own run do
+ * for an image right in the attachments folder (isOwnImageFile). A room copy, a friend's image or a
+ * missing one stays a link.
+ */
+export const withImagePaths = (text: string, dir = attachmentsDir()): string =>
+  text.replace(IMAGE_LINK, (link, name: string) => {
+    const abs = ownAttachment(name, dir);
+    return abs && path.dirname(abs) === path.resolve(dir) ? abs : link;
+  });
+
+/**
+ * An image file right in the attachments folder (one you pasted or dropped), where it really is:
+ * links followed, never one in `room/`, `received/` or any other folder below it.
+ */
+export function isOwnImageFile(target: string, dir = attachmentsDir()): boolean {
+  let real: string;
+  let realDir: string;
+  try {
+    real = realpathSync.native(target);
+    realDir = realpathSync.native(dir);
+  } catch {
+    return false;
+  }
+  const rel = path.relative(realDir, real);
+  return rel === path.basename(real) && isAttachmentName(rel) && isFile(real);
 }
 
 export const mediaTypeOf = (file: string): 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' => {

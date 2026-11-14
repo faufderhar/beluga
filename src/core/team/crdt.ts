@@ -27,17 +27,24 @@ export interface Born {
   readonly origin: Issue['origin'];
 }
 
-/** A task as the team has it. `own`: activity ids written on this Mac (never sent). */
+/**
+ * A task as the team has it. `own`: activity ids written on this Mac (never sent). `gone`: lines
+ * their author took back: a line once taken back never comes back, whichever Mac passes it on
+ * again later (without it, an add and its drop chase each other round a team of three forever).
+ */
 export interface SharedTask {
   readonly id: string;
   readonly fields: Readonly<Record<string, Field>>;
   readonly acts: readonly Activity[];
   readonly born?: Born;
   readonly own?: readonly string[];
+  readonly gone?: readonly string[];
 }
 
 /** Lines kept per task (the board keeps as many). */
 export const KEEP_ACTS = 200;
+/** Taken-back line ids remembered per task (the newest). */
+export const KEEP_GONE = 200;
 /** Activity that never travels: it names worktrees, plans, proof files or other trackers that are this Mac's own. */
 export const LOCAL_ACTS: ReadonlySet<Activity['kind']> = new Set(['worktree', 'plan', 'proof', 'project', 'private']);
 
@@ -92,14 +99,17 @@ export function merge(local: SharedTask | undefined, inc: Incoming): Merged {
     won[name] = f;
   }
   const before = local?.acts ?? [];
-  const drop = new Set(inc.drop ?? []);
+  const had = local?.gone ?? [];
+  const fresh = (inc.drop ?? []).filter((id) => !had.includes(id));
+  const gone = [...had, ...fresh].slice(-KEEP_GONE);
+  const drop = new Set([...had, ...fresh]);
   const dropped = before.filter((a) => drop.has(a.id)).map((a) => a.id);
   const kept = before.filter((a) => !drop.has(a.id));
   const known = new Set(kept.map((a) => a.id));
   const added = inc.acts.filter((a) => !known.has(a.id) && !drop.has(a.id) && !LOCAL_ACTS.has(a.kind));
   const acts = [...kept, ...added].sort(byTime).slice(-KEEP_ACTS);
   const born = local?.born ?? inc.born;
-  return { task: { id: inc.id, fields, acts, ...(born ? { born } : {}), ...(local?.own ? { own: local.own } : {}) }, won, added, dropped };
+  return { task: { id: inc.id, fields, acts, ...(born ? { born } : {}), ...(local?.own ? { own: local.own } : {}), ...(gone.length ? { gone } : {}) }, won, added, dropped };
 }
 
 /** The highest Lamport time a task's fields carry. */

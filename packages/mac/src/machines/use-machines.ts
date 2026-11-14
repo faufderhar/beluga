@@ -25,14 +25,23 @@ const subscribe = (l: () => void): (() => void) => {
 /** Your computers as last listed (for what starts work outside a view). */
 export const currentMachines = (): readonly MachineView[] => list;
 
-/** Ask this Mac's daemon now. */
+/** The listing on its way (a busy daemon's answer is waited for, not asked again behind it, BLG-942). */
+let listing: SocketClient | undefined;
+
+/** Ask this Mac's daemon now (unless it's already being asked). */
 export function refreshMachines(home: SocketClient): void {
+  if (listing === home) return;
+  listing = home;
+  const done = (): void => {
+    if (listing === home) listing = undefined;
+  };
   void home.call('machines.list').then(
     (next) => {
+      done();
       list = next as readonly MachineView[];
       for (const l of [...listeners]) l();
     },
-    () => undefined,
+    done,
   );
 }
 

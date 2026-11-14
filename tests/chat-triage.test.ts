@@ -273,6 +273,16 @@ describe('settings', () => {
     expect(PrefsPatch.parse({ chatCategories: true, settleOnMerge: false, settleIdleDays: 7 })).toEqual({ chatCategories: true, settleOnMerge: false, settleIdleDays: 7 });
     expect(() => PrefsPatch.parse({ settleIdleDays: -1 })).toThrow();
   });
+
+  it('archiveSettledDays: 14 by default, any whole number of days, 0 means never', () => {
+    expect(Settings.parse({}).archiveSettledDays).toBe(14);
+    expect(DEFAULT_PREFS.archiveSettledDays).toBe(14);
+    expect(Settings.parse({ archiveSettledDays: -3 }).archiveSettledDays).toBe(14);
+    expect(prefsFrom(Settings.parse({ archiveSettledDays: 45 })).archiveSettledDays).toBe(45);
+    expect(PrefsPatch.parse({ archiveSettledDays: 0 })).toEqual({ archiveSettledDays: 0 });
+    expect(() => PrefsPatch.parse({ archiveSettledDays: 1.5 })).toThrow();
+    expect(() => PrefsPatch.parse({ archiveSettledDays: -1 })).toThrow();
+  });
 });
 
 describe('the store', () => {

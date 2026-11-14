@@ -14,6 +14,7 @@ import {
   formatterFor,
   hashText,
   matchLines,
+  ownPrettier,
   parseRgLine,
   previewLine,
   queryRegex,
@@ -292,9 +293,17 @@ describe('Prettier', () => {
     );
   };
 
-  it('is unavailable (with a reason) when the project has none', () => {
+  it('uses the Prettier Beluga ships when the project has none', async () => {
     put('a.ts', 'x');
-    expect(formatterFor(dir, 'a.ts')).toEqual({ available: false, reason: expect.stringMatching(/isn’t installed/) });
+    const own = ownPrettier();
+    expect(own?.version).toMatch(/^3\./);
+    expect(findPrettier(path.join(dir, 'a.ts'), dir)).toBeUndefined();
+    expect(formatterFor(dir, 'a.ts')).toEqual({ available: true, version: own?.version, bundled: true });
+    expect(formatterFor(dir, 'main.rs')).toMatchObject({ available: false, bundled: true, reason: expect.stringMatching(/doesn’t format/) });
+    expect(await formatWithPrettier(dir, 'a.ts', 'const a={b:1}')).toBe('const a = { b: 1 };\n');
+    // The project's config still applies.
+    put('.prettierrc', JSON.stringify({ semi: false, singleQuote: true }));
+    expect(await formatWithPrettier(dir, 'a.ts', 'const a = "x";')).toBe("const a = 'x'\n");
   });
 
   it('finds the nearest one, or the main folder’s, and formats with it', async () => {

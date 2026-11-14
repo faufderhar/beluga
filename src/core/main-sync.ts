@@ -4,11 +4,13 @@ import { type ForkOf, type GhRunner, type GitHubInfo, type GitHubRepo, fetchFork
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import * as sync from '../workspaces/sync.js';
 import type { Project, Workspace } from '../workspaces/types.js';
-import { paced } from './power-saver.js';
+import { FETCH_EVERY_DEFAULT } from '../shared/background-fetch.js';
+import { pace } from './power-saver.js';
 
 /**
  * Keeping each project's main folder current, for the project home's Update main / Fetch: a
- * quiet fetch every ~15 minutes while Beluga runs (and when you open a project), fast-forwarding
+ * quiet fetch as often as Settings › Workspaces says (every 15 minutes unless you chose otherwise;
+ * never, if you turned it off), and when you open a project, fast-forwarding
  * the default branch, setting uncommitted changes aside or into a worktree, and handing anything
  * harder to Claude: in a worktree of its own, or (for what's stuck in the main folder's own files)
  * in a run there that may only sync git. Never pushes; never discards.
@@ -33,16 +35,18 @@ export interface MainSyncDeps {
   readonly gh?: GhRunner;
   /** Low Power mode is saving now (BLG-621): the background fetches come less often. */
   readonly saving?: () => boolean;
+  /** Minutes between background fetches, as chosen now (0: never on its own); default: every 15. */
+  readonly fetchEvery?: () => number;
   /** Hosts gh is signed in to (enterprise GitHub under any name); default: gh's hosts.yml. */
   readonly ghHosts?: () => string[];
   readonly now?: () => number;
 }
 
-/** A quiet fetch for every project, this often. */
-export const BACKGROUND_FETCH_MS = 15 * 60_000;
+/** How often the background pass looks for a project whose fetch is due (looking runs no git). */
+export const FETCH_TICK_MS = 60_000;
 /** The first background pass, once Beluga has settled. */
 const FIRST_PASS_MS = 20_000;
-/** Opening a project fetches when the last fetch is older than this. */
+/** Opening a project fetches when the last fetch is older than this (at the default pace or faster). */
 export const STALE_FETCH_MS = 2 * 60_000;
 /** After git said "sign in", background fetches leave that project alone this long. */
 const AUTH_BACKOFF_MS = 60 * 60_000;
@@ -89,12 +93,20 @@ export class MainSync {
     return this.deps.now?.() ?? Date.now();
   }
 
-  /** Start the background fetches (first one shortly after start). */
+  /** Minutes between background fetches as chosen now (0: never on its own). */
+  private get every(): number {
+    return this.deps.fetchEvery?.() ?? FETCH_EVERY_DEFAULT;
+  }
+
+  /**
+   * Start the background fetches (the first pass shortly after start). The timer only looks once a
+   * minute for a project whose fetch is due, so a new choice in Settings applies at once.
+   */
   start(): void {
     if (this.timer) return;
     this.first = setTimeout(() => void this.backgroundPass(), FIRST_PASS_MS);
     this.first.unref();
-    this.timer = setInterval(paced(BACKGROUND_FETCH_MS, () => this.deps.saving?.() ?? false, () => void this.backgroundPass()), BACKGROUND_FETCH_MS);
+    this.timer = setInterval(() => void this.backgroundPass(), FETCH_TICK_MS);
     this.timer.unref();
   }
 
@@ -154,24 +166,32 @@ export class MainSync {
     return { ok: false, reason: result.reason, message: result.message };
   }
 
-  /** Opening a project home: fetch if the last try is a while ago (quietly). */
+  /** Opening a project home: fetch if the last try is a while ago (quietly), unless you turned Beluga's own fetches off. */
   async fetchIfStale(projectId: string): Promise<FetchOutcome | undefined> {
+    const every = this.every;
+    if (!every) return undefined;
     const project = this.deps.manager.list.find((p) => p.id === projectId && p.root);
     if (!project?.sync?.upstream) return undefined;
     const last = Math.max(this.tried.get(projectId) ?? 0, project.sync.fetchedAt ?? 0);
-    if (this.now - last < STALE_FETCH_MS) return undefined;
+    if (this.now - last < staleAfterMs(every)) return undefined;
     if (this.now - (this.authFailed.get(projectId) ?? 0) < AUTH_BACKOFF_MS) return undefined;
     return this.fetch(projectId, { quiet: true });
   }
 
-  /** Fetch every project with a remote, one at a time, without a word (failures show on its home). */
+  /**
+   * Fetch each project with a remote whose last fetch is older than the chosen pace (four times
+   * that while Low Power mode saves), one at a time, without a word (failures show on its home).
+   * Off: nothing.
+   */
   async backgroundPass(): Promise<void> {
-    if (this.passing) return;
+    const every = this.every;
+    if (this.passing || !every) return;
+    const due = pace(every * 60_000, this.deps.saving?.() ?? false) - FETCH_TICK_MS / 2;
     this.passing = true;
     try {
       for (const p of this.deps.manager.list.filter((x) => x.root && x.sync?.upstream)) {
         if (this.now - (this.authFailed.get(p.id) ?? 0) < AUTH_BACKOFF_MS) continue;
-        if (this.now - Math.max(this.tried.get(p.id) ?? 0, p.sync?.fetchedAt ?? 0) < BACKGROUND_FETCH_MS / 2) continue;
+        if (this.now - Math.max(this.tried.get(p.id) ?? 0, p.sync?.fetchedAt ?? 0) < due) continue;
         await this.fetch(p.id, { quiet: true }).catch(() => undefined);
       }
     } finally {
@@ -379,6 +399,14 @@ export class MainSync {
     this.github.set(projectId, { ...state, at: this.now, url });
     return state;
   }
+}
+
+/**
+ * Opening a project fetches when its last fetch is older than this: two minutes at the default
+ * pace or faster; at a slower one you chose, half of it (so fewer fetches mean fewer from opening too).
+ */
+export function staleAfterMs(everyMinutes: number): number {
+  return everyMinutes <= FETCH_EVERY_DEFAULT ? STALE_FETCH_MS : (everyMinutes * 60_000) / 2;
 }
 
 const strip = (s: GitHubState & { at: number; url: string }): GitHubState => {

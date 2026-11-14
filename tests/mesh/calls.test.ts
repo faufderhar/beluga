@@ -80,6 +80,46 @@ describe('calls between friends (BLG-706)', () => {
     b.calls.stop();
   }, 60_000);
 
+  it('rings even while everything else from the caller’s Mac waits its turn (BLG-950)', async () => {
+    // Fen's Mac is behind on everything Gil's sends (a teammate's board loop, say): once jammed,
+    // each frame costs a second of Fen's thread and what waits is never worked through.
+    let jammed = false;
+    let clock = 0;
+    const held: Array<() => void> = [];
+    const gil = await net.add('gil');
+    const fen = await net.add('fen', {
+      inbound: {
+        perPersonMs: 1,
+        allMs: 1,
+        now: () => (jammed ? (clock += 1_000) : clock),
+        later: (fn, ms) => (jammed ? void held.push(fn) : void (ms > 0 ? setTimeout(fn, ms) : setImmediate(fn))),
+      },
+    });
+    await befriend(gil, fen);
+    const g = phone(gil);
+    const f = phone(fen);
+    const toFen = dmConversation(fen.identity.peerId);
+    const toGil = dmConversation(gil.identity.peerId);
+
+    jammed = true;
+    const sent = [gil.mesh.sendDm(fen.identity.peerId, 'one'), gil.mesh.sendDm(fen.identity.peerId, 'two')];
+    const arrived = (): number => sent.filter((s) => fen.mesh.conversation(toGil).some((m) => m.id === s.id)).length;
+
+    g.calls.start(toFen);
+    await settle(() => f.view[toGil]?.mine === 'ringing');
+    expect(f.view[toGil]!.ringBy).toBe(gil.identity.peerId);
+    // The ring went ahead of Gil's messages: at least one of them still waits its turn.
+    expect(arrived()).toBeLessThan(2);
+
+    // Once it eases, the rest comes too.
+    jammed = false;
+    clock += 3_600_000;
+    for (const fn of held.splice(0)) fn();
+    await settle(() => arrived() === 2);
+    g.calls.stop();
+    f.calls.stop();
+  }, 60_000);
+
   it.skipIf(LOSES_A_MESSAGE_ON_WINDOWS)('a declined direct call ends for the caller; an unanswered one stops ringing', async () => {
     const cy = await net.add('cy');
     const dee = await net.add('dee');

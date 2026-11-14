@@ -123,9 +123,11 @@ export const claudeColor = (owner: string | undefined): string | undefined => (o
  * their agent gets its runtime's mark (Claude Code, Codex, a local model), tinted the same.
  * `agent`: the agent (or its runtime id); `claude`: an agent whose runtime isn't known (Claude's mark).
  */
-export function Avatar({ name, id, claude, agent, size = 22 }: { name: string; id: string; claude?: boolean; agent?: Pick<AgentRef, 'runtime'> | string | undefined; size?: number }) {
+export function Avatar({ name, id, claude, agent, size = 22, picture: given }: { name: string; id: string; claude?: boolean; agent?: Pick<AgentRef, 'runtime'> | string | undefined; size?: number; picture?: string | undefined }) {
   const isAgent = Boolean(claude) || agent !== undefined;
-  const picture = useAvatarUrl(id, isAgent);
+  // `picture`: handed over already (a window without the app's store, like the sharer's overlay).
+  const fetched = useAvatarUrl(id, isAgent || given !== undefined);
+  const picture = given ?? fetched;
   const tint = isAgent ? claudeColor(id) : undefined;
   if (picture) return <img className={cx(s.avatar, s.avatarPicture)} src={picture} width={size} height={size} alt="" draggable={false} aria-hidden="true" />;
   return (

@@ -27,6 +27,8 @@ interface Script {
   readonly brief?: ReadonlyArray<readonly ['context' | 'acceptance', string]>;
   /** One step that runs long: after it starts, the next step comes `ms` later (a steer waits; Send now stops it). */
   readonly slowStep?: { readonly step: string; readonly ms: number };
+  /** What Claude says on the way, before the step at that index ("Found it, now the tests"). */
+  readonly says?: Readonly<Record<number, string>>;
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
@@ -36,6 +38,11 @@ const SCRIPTS: readonly Script[] = [
     match: /^Investigate GitHub issue #48\b/,
     stepMs: 900,
     steps: ['Bash gh issue view 48 --repo acme/bob-api --comments', 'Grep "decodeURIComponent" src', 'Read src/users.ts', 'Read src/routes/login.ts', 'Write tests/login-plus-email.test.ts', 'Bash npm test -- login-plus-email'],
+    says: {
+      1: 'A `+` in the email answers 500. Looking for where the email gets decoded.',
+      3: '`findUser()` decodes it a second time, so `+` turns into a space. Checking what `login()` does with no user.',
+      4: 'That’s the 500. Writing a test that reproduces it.',
+    },
     brief: [
       [
         'context',
@@ -516,6 +523,44 @@ async function mockSentinel(input: AgentRunInput, pace: number): Promise<string>
  * The demo's Claude in a sentinel run that keeps numbers (Stripe revenue): it reads what the step
  * before brought and keeps the numbers its brief names with sentinel_measure.
  */
+const CHAT_NOTE = /\[Beluga note: this message names other chats: `([^`]+)`/;
+
+/** Reads the first chat a message names, and says how much it found. */
+async function mockReadChat(input: AgentRunInput, tools: NonNullable<AgentRunInput['chatTools']>, pace: number): Promise<string> {
+  await sleep(300 * pace, input.signal);
+  input.onEvent('tool', 'read_chat');
+  try {
+    const found = /"total":\s*(\d+)/.exec(tools.read(CHAT_NOTE.exec(input.prompt)![1]!, {}))?.[1] ?? '0';
+    return `I read that chat. It has ${found} messages so far.`;
+  } catch (err) {
+    return `I could not read that chat (${err instanceof Error ? err.message : String(err)}).`;
+  }
+}
+
+/** Works until it's stopped: holds a chat busy for as long as a test needs (e2e/chat-send.spec.ts). */
+const HOLD_CHAT = /^hold this chat$/i;
+const CHAT_SEND = /^send to (\S+): (.+)$/m;
+
+/** Sends what a message says to send, waits for the answer, and says what came back. */
+async function mockSendChat(input: AgentRunInput, tools: NonNullable<AgentRunInput['chatTools']>, pace: number): Promise<string> {
+  const [, ref, text] = CHAT_SEND.exec(input.prompt)!;
+  await sleep(300 * pace, input.signal);
+  input.onEvent('tool', 'send_to_chat');
+  try {
+    // A message that tells the next chat to send on (a chain, for the demo): nothing to wait for.
+    if (CHAT_SEND.test(text!)) {
+      await tools.send(ref!, text!, {});
+      return 'I passed that on.';
+    }
+    const { message_id: id } = JSON.parse(await tools.send(ref!, text!, { reply: 'wanted' })) as { message_id: string };
+    input.onEvent('tool', 'wait_for_chat');
+    const { state, answer } = JSON.parse(await tools.wait(id, 60)) as { state: string; answer?: string };
+    return answer ? `That chat answered: ${answer}` : `The message is ${state}.`;
+  } catch (err) {
+    return `I could not send that message (${err instanceof Error ? err.message : String(err)}).`;
+  }
+}
+
 async function mockMeasure(input: AgentRunInput, tools: NonNullable<AgentRunInput['dashboardTools']>, pace: number): Promise<string> {
   const keeps = /it keeps ([^.]+)\./.exec(input.sentinelBrief ?? '')?.[1] ?? '';
   const names = [...keeps.matchAll(/([a-z0-9-]+)(?: \(([^)]+)\))?/g)].map((m) => ({ name: m[1]!, unit: m[2] }));
@@ -824,6 +869,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       return { url: `https://example.com/oauth/${encodeURIComponent(name)}` };
     },
     mcpSignedIn: (name) => signing.get(name) ?? Promise.resolve(undefined),
+    mcpSigningIn: (name) => signing.has(name),
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
@@ -902,6 +948,13 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (input.sentinelTools?.asking) return mockSentinelAsk(input, input.sentinelTools, input.sentinelTools.asking, pace);
     // A plan's conversation: Claude writes, revises and checks the plan with its tools.
     if (input.planTools && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
+    // A message that names another chat (see explainChatMentions): it reads that chat, as real Claude may.
+    if (input.chatTools && CHAT_NOTE.test(input.prompt)) return mockReadChat(input, input.chatTools, pace);
+    if (HOLD_CHAT.test(input.prompt.trim())) {
+      input.onEvent('tool', 'Bash npm run test:all');
+      await sleep(3_600_000, input.signal);
+    }
+    if (input.chatTools && CHAT_SEND.test(input.prompt)) return mockSendChat(input, input.chatTools, pace);
     // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.
     if (input.place?.askOnly && WANTS_CHANGE.test(input.prompt)) {
       if (!input.continueInWorktree) return "This is the project's main folder, which is read-only. Ask the owner to continue in a new worktree.";
@@ -979,10 +1032,17 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (script.steerable) input.onSteer?.(Object.assign((followUp: FollowUp) => (said.push(followUp), true), { force, cancel }));
     let last: string | undefined;
     try {
-      for (const step of script.steps) {
+      for (const [i, step] of script.steps.entries()) {
         await pause((last && last === script.slowStep?.step ? script.slowStep.ms : (script.stepMs ?? 450)) * pace);
         if (forced) break;
         for (const followUp of said.splice(0)) followUp.onFolded?.();
+        // What it says on the way reads as it's said, then becomes a remark when the step comes.
+        const says = script.says?.[i];
+        if (says) {
+          input.onEvent('text', says);
+          await pause(900 * pace);
+          if (forced) break;
+        }
         input.onEvent('tool', step);
         last = step;
       }

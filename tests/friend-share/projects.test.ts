@@ -82,10 +82,10 @@ describe('sharing a project with a friend over the network', () => {
 
   it('only friends, and a friend whose Beluga is too old is told at once', async () => {
     net = await crowd();
-    const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
+    const ata = await mac(net, 'ata');
     macs.push(ata);
-    const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
-    expect(() => ata.session.sharing.shareWithFriend({ peerId: 'x'.repeat(32), projectId: project.id, role: 'view' })).toThrow(/friend first/);
+    // Reject a non-friend before resolving the project; no repositories need to be created.
+    expect(() => ata.session.sharing.shareWithFriend({ peerId: 'x'.repeat(32), projectId: 'not-shared', role: 'view' })).toThrow(/friend first/);
     expect(cannotTake('Ata', { version: '0.6.0+mac.1.1.0', can: ['chat.files', 'task.ask'] }, 'share.project')).toBe("Ata's Beluga 1.1.0 can't open shared projects yet. Ask Ata to update Beluga.");
     expect(cannotTake('Ata', { version: '0.6.3+mac.1.3.0', can: ['share.project'] }, 'share.project')).toBeUndefined();
   }, 20_000 * SLOW);

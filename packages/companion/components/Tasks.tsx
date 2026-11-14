@@ -55,7 +55,7 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
             <T v="caption" style={{ fontWeight: '600', fontVariant: ['tabular-nums'] }}>
               {t.key}
             </T>
-            {[t.epic ? (t.epic.total ? `Epic, ${t.epic.done}/${t.epic.total} done` : 'Epic') : undefined, t.epicKey ? `in ${t.epicKey}` : undefined, t.onBoard ? `on ${t.onBoard}` : undefined, t.repo, t.assignee, t.working, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
+            {[t.epic ? (t.epic.total ? `Epic, ${t.epic.done}/${t.epic.total} done` : 'Epic') : undefined, t.epicKey ? `in ${t.epicKey}` : undefined, t.onBoard ? `on ${t.onBoard}` : undefined, t.repo, t.assignee, t.working, t.needsChecks ? 'Needs its checks' : undefined, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
               .filter(Boolean)
               .map((x) => `  ·  ${x}`)
               .join('')}

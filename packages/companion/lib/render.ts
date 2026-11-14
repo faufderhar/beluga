@@ -11,6 +11,7 @@ export { codeWorktreeRefs } from '../../../src/shared/worktree-refs';
 export { type ChartPlan, planChart } from '../../../src/shared/render/chart-model';
 export { SERIES_DARK, SERIES_LIGHT, alignOf, contrast, formatCell, formatNumber, headingOf, inkOn, isNumeric, parseColor, toDate, toHex, toMarkdownTable, toneOf } from '../../../src/shared/render/format';
 export { type InlineElement, readInline, relative } from '../../../src/shared/render/inline-model';
+export { type ChatRef, chatChipOf, chatLinkOf, chatMentionsAsTitles, codeChatRefs, formatChatRef, parseChatRef } from '../../../src/shared/chat-ref';
 export { tableView } from '../../../src/shared/render/md-table';
 export { EDGE_VERB, type ElkInput, type ElkOutput, KIND_ICON, KIND_NAME, STATUS_INFO, backEdges, connections, elkGraph, inlineAspect, neighborhood, nodeBoxes, placeLabels, placesOf, roundedPath, routesOf, stepFocus } from '../../../src/shared/render/graph-model';
 export { type FileTree, type TreeNode, readFileTree } from '../../../src/shared/render/file-tree';

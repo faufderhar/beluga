@@ -4,10 +4,10 @@ import { type CallView, type ShareMode, type StageMessage, CLIP_PART, HEARTBEAT_
 import { inApp } from '../lib/boot.js';
 import { Levels } from './levels.js';
 import { type CameraSize, type LineState, Peer } from './peer.js';
-import { demoCamera, demoPointer, demoScreen, demoVoice } from './demo-media.js';
+import { demoCamera, demoClicked, demoPointer, demoScreen, demoVoice } from './demo-media.js';
 import { NoiseFilter } from './noise-filter.js';
 import { repeat } from './repeat.js';
-import { wakeSound } from './ringtone.js';
+import { setCallSpeaker, wakeSound } from './ringtone.js';
 import { type NotePhrase, Scribe, type Words, demoPhrases, scribeModels } from './scribe.js';
 import { type ScribeStatus, bestModel, pickScribe } from '@beluga/shared/scribe-plan.js';
 import type { LanguageCount } from '@beluga/shared/call-language.js';
@@ -136,6 +136,8 @@ export class CallEngine {
   private readonly offs: Array<() => void> = [];
 
   constructor(private readonly client: SocketClient) {
+    // The ringback and the bells come out of the speaker you picked, with the voices.
+    setCallSpeaker(this.speakerId);
     this.offs.push(
       client.store.subscribe(() => this.follow()),
       client.onIntent((i) => this.onIntent(i)),
@@ -255,6 +257,7 @@ export class CallEngine {
   pickSpeaker(id: string | undefined): void {
     this.speakerId = id;
     writePref(SPEAKER_PREF, id);
+    setCallSpeaker(id);
     // Back to macOS's own is the only time the default is asked for by name.
     for (const el of this.audio.values()) sink(el, id ?? '');
   }
@@ -470,6 +473,11 @@ export class CallEngine {
   /** Face to face over the whole window, or back to the chat. */
   setFaces(on: boolean): void {
     this.patch({ faces: on });
+  }
+
+  /** Who's in the call you're making (you too); none outside one. */
+  people(): CallView['people'] {
+    return this.view?.people ?? [];
   }
 
   /** The screen you share now, if you share one (the overlay covers it, call/overlay.ts). */
@@ -988,9 +996,13 @@ export class CallEngine {
     // Someone who isn't sharing points at it, the way pointers come over a real network.
     const pointer = stage ? call.people.find((p) => !p.me && !p.sharing) : undefined;
     if (pointer && !this.stopDemoPointer) {
+      let last = performance.now();
       this.stopDemoPointer = repeat(() => {
-        const [x, y] = demoPointer(performance.now());
+        const now = performance.now();
+        const [x, y] = demoPointer(now);
         for (const fn of this.stageSubs) fn({ k: 'laser', by: pointer.peerId, x, y });
+        if (demoClicked(last, now)) for (const fn of this.stageSubs) fn({ k: 'ping', by: pointer.peerId, x, y });
+        last = now;
       }, 60);
     } else if (!pointer && this.stopDemoPointer) {
       this.stopDemoPointer();

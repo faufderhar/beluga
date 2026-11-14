@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CodexConnect } from '../src/agent/runtime/codex/app-server.js';
 import { CodexMcp, shortMcpError, toCodexRow } from '../src/agent/runtime/codex/mcp.js';
 import { createCodexBackend } from '../src/agent/runtime/codex/runner.js';
+import { mcpToolCallOf } from '../src/agent/runtime/codex/tool-questions.js';
 import { routedBackend } from '../src/agent/runtime/router.js';
-import type { AgentBackend, AgentRunInput } from '../src/agent/types.js';
+import type { ToolGate, ToolHost } from '../src/agent/tool-host.js';
+import type { AgentBackend, AgentRunInput, BoardTools } from '../src/agent/types.js';
 import { FakeCodex } from './fake-codex.js';
 import { room } from './runtime-conformance.js';
 
@@ -131,5 +133,170 @@ describe('Codex MCP servers in Settings (BLG-518)', () => {
         'MCP startup failed: handshaking with MCP server failed: Send message error Transport [codex_rmcp_client::tool_list_changes::ToolListChanges<rmcp::transport::worker::WorkerTransport<x>>] error: Client error: HTTP request failed: http/request failed: error sending request for url (http://127.0.0.1:9/mcp), when send initialize request: Send message error Transport [y] error: …',
       ),
     ).toBe('handshaking with MCP server failed: Client error: HTTP request failed: http/request failed: error sending request for url (http://127.0.0.1:9/mcp)');
+  });
+});
+
+/** A run whose tool server's gate the scripted Codex calls, as the real stdio server does, mounted as Beluga mounts it (every suite the run has). */
+function gated(codex: FakeCodex) {
+  let gate: ToolGate = async () => undefined;
+  let mounted: string[] = [];
+  const toolHost = {
+    mount: async (suites: Record<string, unknown>, g: ToolGate) => {
+      gate = g;
+      mounted = Object.keys(suites);
+      return { token: 't', servers: Object.fromEntries(mounted.map((name) => [name, { type: 'stdio', command: 'x', args: [], env: {} }])), close: () => undefined };
+    },
+  } as unknown as ToolHost;
+  const denials: Array<string | undefined> = [];
+  const ran: string[] = [];
+  codex.mcpCall = async (server, tool, args) => {
+    // Your own Codex servers are Codex's to call: Beluga's tool server never sees them.
+    if (!mounted.includes(server)) return void ran.push(`${server}/${tool}`);
+    const denied = await gate(`mcp__${server}__${tool}`, { ...args, timeout_sec: 120 });
+    denials.push(denied);
+    if (!denied) ran.push(`${server}/${tool}`);
+  };
+  return { denials, ran, b: createCodexBackend({ cwd, autoEdit: true, additionalDirectories: [], bridge: room, connect: codex.connect, toolHost }) };
+}
+
+const own = (answer: boolean, asked: string[], extra: Partial<AgentRunInput> = {}): Partial<AgentRunInput> => ({
+  scope: 'full',
+  canUseTool: async (name) => {
+    asked.push(name);
+    return answer;
+  },
+  ...extra,
+});
+
+describe("Beluga's own tools on Codex: every call goes to Beluga's gate, as on Claude", () => {
+  it("Codex approves calls to Beluga's servers itself, and to none of yours", async () => {
+    const codex = new FakeCodex();
+    await gated(codex).b.run(input('hello', { board: {} as BoardTools }));
+    const config = codex.sent('thread/start')[0]!.config as Record<string, Record<string, unknown> | undefined>;
+    for (const name of ['beluga', 'beluga_board', 'beluga_view']) expect(config[`mcp_servers.${name}`]).toMatchObject({ default_tools_approval_mode: 'approve' });
+    expect(Object.entries(config).filter(([k, v]) => k.startsWith('mcp_servers.') && JSON.stringify(v).includes('approval_mode')).map(([k]) => k)).toEqual(['mcp_servers.beluga', 'mcp_servers.beluga_board', 'mcp_servers.beluga_view']);
+  });
+
+  it('a call you allow runs, asking you once, with no question from Codex', async () => {
+    const codex = new FakeCodex();
+    const { b, denials, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp run_on_peer', own(true, asked)));
+    expect(codex.approvals).toEqual([]);
+    expect(asked).toEqual(['mcp__beluga__run_on_peer']);
+    expect(denials).toEqual([undefined]);
+    expect(ran).toEqual(['beluga/run_on_peer']);
+  });
+
+  it('a call you deny never runs', async () => {
+    const codex = new FakeCodex();
+    const { b, denials, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp run_on_peer', own(false, asked)));
+    expect(asked).toEqual(['mcp__beluga__run_on_peer']);
+    expect(denials).toEqual(['The machine owner declined this action.']);
+    expect(ran).toEqual([]);
+  });
+
+  it('while planning (approval policy never), a call still reaches the gate, as in Claude’s plan mode', async () => {
+    const codex = new FakeCodex();
+    const { b, denials } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp run_on_peer', own(true, asked, { plan: true })));
+    expect(codex.sent('thread/start')[0]!.approvalPolicy).toBe('never');
+    expect(codex.refused).toEqual([]);
+    expect(asked).toEqual(['mcp__beluga__run_on_peer']);
+    expect(denials).toEqual([undefined]);
+  });
+
+  it.each([
+    ['a friend', { viaAgent: true }],
+    ['a full-trust friend', { viaAgent: true, scope: 'full' as const }],
+    ['a friend with limits', { vetTool: () => undefined }],
+    ['an external agent below Full trust', { asOwner: true }],
+  ])('the run of %s: each call goes to the same gate, its limits first, then you', async (_who, who) => {
+    const codex = new FakeCodex();
+    const { b, denials } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp run_on_peer', { ...own(true, asked), scope: 'folder', ...who }));
+    expect(codex.refused).toEqual([]);
+    expect(asked).toEqual(['mcp__beluga__run_on_peer']);
+    expect(denials).toEqual([undefined]);
+  });
+
+  it("a friend's limits turn a call down before you're asked", async () => {
+    const codex = new FakeCodex();
+    const { b, denials, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp run_on_peer', { ...own(true, asked), scope: 'folder', viaAgent: true, vetTool: (name) => (name === 'mcp__beluga__run_on_peer' ? 'Not for friends.' : undefined) }));
+    expect(asked).toEqual([]);
+    expect(denials).toEqual(['Not for friends.']);
+    expect(ran).toEqual([]);
+  });
+});
+
+describe('Codex asks before a call to your own MCP servers (BLG-242)', () => {
+  it('your own run: Codex asks, you answer through the same gate, once', async () => {
+    const codex = new FakeCodex();
+    const { b, denials, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp github/create_issue', own(true, asked)));
+    expect(codex.approvals).toEqual([{ action: 'accept', content: {} }]);
+    expect(asked).toEqual(['mcp__github__create_issue']);
+    // Codex calls your server itself: Beluga's tool server never sees it.
+    expect(denials).toEqual([]);
+    expect(ran).toEqual(['github/create_issue']);
+  });
+
+  it('denied, the call is declined and never runs', async () => {
+    const codex = new FakeCodex();
+    const { b, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp github/create_issue', own(false, asked)));
+    expect(codex.approvals).toEqual([{ action: 'decline' }]);
+    expect(asked).toHaveLength(1);
+    expect(ran).toEqual([]);
+  });
+
+  it('while planning, Codex refuses them without asking (your servers keep Codex’s own approvals)', async () => {
+    const codex = new FakeCodex();
+    const { b, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp github/create_issue', own(true, asked, { plan: true })));
+    expect(codex.refused).toEqual(['github/create_issue']);
+    expect(codex.approvals).toEqual([]);
+    expect(asked).toEqual([]);
+    expect(ran).toEqual([]);
+  });
+
+  it('a friend’s task has none of them', async () => {
+    const codex = new FakeCodex();
+    const { b, ran } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('mcp github/create_issue', { ...own(true, asked), scope: 'folder', viaAgent: true }));
+    expect(codex.refused).toEqual(['github/create_issue']);
+    expect(asked).toEqual([]);
+    expect(ran).toEqual([]);
+  });
+
+  it('another elicitation still fails, and asks nobody', async () => {
+    const codex = new FakeCodex();
+    const { b } = gated(codex);
+    const asked: string[] = [];
+    await b.run(input('question', own(true, asked)));
+    expect(codex.approvals).toEqual([undefined]);
+    expect(asked).toEqual([]);
+  });
+
+  it.each([
+    ['another mode', { mode: 'url' }],
+    ['no approval kind', { _meta: { tool_params: {} } }],
+    ['fields to fill in', { requestedSchema: { type: 'object', properties: { name: { type: 'string' } } } }],
+    ['a server that is not the one named', { serverName: 'other' }],
+    ['other words', { message: 'Please run "x"?' }],
+  ])('a question with %s is not a tool call', (_why, change) => {
+    const real = { serverName: 'github', mode: 'form', _meta: { codex_approval_kind: 'mcp_tool_call', tool_params: {} }, message: 'Allow the github MCP server to run tool "x"?', requestedSchema: { type: 'object', properties: {} } };
+    expect(mcpToolCallOf(real)).toEqual({ name: 'mcp__github__x', server: 'github', tool: 'x', args: {} });
+    expect(mcpToolCallOf({ ...real, ...change })).toBeUndefined();
   });
 });

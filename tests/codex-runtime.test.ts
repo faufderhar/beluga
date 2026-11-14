@@ -1,6 +1,8 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { attachmentsDir } from '../src/core/attachments.js';
 import { CodexEvents, toolCallOf, unwrapShell, usageEvent } from '../src/agent/runtime/codex/events.js';
 import { createCodexBackend, codexEffort, codexModel, toCodexModelChoices } from '../src/agent/runtime/codex/runner.js';
 import type { AgentRunInput, FollowUp, Steer } from '../src/agent/types.js';
@@ -116,6 +118,24 @@ describe('a Codex run', () => {
     expect(resumed!.threadId).toBe(codex.sent('turn/start')[0]!.threadId);
     expect(profileOf(resumed!)).toBe(':workspace');
     expect(codex.sent('turn/start')).toHaveLength(2);
+  });
+
+  it('gives Codex the images pasted into a change to its plan, as it does a message’s', async () => {
+    const dir = attachmentsDir();
+    mkdirSync(dir, { recursive: true });
+    const shot = path.join(dir, 'plan-sketch.png');
+    writeFileSync(shot, 'png');
+    const codex = new FakeCodex();
+    const askUser = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'plan' as const, approve: false, feedback: 'more like [📎 image 1 (png, 1K)](klaud-attachment:me/plan-sketch.png)' })
+      .mockResolvedValue({ kind: 'plan' as const, approve: true, feedback: '' });
+    await backend(codex).run(input('hello', { plan: true, askUser }));
+    const turns = codex.sent('turn/start').map((t) => t.input as Array<{ type: string; path?: string; text?: string }>);
+    expect(turns[1]!.find((i) => i.type === 'text')!.text).toMatch(/^Change the plan: more like/);
+    expect(turns[1]!.filter((i) => i.type === 'localImage')).toEqual([{ type: 'localImage', path: shot }]);
+    // Approving says no words of yours: no image goes with it.
+    expect(turns.at(-1)!.some((i) => i.type === 'localImage')).toBe(false);
   });
 
   it('a main folder is read only', async () => {

@@ -107,17 +107,18 @@ export function CallLayer() {
   const ringsNow = ringing.length > 0 && !mine && !quiet;
   useEffect(() => (ringsNow ? loop(RING, RING_EVERY_S) : undefined), [ringsNow]);
 
-  // The caller hears it ring at the others' while nobody has picked up yet.
+  // The caller hears it ring at the others' while nobody has picked up yet (through the call's
+  // stream: the microphone is already open, and macOS turns down whatever else plays).
   const waiting = Boolean(mine && mine.people.length === 1 && mine.startedBy === mine.people[0]?.peerId);
-  useEffect(() => (waiting ? loop(RINGBACK, RINGBACK_EVERY_S, 0.6) : undefined), [waiting]);
+  useEffect(() => (waiting ? loop(RINGBACK, RINGBACK_EVERY_S, { volume: 0.6, inCall: true }) : undefined), [waiting]);
 
   // People coming and going.
   const count = useRef<{ call?: string; n: number }>({ n: 0 });
   useEffect(() => {
     const n = mine?.people.length ?? 0;
     const was = count.current;
-    if (mine && was.call === mine.id && n !== was.n) playOnce(n > was.n ? JOINED : LEFT, 0.6);
-    else if (mine && was.call !== mine.id && n > 1) playOnce(JOINED, 0.6);
+    if (mine && was.call === mine.id && n !== was.n) playOnce(n > was.n ? JOINED : LEFT, { volume: 0.6, inCall: true });
+    else if (mine && was.call !== mine.id && n > 1) playOnce(JOINED, { volume: 0.6, inCall: true });
     count.current = { ...(mine ? { call: mine.id } : {}), n };
   }, [mine?.id, mine?.people.length]);
 

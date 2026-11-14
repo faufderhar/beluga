@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Store, initialState } from '../src/core/store.js';
-import type { PullRequest } from '../src/core/work-store.js';
+import type { PrCheck, PullRequest } from '../src/core/work-store.js';
 import type { NoticeEvent } from '../src/core/notify.js';
 import type { WorkspaceController } from '../src/core/workspace-controller.js';
 import { NO_CHECKS_GRACE_MS, PUSHED_HEAD_WAIT_MS, Workbench } from '../src/core/workbench.js';
@@ -115,6 +115,7 @@ function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => P
   const notices: NoticeEvent[] = [];
   const views: string[] = [];
   const pushes: string[] = [];
+  const cancels: number[] = [];
   const wb = new Workbench({
     store,
     controller: { manager, refresh: async () => undefined } as unknown as WorkspaceController,
@@ -142,13 +143,18 @@ function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => P
       github = next;
     },
     deleteRemoteBranch: async (_dir, branch) => void deleted.push(branch),
+    cancelRun: async (_dir, run) => {
+      // A run that finished meanwhile: gh says it can't be cancelled.
+      if (run === 99) throw new Error('Cannot cancel a workflow run that is completed');
+      cancels.push(run);
+    },
   });
   store.dispatch({ type: 'gh', ok: true });
   if (start) store.dispatch({ type: 'pr', id: 'auth', pr: start });
   const github$ = (next: PullRequest | undefined): void => void (github = next);
   const later = (ms: number): void => void (clock += ms);
   const here = (next: typeof carries): void => void (carries = next);
-  return { wb, store, ws, merges, pushes, deleted, toasts, notices, views, github: github$, later, here, pr: () => store.getState().prs.auth };
+  return { wb, store, ws, merges, pushes, cancels, deleted, toasts, notices, views, github: github$, later, here, pr: () => store.getState().prs.auth };
 }
 
 describe('Workbench.mergePr', () => {
@@ -161,6 +167,22 @@ describe('Workbench.mergePr', () => {
     expect(b.pr()?.state).toBe('MERGED');
     expect(b.notices).toEqual([]);
     expect(b.toasts.at(-1)).toEqual({ text: 'Merged PR #42', level: 'success' });
+  });
+
+  it('Merge Now, Skipping Checks stops the checks still running once merged, and only then', async () => {
+    const check = (state: PrCheck['state'], id: number, conclusion?: string): PrCheck => ({ name: `job-${id}`, state, ...(conclusion ? { conclusion } : {}), url: `https://github.com/o/r/actions/runs/${id}/job/1` });
+    const running = pr({ checks: 'pending', checkRuns: [check('in_progress', 7), check('queued', 8), check('completed', 6, 'success'), check('in_progress', 99)] });
+    // One started between Beluga's look and the merge: GitHub shows it after.
+    const b = bench(running, () => pr({ state: 'MERGED', checkRuns: [check('in_progress', 7), check('queued', 9)] }));
+    const out = await b.wb.mergePr('auth', { method: 'squash', admin: true });
+    expect(out).toEqual({ ok: true, result: 'merged', message: 'Merged PR #42, and stopped its 3 running checks' });
+    expect(b.cancels.sort()).toEqual([7, 8, 9]);
+    // A plain merge, or a refused skip, leaves them running.
+    const plain = bench(running, () => pr({ state: 'MERGED' }));
+    await plain.wb.mergePr('auth', { method: 'squash' });
+    const refused = bench(running, () => new Error('HTTP 403: Resource not accessible by integration'));
+    await refused.wb.mergePr('auth', { method: 'squash', admin: true });
+    expect([...plain.cancels, ...refused.cancels]).toEqual([]);
   });
 
   it('deletes the branch on GitHub only once merged', async () => {
@@ -353,7 +375,7 @@ describe('Workbench.mergePr', () => {
       writeFileSync(path.join(dir, '.git', 'config'), '[branch "klaud/auth"]\n\tmerge = refs/pull/7/head\n');
       const b = bench(pr({ head: 'aaa1111' }), () => pr({ state: 'MERGED' }), 1, undefined, dir);
       const out = await b.wb.mergePr('auth', { method: 'squash' });
-      expect(out).toMatchObject({ ok: false, reason: 'unpushed', message: expect.stringMatching(/^PR #42 is from someone’s fork, so Beluga can’t push 1 commit here to it, and merging it would leave it out/) });
+      expect(out).toMatchObject({ ok: false, reason: 'unpushed', message: 'PR #42 is from someone’s fork, and merging it now would leave 1 commit here out. Open Your Own PR puts it on a new one, with #42’s' });
       expect(b.pushes).toEqual([]);
       expect(b.merges).toEqual([]);
     });

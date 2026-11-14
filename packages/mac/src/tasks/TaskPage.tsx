@@ -24,6 +24,7 @@ import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker 
 import { FilesList, ProofList, Relations, SubTasks } from './TaskSections.js';
 import { taskDropProps, useTaskFileDrop } from './use-task-drop.js';
 import { unexplained } from '@beluga/core/board/criteria.js';
+import { checksWords } from '@beluga/shared/task-checks.js';
 import { ago, dueText } from './tasks-model.js';
 import { openSheet } from '../lib/sheets.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
@@ -192,7 +193,7 @@ function Title({ issue }: { issue: Issue }) {
   );
 }
 
-/** Kept out of review: which criteria still need a tick or a reason. */
+/** Kept out of review (or out of Done, its work merged: BLG-952): which criteria still need a tick or a reason. */
 function ChecksBanner({ issue }: { issue: Issue }) {
   if (!issue.needsChecks || !STATUS_INFO[issue.status].open) return null;
   const open = unexplained(issue.brief.acceptance);
@@ -201,7 +202,7 @@ function ChecksBanner({ issue }: { issue: Issue }) {
     <div className={t.banner} role="status">
       <Icon name="alert" size={14} />
       <span className={t.bannerText}>
-        <strong>Needs its checks.</strong> {open.length === 1 ? 'A criterion is' : `${open.length} criteria are`} neither ticked nor explained, so it stays out of review: tick each one, or add “— deferred: why” after it.
+        <strong>Needs its checks.</strong> {checksWords(open.length, issue.mergedHeld === true)}
       </span>
     </div>
   );

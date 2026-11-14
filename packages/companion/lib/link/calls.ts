@@ -40,6 +40,7 @@ type PhoneDraft = { title: string; goal: string; acceptance: string[]; labels: s
 export const calls = {
   /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
+  telemetry: (level: 'off' | 'limited' | 'on'): Call => make('telemetry.choose', [level, 'settings'], 'Usage statistics'),
   /** Since 1.32 (BLG-459): one of your providers (by its runtime) becomes your default agent. */
   defaultAgent: (runtime: string): Call => make('companion.defaultAgent', [runtime], 'Make it your default agent'),
   /** 1.14: a new empty chat on Your Mac (open on the Mac now) → its id; one deleted for good. */
@@ -116,6 +117,8 @@ export const calls = {
   addTask: (projectId: string, d: PhoneDraft & { more?: PhoneDraft[]; epic?: boolean }): Call =>
     make('companion.addTask', [{ projectId, ...d }], d.more?.length ? `Add ${d.more.length + 1} tasks` : `Add "${short(d.title)}"`),
   /** A live view's rows: the Mac runs its source (one your own Claude's view names) and sends the page. */
+  // 1.44: what a chat's address is now (its chip).
+  resolveChat: (ref: string): Call => make('chats.resolve', [ref], 'Chat link'),
   viewFetch: (a: { topic: Topic; turn: string; block: number; query: object; source?: object; confirm?: boolean; fresh?: boolean; text?: boolean }): Call => make('companion.viewFetch', [a as never], 'View rows'),
   /** Merging a worktree (its conversation): look first, merge, Claude resolves the conflicts. */
   mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),

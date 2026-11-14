@@ -1,0 +1,51 @@
+/* What follows the pointer while a chat's row is dragged: the row itself, lifted off the sidebar
+   (Lifted.tsx swings it as the board swings a card). */
+.ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  pointer-events: none;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 14px 30px -12px rgb(0 0 0 / 0.3);
+  transform-origin: 50% 30%;
+  will-change: transform;
+}
+
+/* A row a drop would land on. */
+.over.over {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* The message box a drop would land in: drawn over it, so no style of the box can hide it. */
+.boxGlow {
+  position: fixed;
+  z-index: 41;
+  border-radius: var(--radius-l);
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 6px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 0 32px 6px color-mix(in srgb, var(--accent) 34%, transparent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      0 0 0 8px color-mix(in srgb, var(--accent) 14%, transparent),
+      0 0 44px 10px color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boxGlow {
+    animation: none;
+  }
+}
+
+:root[data-motion='reduce'] .boxGlow {
+  animation: none;
+}

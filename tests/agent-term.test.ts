@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentBackend, AgentRunInput, RoomBridge, TerminalLaunch, TerminalSink } from '../src/agent/types.js';
 import { claudeTerminal, sessionArgs, trustFolder } from '../src/agent/runtime/claude/terminal.js';
+import { ZSH_COMPAT, ZSH_COMPAT_FILE } from '../src/agent/runtime/claude/zsh-compat.js';
 import { childEnv } from '../src/terminal/pty.js';
 import { shellChildren } from '../src/terminal/shells-under.js';
 import { readFileSync } from 'node:fs';
@@ -179,6 +180,30 @@ describe('launching the agent’s terminal', () => {
       launch.close();
       expect(existsSync(file)).toBe(false);
       launch.close(); // closing again does no harm
+      await host.close();
+    });
+
+    it.skipIf(process.platform === 'win32')('starts Claude Code with zsh-compat.sh from Beluga’s home, and says so when its shell is zsh (Git Bash on Windows)', async () => {
+      const home = mkdtempSync(path.join(os.tmpdir(), 'beluga-mcp-home-'));
+      const cwd = mkdtempSync(path.join(os.tmpdir(), 'beluga-mcp-cwd-'));
+      const host = new ToolHost({ command: 'beluga', args: [] });
+      vi.stubEnv('CLAUDE_ENV_FILE', '');
+      vi.stubEnv('CLAUDE_CODE_SHELL', '');
+      vi.stubEnv('SHELL', '/bin/zsh');
+      const launch = await launched(home, host, cwd);
+      const file = path.join(home, ZSH_COMPAT_FILE);
+      expect(launch.env?.CLAUDE_ENV_FILE).toBe(file);
+      expect(readFileSync(file, 'utf8')).toBe(ZSH_COMPAT);
+      const instructions = launch.args[launch.args.indexOf('--append-system-prompt') + 1]!;
+      if (existsSync('/bin/zsh')) expect(instructions).toContain('set up to take common bash');
+      launch.close();
+
+      // Your own CLAUDE_ENV_FILE stays, and the instructions say plain zsh.
+      vi.stubEnv('CLAUDE_ENV_FILE', '/x/yours.sh');
+      const yours = await launched(home, host, cwd);
+      expect(yours.env?.CLAUDE_ENV_FILE).toBeUndefined();
+      if (existsSync('/bin/zsh')) expect(yours.args[yours.args.indexOf('--append-system-prompt') + 1]).toContain('not bash');
+      yours.close();
       await host.close();
     });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { linkPaths, parsePathHref, pathHref, readPath } from '../src/shared/render/path-refs.js';
+import { linkPaths, parsePathHref, pathHref, readPath, relativeCandidates, scratchCandidates } from '../src/shared/render/path-refs.js';
+import { buildScratchAppend } from '../src/agent/prompt.js';
 
 const link = (text: string, relative = true): string => linkPaths(text, { relative });
 
@@ -52,6 +53,39 @@ describe('path links', () => {
   });
 });
 
+describe('relativeCandidates', () => {
+  it('looks in the worktree first, then in its .beluga folder (a path written from there)', () => {
+    expect(relativeCandidates('scratch/pr-498/')).toEqual(['scratch/pr-498', '.beluga/scratch/pr-498']);
+    expect(relativeCandidates('./reports/a.md')).toEqual(['reports/a.md', '.beluga/reports/a.md']);
+  });
+
+  it('looks once for a path already under .beluga, or one climbing out of the worktree', () => {
+    expect(relativeCandidates('.beluga/scratch/x.png')).toEqual(['.beluga/scratch/x.png']);
+    expect(relativeCandidates('../other/a.ts')).toEqual(['../other/a.ts']);
+    expect(relativeCandidates('src/app.ts')).toEqual(['src/app.ts', '.beluga/src/app.ts']);
+  });
+});
+
+describe('scratchCandidates', () => {
+  it('looks in each checkout an agent made in the scratch folder (a path written from there)', () => {
+    expect(scratchCandidates('packages/mac/src/chat/starting-model.ts', ['land-492', 'land-494'])).toEqual([
+      '.beluga/scratch/land-492/packages/mac/src/chat/starting-model.ts',
+      '.beluga/scratch/land-494/packages/mac/src/chat/starting-model.ts',
+    ]);
+    expect(scratchCandidates('./src/app.ts/', ['pr-12'])).toEqual(['.beluga/scratch/pr-12/src/app.ts']);
+  });
+
+  it('looks nowhere else for a path already under .beluga, one climbing out, or with no folders', () => {
+    expect(scratchCandidates('.beluga/scratch/x.png', ['pr-12'])).toEqual([]);
+    expect(scratchCandidates('../other/a.ts', ['pr-12'])).toEqual([]);
+    expect(scratchCandidates('src/app.ts', [])).toEqual([]);
+  });
+
+  it('skips folders that are not a plain name, and the folders Beluga keeps there itself', () => {
+    expect(scratchCandidates('a.ts', ['..', '.git', 'sent', 'agents', 'x/y', 'ok'])).toEqual(['.beluga/scratch/ok/a.ts']);
+  });
+});
+
 describe('linkPaths', () => {
   it('links paths in words, keeping the punctuation after them', () => {
     expect(link('Saved to .beluga/scratch/01-login.png.')).toBe('Saved to [.beluga/scratch/01-login.png](beluga-path:.beluga%2Fscratch%2F01-login.png).');
@@ -80,5 +114,13 @@ describe('linkPaths', () => {
   it('links relative paths only where there is a worktree to open them in', () => {
     expect(link('see src/a.ts and /tmp/x.log', false)).toBe('see src/a.ts and [/tmp/x.log](beluga-path:%2Ftmp%2Fx.log)');
     expect(link('`src/a.ts`', false)).toBe('`src/a.ts`');
+  });
+});
+
+describe('the scratch prompt', () => {
+  it('asks for a file in a checkout made in scratch to be named with that folder in front, so its link opens', () => {
+    const text = buildScratchAppend('.beluga/scratch');
+    expect(text).toContain('whole path from your working folder');
+    expect(text).toContain('.beluga/scratch/land-12/src/app.ts, not src/app.ts');
   });
 });

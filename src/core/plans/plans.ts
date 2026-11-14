@@ -4,7 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { AgentRef } from '../../protocol.js';
 import { agentName } from '../../shared/agent-label.js';
-import { readJson, writeJson } from '../../net/mesh/files.js';
+import { JsonFile, readJson, writeJson } from '../../net/mesh/files.js';
 import { type Actor, renamedActors } from '../board/model.js';
 import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
@@ -37,6 +37,7 @@ import {
   TESTS_AT,
   type TestsAt,
   diffBodies,
+  NOTE_MAX,
   isEmptyDiff,
   planById,
 } from './model.js';
@@ -108,12 +109,14 @@ const short = (prefix: string): string => `${prefix}_${randomUUID().replace(/-/g
 export class Plans {
   private plans: Plan[] = [];
   private style = '';
-  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  /** plans.json: large with many plans, so written in the background (BLG-942). */
+  private readonly file: JsonFile | undefined;
   private readOnly = false;
   private readonly now: () => number;
 
   constructor(private readonly deps: PlansDeps) {
     this.now = deps.now ?? Date.now;
+    this.file = deps.dir ? new JsonFile(path.join(deps.dir, 'plans.json'), () => ({ version: 1, plans: this.plans }), deps.saveDelayMs ?? 300) : undefined;
     this.load();
     deps.store.dispatch({ type: 'plans_init', state: this.state() });
   }
@@ -284,12 +287,15 @@ export class Plans {
     return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, the agent is checking its pass criteria`, this.now())]);
   }
 
-  /** Work came back to a milestone (a task reopened, fix tasks added): its next check is a new one. */
+  /**
+   * Work came back to a milestone (a task reopened, fix tasks added, Check Again): its next check is
+   * a new one. A merge that failed before goes too: the next pass (Autopilot's too) tries it afresh.
+   */
   newRound(id: string, milestone: string): Plan {
     const plan = this.need(id);
     const run = plan.runs[milestone] ?? {};
-    if (run.checkAsked === undefined) return plan;
-    const { checkAsked: _c, check: _k, ...rest } = run;
+    if (run.checkAsked === undefined && !run.mergeFailed) return plan;
+    const { checkAsked: _c, check: _k, mergeFailed: _f, ...rest } = run;
     return this.change(plan, { runs: { ...plan.runs, [milestone]: rest } }, [], false);
   }
 
@@ -433,7 +439,7 @@ export class Plans {
 
   note(id: string, kind: PlanEventKind, text: string, by: Actor): Plan {
     const plan = this.need(id);
-    return this.change(plan, {}, [event(by, kind, text.replace(/\s+/g, ' ').trim().slice(0, 300), this.now())]);
+    return this.change(plan, {}, [event(by, kind, text.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX), this.now())]);
   }
 
   /** A plan that moved here from another computer (BLG-806), as move.ts made it ready: in place of the record of an earlier move away. */
@@ -477,10 +483,11 @@ export class Plans {
   }
 
   flush(): void {
-    if (!this.saveTimer) return;
-    clearTimeout(this.saveTimer);
-    this.saveTimer = undefined;
-    this.write();
+    try {
+      this.file?.flush();
+    } catch {
+      // The next change tries again.
+    }
   }
 
   // ------------------------------------------------------------------ inside
@@ -536,21 +543,7 @@ export class Plans {
   }
 
   private save(): void {
-    if (!this.deps.dir || this.readOnly || this.saveTimer) return;
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = undefined;
-      this.write();
-    }, this.deps.saveDelayMs ?? 300);
-    this.saveTimer.unref?.();
-  }
-
-  private write(): void {
-    if (!this.deps.dir) return;
-    try {
-      writeJson(path.join(this.deps.dir, 'plans.json'), { version: 1, plans: this.plans });
-    } catch {
-      // The next change tries again.
-    }
+    if (!this.readOnly) this.file?.changed();
   }
 }
 

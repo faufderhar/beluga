@@ -20,7 +20,7 @@ export interface Dragging {
 }
 
 /** How far the pointer moves before a press becomes a drag. */
-const SLOP = 4;
+export const SLOP = 4;
 /** Near the scrolling list's top or bottom edge (px), it scrolls; faster the closer you are. */
 const EDGE = 40;
 const MAX_SPEED = 16;
@@ -69,8 +69,15 @@ export function hoverAt(tree: HTMLElement, entries: readonly Entry[], item: Targ
   return undefined;
 }
 
+/** How fast a list scrolls with the pointer at `y`: near its edges, faster the closer. */
+export function edgeSpeed(r: DOMRect, y: number): number {
+  if (y < r.top + EDGE) return -MAX_SPEED * Math.min(1, (r.top + EDGE - y) / EDGE);
+  if (y > r.bottom - EDGE) return MAX_SPEED * Math.min(1, (y - (r.bottom - EDGE)) / EDGE);
+  return 0;
+}
+
 /** The nearest scrolling ancestor (the sidebar's list). */
-function scrollerOf(el: HTMLElement): HTMLElement | undefined {
+export function scrollerOf(el: HTMLElement): HTMLElement | undefined {
   for (let p = el.parentElement; p; p = p.parentElement) {
     const o = getComputedStyle(p).overflowY;
     if (o === 'auto' || o === 'scroll') return p;
@@ -100,7 +107,7 @@ export function useArrangeDrag(tree: RefObject<HTMLElement | null>, entries: rea
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || stop.current) return;
     const target = e.target as HTMLElement;
     const row = target.closest<HTMLElement>('[data-drag]');
-    if (!row || !tree.current?.contains(row) || target.closest('button, input, a, [data-no-drag]')) return;
+    if (!row || !tree.current?.contains(row) || target.closest('button, input, a, [data-no-drag], [data-chat-row]')) return;
     const item = parse(row.dataset.drag!);
     const start = { x: e.clientX, y: e.clientY };
     const grab = row.getBoundingClientRect();
@@ -119,13 +126,7 @@ export function useArrangeDrag(tree: RefObject<HTMLElement | null>, entries: rea
         setDragging({ item, ...(next ? { hover: next } : {}) });
       }
     };
-    const speed = (): number => {
-      if (!scroller) return 0;
-      const r = scroller.getBoundingClientRect();
-      if (point.y < r.top + EDGE) return -MAX_SPEED * Math.min(1, (r.top + EDGE - point.y) / EDGE);
-      if (point.y > r.bottom - EDGE) return MAX_SPEED * Math.min(1, (point.y - (r.bottom - EDGE)) / EDGE);
-      return 0;
-    };
+    const speed = (): number => (scroller ? edgeSpeed(scroller.getBoundingClientRect(), point.y) : 0);
     const tick = (): void => {
       frame = 0;
       const v = speed();

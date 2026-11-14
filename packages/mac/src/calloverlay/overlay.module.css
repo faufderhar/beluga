@@ -10,6 +10,12 @@
   width: 100%;
   height: 100%;
 }
+/* The others' pointers (call/PointerMark.tsx), over the ink. */
+.pointers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
 /* The screen is on show: a soft frame around it, in the call's colour. */
 .frame {
   position: absolute;

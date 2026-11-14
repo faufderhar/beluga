@@ -273,7 +273,9 @@ covering several), a task on a board of several says which repo it runs in (`Tas
 groups with their models (`ConvView.agent`), your default agent first, one your Mac doesn't run greyed with
 what's missing. The list is the models turned on in Settings › Agent › Models in chat (with none chosen, every
 model). A model of the same runtime is `workbench.setModel`; another runtime, `workbench.setAgent`. Effort stays
-on the Mac.
+on the Mac. A runtime with more than 30 models (OpenCode with every provider, BLG-945) sends its first 30 with the
+picked one always among them, and `more` says how many the Mac has besides; the phone filters what it
+has, and says the rest are on the Mac. An older Mac sends no `more`.
 1.41 (BLG-702) brings emoji reactions to the phone's chats (`SINCE.reactions`): each message's
 `reactions` (emoji, count, whether one is yours, who) as chips under it (a tap adds yours or takes it
 back, a long-press says who), and long-press on a message opens its sheet with your quick row

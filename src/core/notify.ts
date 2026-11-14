@@ -225,7 +225,7 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
     const titleOf = new Map(after.milestones.flatMap((m) => [[m.milestone.id, m.milestone.title] as const, ...m.tasks.map((t) => [t.task.id, t.task.title] as const)]));
     for (const [taskId, w] of Object.entries(plan.watch ?? {})) {
       if (!w.needsYou || old.watch?.[taskId]?.needsYou) continue;
-      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${titleOf.get(taskId) ?? 'A task'}” stopped twice`, body: `${w.reason}. Resume it, or open its chat`, ...at, need: `plan:${plan.id}:stalled:${taskId}`, key: `plan:${plan.id}:${taskId}:stalled:${w.at}` });
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${titleOf.get(taskId) ?? 'A task'}” ${w.said ? 'needs you' : 'stopped twice'}`, body: w.said ? `It says: “${w.said}” Do what it asks, then Resume it` : `${w.reason}. Resume it, or open its chat`, ...at, need: `plan:${plan.id}:stalled:${taskId}`, key: `plan:${plan.id}:${taskId}:stalled:${w.at}` });
     }
     for (const [msId, merge] of Object.entries(plan.merging ?? {})) {
       const c = merge.conflict;

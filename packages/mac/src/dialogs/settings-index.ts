@@ -58,6 +58,10 @@ export const SETTINGS: readonly Entry[] = [
     ['Update automatically', 'Install new versions as they come.', 'auto update upgrade'],
     ['Check for updates', 'At launch and every few hours.', 'update version check now'],
   ]),
+  group('general', 'Usage statistics', 'Off, Limited or On.', 'telemetry analytics privacy statistics share data improve'),
+  ...rows('general', 'Usage statistics', [
+    ['Share usage statistics', 'Off sends nothing; Limited only the essentials; On how you use Beluga.', 'telemetry analytics privacy share data level'],
+  ]),
   ...rows('general', 'Writing', [
     ['Send with', 'Return or Command-Return sends a message.', 'enter return send message newline new line keyboard'],
     ['Send during a turn', 'Queue waits for the turn to finish. Steer sends to the current turn.', 'queue steer enter return send message running busy interrupt default'],
@@ -82,6 +86,7 @@ export const SETTINGS: readonly Entry[] = [
     ['Sidebar categories', 'Sort chats into Inbox, Working, Later and Settled, in place of Unread and Chats.', 'inbox working later remind snoozed snooze settled settle triage chats'],
     ['Settle when a pull request merges', 'The chat moves to Settled when its pull request merges. Shows when Sidebar categories is on.', 'auto settle merge merged pr automatic'],
     ['Settle idle chats', 'A chat with no activity moves to Settled. Shows when Sidebar categories is on.', 'auto settle idle inactive days automatic'],
+    ['Archive settled chats', 'A chat in Settled for this many days is archived. 0 means never. Shows when Sidebar categories is on.', 'auto archive settled old days automatic clean up'],
     ['Sidebar width', undefined, 'sidebar size'],
     ['Reduce motion', undefined, 'animation motion accessibility'],
     ['Reduce transparency', 'A solid sidebar, with no blur behind the window.', 'blur vibrancy translucent solid accessibility'],
@@ -163,7 +168,9 @@ export const SETTINGS: readonly Entry[] = [
   ...rows('workspaces', undefined, [
     ['Run setup in new worktrees', 'The project’s setup command runs in each new worktree.', 'npm install setup command auto setup'],
     ['Branch prefix', 'What new worktrees’ branches start with.', 'git branch name prefix'],
+    ['Fetch in the background', 'How often Beluga fetches each project’s remote on its own, or never.', 'git fetch remote origin interval minutes ssh key vault password prompt popup off'],
     ['Keep open pull requests current', 'Your agent pushes its commits to an open pull request when its turn ends.', 'push pr pull request git agent commits'],
+    ['Open a pull request when work is ready', 'When a worktree’s task moves to In Review, your agent opens a draft pull request.', 'auto pr pull request draft create review task automatic'],
     ['Friends may start work here', 'They ask to start a worktree or hand work to you.', 'friend worktrees'],
   ]),
   group('workspaces', 'Hidden projects', 'Projects you hid from the sidebar.', 'hide show unhide project sidebar'),
@@ -232,8 +239,7 @@ export const SETTINGS: readonly Entry[] = [
   ]),
 
   // Environment
-  ...rows('environment', undefined, [['Variables for', 'Yours, or one project’s workspaces.', 'env variables scope project api keys']]),
-  ...rows('environment', 'Worktrees', [['New keys go to the main folder', 'A key a worktree adds to its .env goes to the main folder too.', '.env worktree keys']]),
+  group('environment', 'Projects', 'Each project’s own variables, beside its .env: open one from its row.', 'env variables scope project api keys .env.example worktree'),
   ...rows('environment', 'Your agent', [['Read .env files without asking', 'Your agent reads a project’s .env without a request.', 'dotenv secrets read env files']]),
   ...rows('environment', 'Database', [['Postgres for your agent’s views', 'The database your agent’s views read.', 'postgres database sql supabase database url']]),
 

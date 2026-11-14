@@ -126,3 +126,10 @@
     --dur: 0ms;
   }
 }
+
+/* Before the prefs are applied (lib/prefs.ts accentCss): a web view without AccentColor (Chromium) gets macOS blue. */
+@supports not (color: AccentColor) {
+  :root {
+    --accent: #007aff;
+  }
+}

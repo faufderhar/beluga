@@ -16,6 +16,7 @@ import { type ViewContext, conversations, homeView, phoneChannel, viewOf, workVi
 import { ASSISTANT_HANDLERS } from '../src/ipc/assistant-handlers.js';
 import { Body } from '../src/protocol.js';
 import { ASSISTANT_CHANNEL, assistantChannel, assistantChatOf, assistantChatTitle, isAssistant } from '../src/shared/assistant.js';
+import { sentinelChatTitle } from '../src/core/sentinel/model.js';
 import { noticeTarget } from '../src/ui/notice-models.js';
 import { waitFor } from './helpers.js';
 
@@ -67,6 +68,13 @@ describe('channels', () => {
     ];
     expect(assistantChatTitle('mac:assistant:x', log)).toBe('What is using my CPU right…');
     expect(assistantChatTitle('mac:assistant:y', log)).toBe('New chat');
+  });
+
+  it('a chat named in that first message shows by its title, never its ref', () => {
+    const ref = 'IERRFia7jBz-zl_PX1AkHS3Ps7hgXnoM/ws:wt-9d87882a-26a';
+    const log = [{ channel: 'mac:assistant:x', type: 'chat', byAgent: false, text: `see @refunds (chat: ${ref})` }];
+    expect(assistantChatTitle('mac:assistant:x', log)).toBe('see @refunds');
+    expect(sentinelChatTitle('mac:assistant:x', log)).toBe('see @refunds');
   });
 });
 

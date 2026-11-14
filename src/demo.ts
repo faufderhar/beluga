@@ -163,6 +163,7 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
 }
 
 const DEMO_WS = 'bob-payments';
+const DEMO_WORK_WS = 'bob-refunds';
 const DEMO_PATCH = `@@ -1,4 +1,9 @@
 -export async function onWebhook(event: Event) {
 +const seen = new Set<string>();
@@ -199,6 +200,11 @@ function shareDemoWorkspace(session: Session, shares: ShareService, folder: stri
     { from: "bob's Claude", text: 'The handler is not idempotent: it charges again on every retry. I added an idempotency key check.', ts: Date.now() - 60_000, byAgent: true },
   ];
   session.send({ kind: 'ws_invite', ws: { id: DEMO_WS, name: 'payments', project: 'bob-api', branch: 'fix-webhooks' }, role: 'view', can: 'watch', share, history }, { to: host.peerId });
+  // And one you work in with him: a message there goes to his agent, so you can try sending into a friend's chat (BLG-152).
+  const work = 'ws-bob-refunds';
+  shares.upsert({ name: work, root: folder, writable: false, private: true, allowed: [host.peerId] });
+  session.store.dispatch({ type: 'member_set', id: DEMO_WORK_WS, peerId: host.peerId, role: 'contribute' });
+  session.send({ kind: 'ws_invite', ws: { id: DEMO_WORK_WS, name: 'refunds', project: 'bob-api', branch: 'partial-refunds' }, role: 'contribute', share: work, history: [] }, { to: host.peerId });
 }
 
 /** bob sends the room a screenshot (the way a pasted image goes out), so the demo shows images in the chat. */

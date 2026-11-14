@@ -8,6 +8,7 @@ import { Icon } from '../../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../../components/ui.js';
 import { useApi, useApp, useBeluga, useScopedKey } from '../../lib/beluga.js';
+import { scrollWithin } from '../../lib/scroll-within.js';
 import { ViewBoundary } from '../../lib/lazy-view.js';
 import { localPathOf, openWithDefaultApp } from '../../lib/files.js';
 import { focusFor, openFocus, showChange, usePanelRuntime } from '../../lib/panel.js';
@@ -212,7 +213,7 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
     setCursor(browserAt.path);
   }, [browserAt?.path, browserAt?.share]);
   useEffect(() => {
-    list.current?.querySelector('[data-cursor="true"]')?.scrollIntoView({ block: 'nearest' });
+    scrollWithin(list.current?.querySelector('[data-cursor="true"]'));
   }, [cursor]);
 
   // Which files changed (marked in the tree, and Show Changes on them): read once if nothing has yet.

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Root CI installs only the root packages: the hooks' React Flow import is never called here.
 vi.mock('@xyflow/react', () => ({}));
-const { sharpen, snap } = await import('../packages/mac/src/components/graph/sharp-zoom.js');
+const { gliding, sharpen, snap } = await import('../packages/mac/src/components/graph/sharp-zoom.js');
 
 /** Plan canvas text stays crisp when zoomed in (KLD-70, checked for the real app in KLD-81). */
 
@@ -60,5 +60,18 @@ describe('sharpen: the zoomed layer is rebuilt at its current scale', () => {
     sharpen(bare);
     expect(bare.style.transform).toBe('');
     expect(frames).toHaveLength(0);
+  });
+});
+
+describe('gliding: the view is on its way somewhere (BLG-931)', () => {
+  it('sees a running d3 transition on the zoom pane, so settling never stops Fit to View halfway', () => {
+    expect(gliding({ __transition: { 3: {} } } as unknown as Element)).toBe(true);
+  });
+
+  it('is still once the transitions are gone, or there is no pane', () => {
+    expect(gliding({ __transition: {} } as unknown as Element)).toBe(false);
+    expect(gliding({} as Element)).toBe(false);
+    expect(gliding(null)).toBe(false);
+    expect(gliding(undefined)).toBe(false);
   });
 });

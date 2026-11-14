@@ -3,7 +3,7 @@ import { type AppState, shownChannel } from '@beluga/core/store.js';
 import { planOf } from '@beluga/core/plans/owner.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
-import { Avatar } from '../components/ui.js';
+import { Avatar, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
@@ -12,6 +12,7 @@ import { chatPlaceOf, iconOf } from '../sentinel/sentinel-model.js';
 import { IDLE_SIGNAL, type Signal, type UnreadEntry, planSignal, workspaceSignal } from './attention-model.js';
 import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row, type RowProps } from './sidebar-parts.js';
+import type { WorkspaceRowActions } from './workspace-row.js';
 import m from './signal.module.css';
 
 /** One conversation in a sidebar list, and opening it from there: the seam the Unread section and the categories share. */
@@ -34,18 +35,23 @@ type EntryRowProps = Omit<RowProps, 'icon' | 'label' | 'selected' | 'onClick' | 
   trailing?: ReactNode;
   /** Bold for something other than news (a snooze that ended). */
   nameBold?: string | undefined;
+  /** A workspace's: what its row does in a project's list too (Rename…, shift-click picking). */
+  workspace?: WorkspaceRowActions | undefined;
 };
 
 /** It passes its ref and other props to its Row, so a right-click menu wrapped around it can attach. */
-export const EntryRow = forwardRef<HTMLDivElement, EntryRowProps>(function EntryRow({ e, list, at, trailing, nameBold, ...rest }, ref) {
+export const EntryRow = forwardRef<HTMLDivElement, EntryRowProps>(function EntryRow({ e, list, at, trailing, nameBold, workspace, ...rest }, ref) {
   const selected = e.channel === list.here;
   const where = whereOf(e, list.ownerName);
+  const name = <span className={nameBold ?? nameClass(e.signal)}>{e.name}</span>;
   return (
     <Row
       ref={ref}
       {...rest}
-      selected={selected}
-      className={signalClass(e.signal, selected)}
+      {...workspace?.props}
+      selected={selected || Boolean(workspace?.inSelection)}
+      color={workspace?.color}
+      className={cx(signalClass(e.signal, selected), workspace?.className)}
       data-signal-row={e.signal.level}
       // With what's waiting, so it reads (and is found) apart from the same conversation further down.
       aria-label={`${e.name} · ${e.signal.tip || 'read'}`}
@@ -56,13 +62,15 @@ export const EntryRow = forwardRef<HTMLDivElement, EntryRowProps>(function Entry
       }
       label={
         <>
-          <span className={nameBold ?? nameClass(e.signal)}>{e.name}</span>
+          {workspace ? workspace.label(name) : name}
           {/* Drawn from the attribute: a hint for the eye, not more text to find (the tooltip says it). */}
           <span className={m.where} data-where={where} aria-hidden="true" />
         </>
       }
       detail={`${where} › ${e.name}${e.signal.tip ? `: ${e.signal.tip}` : ''}`}
-      onClick={() => list.open(e as never, at)}
+      onClick={(event) => {
+        if (!workspace?.pick(event)) list.open(e as never, at);
+      }}
       trailing={trailing ?? <SignalMark signal={e.signal} />}
     />
   );

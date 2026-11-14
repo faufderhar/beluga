@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readJson, writeJson } from '../../net/mesh/files.js';
+import { JournalFile, type JournalShape } from '../journal-file.js';
 import type { Board } from '../board/board.js';
 import { type Activity, type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, isArchived, worktreeDoing } from '../board/model.js';
 import type { Action } from '../store.js';
@@ -36,6 +36,8 @@ export interface BoardSyncDeps {
   readonly running?: (workspaceId: string) => boolean;
   /** Where team-board.json lives; null: memory only. */
   readonly dir: string | null;
+  /** A task went round too fast and is held for a moment (for the log: a loop to look into). */
+  readonly onBrake?: (issueId: string, sends: number) => void;
 }
 
 /** What other parts hear: a teammate's change won here (assignment, BLG-223; issues, BLG-224). */
@@ -47,6 +49,9 @@ export interface TeamChange {
 }
 
 /** A delta that only says who's on a task now (`working.*`, `running.*`): nothing of the task itself. */
+/** A task as the team has it, whole, as one frame: its fields, its newest lines, and (so a Mac that missed a drop stops passing that line on) the lines taken back. */
+const whole = (t: SharedTask): TaskDelta => ({ id: t.id, fields: { ...t.fields }, acts: t.acts.slice(-SNAPSHOT_ACTS) as TaskDelta['acts'], ...(t.gone?.length ? { drop: [...t.gone] } : {}), ...(t.born ? { born: t.born } : {}) });
+
 const presenceOnly = (d: TaskDelta): boolean => !d.acts.length && !d.drop?.length && !d.born && Object.keys(d.fields).length > 0 && Object.keys(d.fields).every(isPresence);
 
 const BATCH_TASKS = 40;
@@ -56,21 +61,42 @@ const BATCH_BYTES = 700_000;
 const SNAPSHOT_ACTS = 60;
 /** A linked teammate who hasn't acknowledged for this long counts as not having it. */
 const SLOW_ACK_MS = 30_000;
+/**
+ * The brake: one task sent on more than BRAKE_SENDS times within BRAKE_WINDOW_MS is going round
+ * (a loop between Macs, BLG-942), not being edited. Its changes are still merged and written here,
+ * but held, and after BRAKE_HOLD_MS it goes once, whole, to every teammate (a whole task merges
+ * the same as its pieces, so nothing is lost). A loop then costs one frame per task every few
+ * seconds instead of freezing the daemon. (Sixty edits from three Macs at once, far faster than
+ * people or their Claudes edit, send the busiest task on 37 times in the window; the loop that
+ * froze a daemon on 2026-11-13 sent it on about 180.)
+ */
+export const BRAKE_SENDS = 80;
+/** How soon after a change the team's copy is written. */
+const SAVE_MS = 1000;
+export const BRAKE_WINDOW_MS = 10_000;
+export const BRAKE_HOLD_MS = 5_000;
 
 export class TeamBoardSync implements TeamPart {
   private clocks: Record<string, number> = {};
   private tasks: Record<string, Record<string, SharedTask>> = {};
-  private saveTimer: NodeJS.Timeout | undefined;
+  /** team-board.json: megabytes for a busy team, so written in the background (BLG-942). */
+  private readonly file: JournalFile<SharedTask> | undefined;
   private readonly listeners: Array<(c: TeamChange) => void> = [];
   private readonly reconciled = new Set<string>();
   private readonly locals: Array<(issue: Issue, changed: Readonly<Record<string, Field>>) => void> = [];
   /** My worktrees whose Claude was at work when last told (only a change goes out). */
   private runs = new Set<string>();
+  /** When each task was last sent on (the brake's window). */
+  private readonly sends = new Map<string, number[]>();
+  /** Tasks held by the brake, and their project. */
+  private readonly held = new Map<string, string>();
+  private brakeTimer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly team: TeamBoards,
     private readonly deps: BoardSyncDeps,
   ) {
+    this.file = deps.dir ? new JournalFile<SharedTask>(deps.dir, 'team-board', this.shape(), SAVE_MS) : undefined;
     this.load();
   }
 
@@ -201,7 +227,51 @@ export class TeamBoardSync implements TeamPart {
   }
 
   stop(): void {
-    if (this.saveTimer) this.saveNow();
+    // What the brake held is in the team's copy: the digest on the next link brings it.
+    clearTimeout(this.brakeTimer);
+    this.brakeTimer = undefined;
+    try {
+      this.file?.flush();
+    } catch {
+      // Best effort: it's in memory, and written on the next change.
+    }
+  }
+
+  // ------------------------------------------------------------------ the brake
+
+  /** A task's change to the project's teammates (but `except`), unless the brake holds it. */
+  private pass(projectId: string, d: TaskDelta, except?: string, key?: string): void {
+    if (this.braked(projectId, d.id)) return;
+    for (const link of this.team.linksOf(projectId)) if (link.peerId !== except) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [d] }, key);
+  }
+
+  private braked(projectId: string, id: string): boolean {
+    if (this.held.has(id)) return true;
+    const now = Date.now();
+    const times = [...(this.sends.get(id) ?? []).filter((t) => now - t < BRAKE_WINDOW_MS), now];
+    this.sends.set(id, times);
+    if (times.length <= BRAKE_SENDS) return false;
+    this.held.set(id, projectId);
+    this.deps.onBrake?.(id, times.length);
+    if (!this.brakeTimer) {
+      this.brakeTimer = setTimeout(() => this.release(), BRAKE_HOLD_MS);
+      this.brakeTimer.unref?.();
+    }
+    return true;
+  }
+
+  /** The held tasks go once, whole, to every teammate. */
+  private release(): void {
+    this.brakeTimer = undefined;
+    const held = [...this.held];
+    this.held.clear();
+    for (const [id, projectId] of held) {
+      this.sends.delete(id);
+      const task = this.tasks[projectId]?.[id];
+      if (!task) continue;
+      const d = whole(task);
+      for (const link of this.team.linksOf(projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [d] });
+    }
   }
 
   // ------------------------------------------------------------------ my changes
@@ -236,8 +306,8 @@ export class TeamBoardSync implements TeamPart {
       if (cur && canon(v) === canon(cur.v)) continue;
       changed[name] = { v, l: this.tick(issue.projectId), a: this.self };
     }
-    // New lines (never this Mac's own kinds); a line I took back (folded into the next) goes for everyone.
-    const known = new Set((rec?.acts ?? []).map((a) => a.id));
+    // New lines (never this Mac's own kinds, never one taken back); a line I took back (folded into the next) goes for everyone.
+    const known = new Set([...(rec?.acts ?? []).map((a) => a.id), ...(rec?.gone ?? [])]);
     const added = issue.activity.filter((a) => !known.has(a.id) && !LOCAL_ACTS.has(a.kind));
     const present = new Set(issue.activity.map((a) => a.id));
     const oldest = issue.activity[0]?.at ?? 0;
@@ -253,7 +323,7 @@ export class TeamBoardSync implements TeamPart {
     const delta: TaskDelta = { id: issue.id, fields: changed, acts: [...added] as TaskDelta['acts'], ...(drop.length ? { drop } : {}), ...(rec ? {} : { born }) };
     // Only who's on it now (no change of the task's own): the newest replaces what still waits for them.
     const key = presenceOnly(delta) ? `presence:${issue.id}` : undefined;
-    for (const link of this.team.linksOf(issue.projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [delta] }, key);
+    this.pass(issue.projectId, delta, undefined, key);
     this.team.publish();
     if (Object.keys(changed).length) for (const fn of this.locals) fn(issue, changed);
   }
@@ -296,11 +366,16 @@ export class TeamBoardSync implements TeamPart {
     this.clocks[projectId] = Math.max(this.clocks[projectId] ?? 0, maxClock(fields));
     byId[d.id] = merged.task;
     const { won, added, dropped } = merged;
-    if (!Object.keys(won).length && !added.length && !dropped.length) return;
-    const issue = this.write(projectId, merged.task, won, added, dropped);
+    // A line taken back that this board still shows (it came back before the drop was remembered): off the board too.
+    const gone = new Set(merged.task.gone ?? []);
+    const stale = (other?.activity ?? []).filter((a) => gone.has(a.id) && !dropped.includes(a.id)).map((a) => a.id);
+    const changed = Object.keys(won).length > 0 || added.length > 0 || dropped.length > 0;
+    if (!changed && !stale.length) return;
+    const issue = this.write(projectId, merged.task, won, added, [...dropped, ...stale]);
+    if (!changed) return;
     // Passed on to teammates who may not have it (each skips what it already has).
     const pass: TaskDelta = { id: d.id, fields: won, acts: [...added] as TaskDelta['acts'], ...(dropped.length ? { drop: [...dropped] } : {}), ...(merged.task.born ? { born: merged.task.born } : {}) };
-    for (const l of this.team.linksOf(projectId)) if (l.peerId !== link.peerId) this.team.send(l.peerId, { k: 'ops', link: l.id, tasks: [pass] });
+    this.pass(projectId, pass, link.peerId);
     this.team.publish();
     if (issue) for (const fn of this.listeners) fn({ link, issue, won, fresh: !rec });
   }
@@ -383,7 +458,7 @@ export class TeamBoardSync implements TeamPart {
       bytes = 0;
     };
     for (const t of all) {
-      const d: TaskDelta = { id: t.id, fields: { ...t.fields }, acts: t.acts.slice(-SNAPSHOT_ACTS) as TaskDelta['acts'], ...(t.born ? { born: t.born } : {}) };
+      const d = whole(t);
       const size = JSON.stringify(d).length;
       if (batch.length >= BATCH_TASKS || bytes + size > BATCH_BYTES) flush();
       batch.push(d);
@@ -394,33 +469,51 @@ export class TeamBoardSync implements TeamPart {
 
   // ------------------------------------------------------------------ the file
 
+  /**
+   * team-board.json and its journal, team-board.log (core/journal-file.ts, BLG-942): a change
+   * writes only the tasks it touched, not the team's whole copy (megabytes for a busy team, once a
+   * second while it's busy). The file keeps its shape: each project's tasks, and the clocks.
+   */
+  private shape(): JournalShape<SharedTask> {
+    return {
+      records: () => Object.entries(this.tasks).flatMap(([p, byId]) => Object.values(byId).map((t) => [`${p}/${t.id}`, t] as const)),
+      // The clocks, and every project teamed (one with no tasks yet too).
+      meta: () => ({ clocks: this.clocks, projects: Object.keys(this.tasks) }),
+      pack: (t, key) => ({ p: key.slice(0, key.indexOf('/')), t }),
+      keyOf: (w) => {
+        const r = w as { p?: unknown; t?: { id?: unknown } } | undefined;
+        return r && typeof r.p === 'string' && typeof r.t?.id === 'string' ? `${r.p}/${r.t.id}` : undefined;
+      },
+      toSnapshot: (meta, records, seq) => {
+        const m = meta as { clocks: Record<string, number>; projects: readonly string[] };
+        const tasks: Record<string, SharedTask[]> = Object.fromEntries(m.projects.map((p) => [p, []]));
+        for (const r of records as Array<{ p: string; t: SharedTask }>) (tasks[r.p] ??= []).push(r.t);
+        return { seq, clocks: m.clocks, tasks };
+      },
+      fromSnapshot: (raw) => {
+        const tasks = raw.tasks && typeof raw.tasks === 'object' ? (raw.tasks as Record<string, unknown>) : {};
+        const records = Object.entries(tasks).flatMap(([p, list]) => (Array.isArray(list) ? list.map((t: unknown) => ({ p, t })) : []));
+        return { meta: { clocks: raw.clocks, projects: Object.keys(tasks) }, records, seq: typeof raw.seq === 'number' ? raw.seq : 0 };
+      },
+    };
+  }
+
   private load(): void {
-    if (!this.deps.dir) return;
-    const saved = readJson(path.join(this.deps.dir, 'team-board.json')) as { clocks?: unknown; tasks?: unknown } | undefined;
-    if (!saved || typeof saved !== 'object') return;
-    if (saved.clocks && typeof saved.clocks === 'object') this.clocks = saved.clocks as Record<string, number>;
-    if (saved.tasks && typeof saved.tasks === 'object') {
-      for (const [projectId, list] of Object.entries(saved.tasks as Record<string, unknown>)) {
-        if (!Array.isArray(list)) continue;
-        this.tasks[projectId] = Object.fromEntries((list as SharedTask[]).filter((t) => t && typeof t.id === 'string' && t.fields && Array.isArray(t.acts)).map((t) => [t.id, t]));
-      }
+    const saved = this.file?.read();
+    if (!saved?.raw) return;
+    const meta = (saved.meta && typeof saved.meta === 'object' ? saved.meta : {}) as { clocks?: unknown; projects?: unknown };
+    if (meta.clocks && typeof meta.clocks === 'object') this.clocks = { ...(meta.clocks as Record<string, number>) };
+    if (Array.isArray(meta.projects)) for (const p of meta.projects) if (typeof p === 'string') this.tasks[p] ??= {};
+    for (const r of saved.records as Array<{ p?: unknown; t?: SharedTask }>) {
+      const t = r?.t;
+      if (typeof r?.p !== 'string' || !t || typeof t.id !== 'string' || !t.fields || !Array.isArray(t.acts)) continue;
+      (this.tasks[r.p] ??= {})[t.id] = t;
     }
+    // What was read is what's on disk: only what changes from here is written.
+    this.file?.baseline();
   }
 
   private save(): void {
-    if (!this.deps.dir || this.saveTimer) return;
-    this.saveTimer = setTimeout(() => this.saveNow(), 300);
-    this.saveTimer.unref?.();
-  }
-
-  private saveNow(): void {
-    clearTimeout(this.saveTimer);
-    this.saveTimer = undefined;
-    if (!this.deps.dir) return;
-    try {
-      writeJson(path.join(this.deps.dir, 'team-board.json'), { clocks: this.clocks, tasks: Object.fromEntries(Object.entries(this.tasks).map(([p, byId]) => [p, Object.values(byId)])) });
-    } catch {
-      // Best effort: it's in memory, and written on the next change.
-    }
+    this.file?.changed();
   }
 }

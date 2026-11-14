@@ -1,3 +1,4 @@
+import type { StepApp } from './mcp-apps.js';
 import { humanizeTool } from './step-titles.js';
 
 /**
@@ -38,6 +39,8 @@ export interface StepSummary {
   readonly hidden?: boolean;
   /** A sub-agent's step: the id of the tool call that started that sub-agent. */
   readonly parent?: string;
+  /** Its tool has an MCP App (shared/mcp-apps.ts): `apps.get` gives its frame. */
+  readonly hasApp?: true;
 }
 
 /** One step with what's worth opening it for. */
@@ -51,6 +54,8 @@ export interface StepRecord extends StepSummary {
   readonly truncated?: boolean;
   /** Thinking: what Claude thought (bounded). */
   readonly text?: string;
+  /** What its MCP App needs (only with Settings › Experimental › MCP Apps on). */
+  readonly app?: StepApp;
 }
 
 /** The steps of one run, light, as `agent.steps` returns them. */
@@ -197,6 +202,13 @@ export function thinkingTitle(durationMs: number | undefined, hidden: boolean): 
 }
 
 /** The light part of a record. */
+/** A message sent to another chat: its words also say how it was delivered, from the receipt. */
+function sentLabel(r: StepRecord, label: string): string {
+  if (!r.tool?.endsWith('__send_to_chat') || r.isError || !r.output) return label;
+  const delivery = /"delivery":\s*"(\w+)"/.exec(r.output)?.[1];
+  return delivery ? `${label} · ${delivery}` : label;
+}
+
 export function summaryOf(r: StepRecord): StepSummary {
   return {
     id: r.id,
@@ -205,7 +217,7 @@ export function summaryOf(r: StepRecord): StepSummary {
     status: r.status,
     startedAt: r.startedAt,
     ...(r.tool ? { tool: r.tool } : {}),
-    ...(r.label ? { label: r.label } : {}),
+    ...(r.label ? { label: sentLabel(r, r.label) } : {}),
     ...(r.doing ? { doing: r.doing } : {}),
     ...(r.person ? { person: r.person } : {}),
     ...(r.task ? { task: r.task } : {}),
@@ -214,12 +226,13 @@ export function summaryOf(r: StepRecord): StepSummary {
     ...(r.durationMs !== undefined ? { durationMs: r.durationMs } : {}),
     ...(r.hidden ? { hidden: true } : {}),
     ...(r.parent ? { parent: r.parent } : {}),
+    ...(r.app ? { hasApp: true as const } : {}),
   };
 }
 
 /** Rough size of a record in memory or on disk (characters). */
 export function sizeOf(r: StepRecord): number {
-  return (r.output?.length ?? 0) + (r.text?.length ?? 0) + (r.input ? JSON.stringify(r.input).length : 0) + r.title.length + 120;
+  return (r.output?.length ?? 0) + (r.text?.length ?? 0) + (r.input ? JSON.stringify(r.input).length : 0) + (r.app?.structuredContent !== undefined ? JSON.stringify(r.app.structuredContent).length : 0) + r.title.length + 120;
 }
 
 /** A thinking block's text: readable, or hidden (redacted, or sent without its words). */

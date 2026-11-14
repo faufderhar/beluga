@@ -388,7 +388,8 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   if (merging?.merging) return { kind: 'merging', milestone: merging, text: mergingText(merging.merging, merging.milestone.title, plan.branch) };
   // Yours to pass only once there's something to go on: Claude's check came back (or there's
   // nothing to check). While the head Claude checks, on every mode, the plan waits on Claude.
-  const yoursToPass = v.open.find((m) => m.state === 'gate' && (m.run.check || !m.milestone.criteria.length) && !(m.autonomy === 'autopilot' && m.milestone.criteria.length));
+  // On Autopilot only once its merge failed: Autopilot won't pass it again, so Pass Again is yours.
+  const yoursToPass = v.open.find((m) => m.state === 'gate' && (m.run.check || !m.milestone.criteria.length) && (m.run.mergeFailed || !(m.autonomy === 'autopilot' && m.milestone.criteria.length)));
   if (yoursToPass) return { kind: 'pass', milestone: yoursToPass };
   const autonomyOfTask = new Map(v.open.map((m) => [m.milestone.id, m.autonomy]));
   // Tasks for you, or (step by step) every task, wait for your click.

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TunnelMux, listenNear, portInUse, serveTunnels } from '../src/machines/forward.js';
 import type { MessageSocket } from '../src/net/transport.js';
 
@@ -149,6 +149,9 @@ describe('what each side lets be opened', () => {
     computerEnd.on('message', (t) => said.push(t));
     new TunnelMux(appEnd, { side: 'a', mayOpen: () => true, connect: () => new net.Socket() });
     computerEnd.send(JSON.stringify({ t: 'open', id: 'a1', port: 80 }));
+    // Waits for the answer rather than a fixed 20 ms: a busy runner (Windows CI) takes longer.
+    await vi.waitFor(() => expect(said.map((t) => JSON.parse(t).t)).toEqual(['close']), { timeout: 5_000 });
+    // And nothing else comes after it.
     await new Promise((r) => setTimeout(r, 20));
     expect(said.map((t) => JSON.parse(t).t)).toEqual(['close']);
   });

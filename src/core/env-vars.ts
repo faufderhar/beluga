@@ -9,8 +9,9 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'no
 import path from 'node:path';
 import { z } from 'zod';
 import { ENV_KEY, type EnvKeys, type EnvVar, MAX_ENV_VALUE, MAX_ENV_VARS, envProblems, envRecord, importEnv, mergeEnv, parseEnvText } from '../shared/env-vars.js';
+import { DEFAULT_EXAMPLE_FILE, EXAMPLE_FILES, exampleKeys, syncExample } from '../shared/env-example.js';
 import { ENDPOINT_ID, endpointIdFor } from '../shared/local-endpoints.js';
-import type { Project } from '../workspaces/types.js';
+import type { Project, Workspace } from '../workspaces/types.js';
 import { belugaHome } from './home.js';
 import type { Store } from './store.js';
 
@@ -37,7 +38,13 @@ export const EnvFile = z.object({
    * yourself, before it was the default, so your Claude gets it too). `claudeDotenv`: your own Claude
    * reads and changes its .env files without asking.
    */
-  projects: z.record(z.string(), z.object({ vars: Vars.default({}), dotenv: z.boolean().optional(), claudeDotenv: z.boolean().default(false), newKeysBack: z.boolean().optional() })).default({}),
+  projects: z.record(z.string(), z.object({ vars: Vars.default({}), dotenv: z.boolean().optional(), claudeDotenv: z.boolean().default(false), newKeysBack: z.boolean().optional(), exampleSync: z.boolean().optional() })).default({}),
+  /**
+   * By worktree id (BLG-924): its own variables, over the project's, and the names its .env files
+   * had when last looked at (`base`), so a key it adds or removes reaches its .env.example (BLG-925).
+   * Archiving keeps them (restoring brings them back); deleting drops them unless carried to the project.
+   */
+  worktrees: z.record(z.string(), z.object({ vars: Vars.default({}), base: z.array(z.string().regex(ENV_KEY)).max(MAX_ENV_VARS * 2).optional() })).default({}),
   /**
    * Anthropic-compatible endpoints your Claude Code can run against (BLG-449): kept here with your
    * other secrets, never published. Screens get them without the key (local-endpoints.ts).
@@ -48,7 +55,7 @@ export const EnvFile = z.object({
 });
 export type EnvFile = z.infer<typeof EnvFile>;
 
-const EMPTY: EnvFile = { global: {}, claudeDotenv: false, projects: {}, endpoints: [], v: 2 };
+const EMPTY: EnvFile = { global: {}, claudeDotenv: false, projects: {}, worktrees: {}, endpoints: [], v: 2 };
 
 /** A file from before .env loaded by default: its "off" was only never switched on, so it's the default now. */
 function upgrade(file: EnvFile): EnvFile {
@@ -129,6 +136,33 @@ const dotenvFilesIn = (dir: string): string[] => DOTENV_FILES.filter((f) => {
   }
 });
 
+/** A folder's template (.env.example or the like): its name and text, or none. */
+function readExample(dir: string): { file: string; text: string } | undefined {
+  for (const file of EXAMPLE_FILES) {
+    try {
+      const at = path.join(dir, file);
+      if (statSync(at).size > MAX_DOTENV_BYTES) return undefined;
+      return { file, text: readFileSync(at, 'utf8') };
+    } catch {
+      // not this one
+    }
+  }
+  return undefined;
+}
+
+/** What a template lists against what's set: `set` everything that runs there gets, `files` what its .env files and the project set. */
+function exampleInfo(dir: string, set: ReadonlySet<string>, files: readonly string[]): ExampleInfo {
+  const found = readExample(dir);
+  const keys = found ? exampleKeys(found.text) : [];
+  const listed = new Set(keys);
+  return {
+    ...(found ? { file: found.file } : {}),
+    keys,
+    missing: keys.filter((k) => !set.has(k)),
+    unlisted: [...new Set(files)].filter((k) => !listed.has(k)),
+  };
+}
+
 /** One place's variables, for the Settings editor. */
 export interface EnvScope {
   readonly vars: readonly EnvVar[];
@@ -146,6 +180,55 @@ export interface EnvScope {
   readonly claudeDotenv: boolean;
   /** Yours only: names a project's variables or its .env win over, and which (so an edit here isn't a surprise). */
   readonly overridden?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * What comes from below, for the editor to show greyed (BLG-926): for a project, your variables;
+   * for a worktree, yours, the .env files and the project's. Each with where it's from; later ones win.
+   */
+  readonly inherited?: readonly InheritedVar[];
+  /** The .env.example beside them (projects and worktrees): what it lists that isn't set, and what's set that it doesn't list. */
+  readonly example?: ExampleInfo;
+  /** Keys a worktree adds to or removes from its .env reach its .env.example (projects only; on unless switched off). */
+  readonly exampleSync?: boolean;
+}
+
+/** A variable set further down, and where. */
+export interface InheritedVar {
+  readonly key: string;
+  readonly value: string;
+  /** 'Everywhere', '.env', or the project's name. */
+  readonly from: string;
+}
+
+/** A folder's template against what's set there (names only). */
+export interface ExampleInfo {
+  /** The template there (".env.example"), or none yet. */
+  readonly file?: string;
+  readonly keys: readonly string[];
+  /** Listed in it, set nowhere: what the code there may need. */
+  readonly missing: readonly string[];
+  /** In the .env files or the project's variables, but not listed in it. */
+  readonly unlisted: readonly string[];
+}
+
+/** A worktree's own variables, over everything below. */
+export interface WorktreeEnvScope extends EnvScope {
+  readonly name: string;
+  readonly projectId: string;
+  readonly projectName: string;
+}
+
+/** A project's environment in names and counts, for its page and the phone (never a value). */
+export interface EnvOverview {
+  readonly own: number;
+  readonly dotenv: number;
+  readonly dotenvOn: boolean;
+  readonly dotenvFiles: readonly string[];
+  readonly everywhere: number;
+  readonly example?: ExampleInfo;
+  /** Worktrees keep .env.example in step on their own (on unless switched off): what it doesn't list needs nothing from you. */
+  readonly exampleSync?: boolean;
+  /** Its worktrees with variables of their own. */
+  readonly worktrees: readonly { readonly id: string; readonly name: string; readonly keys: readonly string[] }[];
 }
 
 /** Whether your own Claude may read a folder's .env files without asking you (see agent-host.ts). */
@@ -230,7 +313,8 @@ export class EnvVars {
   /** Tell screens the names (never the values). */
   private publish(): void {
     const projects = Object.fromEntries(Object.entries(this.kept.projects).map(([root, p]) => [root, { keys: Object.keys(p.vars), dotenv: loadsDotenv(p) }]));
-    const keys: EnvKeys = { global: Object.keys(this.kept.global), projects };
+    const worktrees = Object.fromEntries(Object.entries(this.kept.worktrees).filter(([, w]) => Object.keys(w.vars).length).map(([id, w]) => [id, Object.keys(w.vars)]));
+    const keys: EnvKeys = { global: Object.keys(this.kept.global), projects, worktrees };
     this.deps.store.dispatch({ type: 'env_keys', keys });
     for (const w of [...this.watchers]) w();
   }
@@ -252,15 +336,191 @@ export class EnvVars {
     const project = this.project(projectId);
     const saved = project ? this.data.projects[project.root] : undefined;
     const dotenvVars = project ? readDotenv(project.root) : {};
+    const own = saved?.vars ?? {};
+    const fileKeys = [...(loadsDotenv(saved) ? Object.keys(dotenvVars) : []), ...Object.keys(own)];
+    const set = new Set([...Object.keys(this.data.global), ...fileKeys]);
     return {
-      vars: toRows(saved?.vars ?? {}),
+      vars: toRows(own),
       dotenv: loadsDotenv(saved),
       dotenvKeys: Object.keys(dotenvVars),
       dotenvVars: toRows(dotenvVars),
       dotenvFiles: project ? dotenvFilesIn(project.root) : [],
       claudeDotenv: saved?.claudeDotenv ?? false,
       newKeysBack: saved?.newKeysBack !== false,
+      exampleSync: saved?.exampleSync !== false,
+      inherited: toRows(this.data.global).map((v) => ({ ...v, from: 'Everywhere' })),
+      ...(project ? { example: exampleInfo(project.root, set, fileKeys) } : {}),
     };
+  }
+
+  /** The workspace (and its project) by id, a worktree or a main folder's. */
+  private workspace(id: string): { project: Project; ws: Workspace } | undefined {
+    for (const project of this.projects) {
+      const ws = project.workspaces.find((w) => w.id === id);
+      if (ws) return { project, ws };
+    }
+    return undefined;
+  }
+
+  /**
+   * What runs in a place gets, layer by layer, later ones winning: yours, the .env files (the main
+   * folder's, then the workspace's own copy), the project's, then the worktree's (BLG-924).
+   */
+  private layers(project: Project | undefined, dir: string | undefined, wsId: string | undefined, dotenvToo: boolean): { from: string; vars: Record<string, string> }[] {
+    const own = project ? this.data.projects[project.root] : undefined;
+    const dotenv = project && dotenvToo && loadsDotenv(own) ? { ...readDotenv(project.root), ...(dir && dir !== project.root ? readDotenv(dir) : {}) } : {};
+    return [
+      { from: 'Everywhere', vars: { ...this.data.global } },
+      { from: '.env', vars: dotenv },
+      { from: project?.name ?? 'the project', vars: { ...(own?.vars ?? {}) } },
+      { from: 'this worktree', vars: { ...(wsId ? this.data.worktrees[wsId]?.vars : undefined) } },
+    ];
+  }
+
+  /** A worktree's own variables, with what it gets from below (BLG-924). */
+  worktree(id: string): WorktreeEnvScope {
+    const found = this.workspace(id);
+    if (!found) throw new Error('That worktree is gone');
+    const { project, ws } = found;
+    const saved = this.data.projects[project.root];
+    const below = this.layers(project, ws.path, undefined, true).slice(0, 3);
+    // Each name once, from the layer that wins.
+    const winning = new Map<string, InheritedVar>();
+    for (const layer of below) for (const [key, value] of Object.entries(layer.vars)) winning.set(key, { key, value, from: layer.from });
+    const own = this.data.worktrees[id]?.vars ?? {};
+    const fileKeys = [...Object.keys(below[1]!.vars), ...Object.keys(below[2]!.vars), ...Object.keys(own)];
+    const set = new Set([...winning.keys(), ...Object.keys(own)]);
+    const dotenvVars = readDotenv(ws.path);
+    return {
+      name: ws.name,
+      projectId: project.id,
+      projectName: project.name,
+      vars: toRows(own),
+      dotenv: loadsDotenv(saved),
+      dotenvKeys: Object.keys(dotenvVars),
+      dotenvFiles: dotenvFilesIn(ws.path),
+      claudeDotenv: saved?.claudeDotenv ?? false,
+      inherited: [...winning.values()],
+      example: exampleInfo(ws.path, set, fileKeys),
+    };
+  }
+
+  /** Replace a worktree's own variables (rows as in set). */
+  setWorktree(id: string, rows: readonly EnvVar[]): void {
+    if (!this.workspace(id)) throw new Error('That worktree is gone');
+    const vars = checkedVars(rows);
+    const before = this.data.worktrees[id];
+    this.data = { ...this.data, worktrees: withWorktree(this.data.worktrees, id, { ...before, vars }) };
+    this.save();
+    this.publish();
+    this.deps.onChange?.();
+  }
+
+  /**
+   * Carry a worktree's own variables to its project (same name: the worktree's wins) and drop them
+   * there: before it's archived or deleted, so the project keeps what it worked out. → how many.
+   */
+  carryWorktree(id: string): number {
+    const found = this.workspace(id);
+    const vars = this.data.worktrees[id]?.vars ?? {};
+    if (!found || !Object.keys(vars).length) return 0;
+    const n = this.merge(found.project.id, vars);
+    this.data = { ...this.data, worktrees: withWorktree(this.data.worktrees, id, { ...this.data.worktrees[id], vars: {} }) };
+    this.save();
+    this.publish();
+    return n;
+  }
+
+  /** A deleted worktree's variables go with it. */
+  forgetWorktree(id: string): void {
+    if (!(id in this.data.worktrees)) return;
+    const { [id]: _gone, ...rest } = this.data.worktrees;
+    this.data = { ...this.data, worktrees: rest };
+    this.save();
+    this.publish();
+  }
+
+  /** A project's environment in names and counts (its page, the phone): never a value. */
+  overview(projectId: string): EnvOverview {
+    const project = this.project(projectId);
+    if (!project) throw new Error('That project is gone');
+    const scope = this.get(projectId);
+    const worktrees = project.workspaces
+      .filter((w) => !w.archived && Object.keys(this.data.worktrees[w.id]?.vars ?? {}).length)
+      .map((w) => ({ id: w.id, name: w.name, keys: Object.keys(this.data.worktrees[w.id]!.vars) }));
+    return {
+      own: scope.vars.length,
+      dotenv: scope.dotenvKeys.length,
+      dotenvOn: scope.dotenv,
+      dotenvFiles: scope.dotenvFiles ?? [],
+      everywhere: Object.keys(this.data.global).length,
+      ...(scope.example ? { example: scope.example } : {}),
+      exampleSync: scope.exampleSync !== false,
+      worktrees,
+    };
+  }
+
+  /**
+   * List in the main folder's .env.example what its .env files and the project's variables set and
+   * it doesn't (a placeholder each, never the value; the file is made when there's none). → the names added.
+   */
+  addToExample(projectId: string): string[] {
+    const project = this.project(projectId);
+    if (!project) throw new Error('That project is gone');
+    const found = readExample(project.root);
+    const values = mergeEnv(readDotenv(project.root), this.data.projects[project.root]?.vars);
+    const { text, added } = syncExample(found?.text ?? '', toRows(values));
+    if (added.length) writeFileSync(path.join(project.root, found?.file ?? DEFAULT_EXAMPLE_FILE), text);
+    return [...added];
+  }
+
+  /** Whether a worktree's added and removed keys reach its .env.example (by project id; on by default). */
+  setExampleSync(projectId: string, on: boolean): void {
+    const project = this.project(projectId);
+    if (!project) throw new Error('That project is gone');
+    this.data = { ...this.data, projects: this.withProject(project.root, { exampleSync: on }) };
+    this.save();
+  }
+
+  /**
+   * A worktree's .env.example kept in step with its .env files (BLG-925), in the worktree, so the
+   * change ships with its work and the main folder is never touched (nor pushed by itself):
+   * - the first look catches it up: every name the .env files have that it doesn't list is added
+   *   (made when there's none), so a template that drifted is mended by the next worktree's work;
+   * - after that, keys the worktree adds or removes itself are added or taken out;
+   * - `noteOnly` just notes the names (keys the main folder's .env brought in later aren't this
+   *   worktree's to list: the worktree that added them lists them).
+   * → what changed there, and whether it was the first look's catch-up.
+   */
+  syncWorktreeExample(id: string, noteOnly = false): { file: string; added: readonly string[]; removed: readonly string[]; caughtUp?: boolean } | undefined {
+    const found = this.workspace(id);
+    if (!found || found.ws.kind !== 'worktree') return undefined;
+    const { project, ws } = found;
+    const values = readDotenv(ws.path);
+    const now = Object.keys(values);
+    const before = this.data.worktrees[id];
+    const base = before?.base;
+    const note = (): void => {
+      if (base && base.length === now.length && base.every((k, i) => k === now[i])) return;
+      this.data = { ...this.data, worktrees: withWorktree(this.data.worktrees, id, { vars: {}, ...before, base: now }) };
+      this.save();
+    };
+    if (noteOnly || this.data.projects[project.root]?.exampleSync === false) {
+      note();
+      return undefined;
+    }
+    const template = readExample(ws.path);
+    const has = new Set(now);
+    const had = new Set(base ?? []);
+    const added = now.filter((k) => !base || !had.has(k)).map((key) => ({ key, value: values[key] ?? '' }));
+    // The catch-up only adds: a name the code reads may be set elsewhere (the project's, yours).
+    const removed = base ? base.filter((k) => !has.has(k)) : [];
+    const result = syncExample(template?.text ?? '', added, removed);
+    const file = template?.file ?? DEFAULT_EXAMPLE_FILE;
+    const changed = result.added.length > 0 || result.removed.length > 0;
+    if (changed) writeFileSync(path.join(ws.path, file), result.text);
+    note();
+    return changed ? { file, added: result.added, removed: result.removed, ...(base ? {} : { caughtUp: true }) } : undefined;
   }
 
   /** Let your own Claude read .env files without asking (or ask again): in a project, or with none, everywhere. */
@@ -281,7 +541,8 @@ export class EnvVars {
     // Back on (the default): nothing to keep for it.
     if (next.dotenv === undefined || ('dotenv' in change && change.dotenv === undefined)) delete next.dotenv;
     if (next.newKeysBack !== false) delete next.newKeysBack;
-    return Object.keys(next.vars).length || next.dotenv !== undefined || next.claudeDotenv || next.newKeysBack === false ? { ...others, [root]: next } : others;
+    if (next.exampleSync !== false) delete next.exampleSync;
+    return Object.keys(next.vars).length || next.dotenv !== undefined || next.claudeDotenv || next.newKeysBack === false || next.exampleSync === false ? { ...others, [root]: next } : others;
   }
 
   readonly dotenvAccess: DotenvAccess = {
@@ -302,11 +563,7 @@ export class EnvVars {
    * name or one used twice refuses the whole change.
    */
   set(projectId: string | undefined, rows: readonly EnvVar[], dotenv?: boolean): void {
-    const filled = rows.filter((r) => r.key || r.value);
-    const problem = [...envProblems(filled).values()][0];
-    if (problem) throw new Error(problem);
-    if (filled.length > MAX_ENV_VARS) throw new Error(`Up to ${MAX_ENV_VARS} variables`);
-    const vars = envRecord(filled);
+    const vars = checkedVars(rows);
     if (!projectId) {
       this.data = { ...this.data, global: vars };
     } else {
@@ -348,6 +605,23 @@ export class EnvVars {
     if (!project) throw new Error('That project is gone');
     this.data = { ...this.data, projects: this.withProject(project.root, { newKeysBack: on }) };
     this.save();
+  }
+
+  /**
+   * Every secret value this computer's Beluga knows: your variables, each project's saved ones and
+   * its main folder's .env files, and the endpoints' keys. Only for masking them out of text on this
+   * computer before it's sent (src/telemetry/mask.ts); never shown, never sent.
+   */
+  secretValues(): string[] {
+    const data = this.data;
+    const dotenvs = this.projects.flatMap((p) => {
+      try {
+        return Object.values(readDotenv(p.root));
+      } catch {
+        return [];
+      }
+    });
+    return [...Object.values(data.global), ...Object.values(data.projects).flatMap((p) => Object.values(p.vars)), ...dotenvs, ...data.endpoints.flatMap((e) => (e.key ? [e.key] : []))];
   }
 
   /** Your endpoints, keys and all: for runs on this Mac only (never a screen: see local-endpoints.ts). */
@@ -393,20 +667,18 @@ export class EnvVars {
   }
 
   /** The project something runs in: the workspace's, the one named, or the one whose folder holds `dir`. */
-  private placeOf(where: EnvPlace): { project?: Project; dir?: string } {
+  private placeOf(where: EnvPlace): { project?: Project; dir?: string; wsId?: string } {
     const projects = this.projects;
     if (where.workspaceId) {
-      for (const p of projects) {
-        const ws = p.workspaces.find((w) => w.id === where.workspaceId);
-        if (ws) return { project: p, dir: ws.path };
-      }
+      const found = this.workspace(where.workspaceId);
+      if (found) return { project: found.project, dir: found.ws.path, wsId: found.ws.id };
     }
     const named = this.project(where.projectId);
-    if (named) return { project: named, dir: where.dir ?? named.root };
+    if (named) return { project: named, dir: where.dir ?? named.root, ...worktreeAt(named, where.dir) };
     const dir = where.dir ? path.resolve(where.dir) : undefined;
     if (!dir) return {};
     const project = projects.find((p) => inside(dir, p.root) || p.workspaces.some((w) => inside(dir, w.path)));
-    return { project, dir };
+    return { project, dir, ...(project ? worktreeAt(project, dir) : {}) };
   }
 
   /**
@@ -417,11 +689,10 @@ export class EnvVars {
    * mustn't hand Claude what it would otherwise ask you for.
    */
   envFor(where: EnvPlace = {}, opts: { readonly claude?: boolean } = {}): Record<string, string> {
-    const { project, dir } = this.placeOf(where);
+    const { project, dir, wsId } = this.placeOf(where);
     const own = project ? this.data.projects[project.root] : undefined;
     const allowed = !opts.claude || own?.dotenv === true || this.data.claudeDotenv || Boolean(own?.claudeDotenv);
-    const dotenv = project && loadsDotenv(own) && allowed ? { ...readDotenv(project.root), ...(dir && dir !== project.root ? readDotenv(dir) : {}) } : undefined;
-    return mergeEnv(this.data.global, dotenv, own?.vars);
+    return mergeEnv(...this.layers(project, dir, wsId, allowed).map((l) => l.vars));
   }
 
   /**
@@ -436,11 +707,11 @@ export class EnvVars {
   }
 
   viewEnv(dir?: string): { vars: Record<string, string>; where: string } {
-    const { project, dir: at } = this.placeOf({ dir });
+    const { project, dir: at, wsId } = this.placeOf({ dir });
     const own = project ? this.data.projects[project.root] : undefined;
     const dotenv = { ...(project ? readDotenv(project.root) : {}), ...(at && at !== project?.root ? readDotenv(at) : {}) };
-    const where = project ? `your variables, ${project.name}’s variables (Settings › Environment) and its .env` : 'your variables (Settings › Environment); this folder isn’t in one of your projects';
-    return { vars: mergeEnv(this.data.global, dotenv, own?.vars), where };
+    const where = project ? `your variables, ${project.name}’s variables (its Environment) and its .env` : 'your variables (Settings › Environment); this folder isn’t in one of your projects';
+    return { vars: mergeEnv(this.data.global, dotenv, own?.vars, wsId ? this.data.worktrees[wsId]?.vars : undefined), where };
   }
 
   /**
@@ -463,3 +734,29 @@ export class EnvVars {
 }
 
 const toRows = (vars: Readonly<Record<string, string>>): EnvVar[] => Object.entries(vars).map(([key, value]) => ({ key, value }));
+
+/** Rows as a name → value record, or why not: rows without a name are skipped; a bad name or one used twice refuses them all. */
+function checkedVars(rows: readonly EnvVar[]): Record<string, string> {
+  const filled = rows.filter((r) => r.key || r.value);
+  const problem = [...envProblems(filled).values()][0];
+  if (problem) throw new Error(problem);
+  if (filled.length > MAX_ENV_VARS) throw new Error(`Up to ${MAX_ENV_VARS} variables`);
+  return envRecord(filled);
+}
+
+type WorktreeEntry = EnvFile['worktrees'][string];
+
+/** The worktrees with one changed (dropped when there's nothing left to keep). */
+function withWorktree(all: EnvFile['worktrees'], id: string, next: Partial<WorktreeEntry>): EnvFile['worktrees'] {
+  const { [id]: _before, ...others } = all;
+  const entry: WorktreeEntry = { vars: next.vars ?? {}, ...(next.base ? { base: next.base } : {}) };
+  return Object.keys(entry.vars).length || entry.base ? { ...others, [id]: entry } : others;
+}
+
+/** The worktree (not the main folder) whose folder holds `dir`, the deepest one. */
+function worktreeAt(project: Project, dir: string | undefined): { wsId?: string } {
+  if (!dir) return {};
+  const at = path.resolve(dir);
+  const ws = project.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && inside(at, w.path)).sort((a, b) => b.path.length - a.path.length)[0];
+  return ws ? { wsId: ws.id } : {};
+}

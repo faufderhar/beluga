@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { PrCheck, PullRequest } from '../core/work-store.js';
+import type { PrCheck, PrFork, PullRequest } from '../core/work-store.js';
+import { pullHeadRef } from './git.js';
 import { belugaHome } from './store.js';
 import { belugaEnv } from '../core/beluga-env.js';
 import { type GitSetup, type GitTroubleKind, classifyGitError, httpsRemoteOf } from '../shared/git-trouble.js';
@@ -279,6 +280,18 @@ interface GhPr {
   autoMergeRequest?: unknown;
   headRefOid?: string;
   mergedAt?: string;
+  isCrossRepository?: boolean;
+  maintainerCanModify?: boolean;
+  headRepository?: { name?: string } | null;
+  headRepositoryOwner?: { login?: string } | null;
+}
+
+/** The fork a pull request comes from, when gh was asked (FORK_FIELDS) and it is one. */
+function forkOf(raw: GhPr): PrFork | undefined {
+  const owner = raw.headRepositoryOwner?.login;
+  const repo = raw.headRepository?.name;
+  if (raw.isCrossRepository !== true || !owner || !repo || !raw.headRefName) return undefined;
+  return { owner, repo, branch: raw.headRefName, canPush: raw.maintainerCanModify === true };
 }
 
 function toPr(raw: GhPr): PullRequest | undefined {
@@ -288,6 +301,7 @@ function toPr(raw: GhPr): PullRequest | undefined {
   const checkRuns = parseChecks(raw.statusCheckRollup);
   const open = state === 'OPEN';
   const mergedAt = state === 'MERGED' && typeof raw.mergedAt === 'string' ? Date.parse(raw.mergedAt) : NaN;
+  const fork = forkOf(raw);
   return {
     number: raw.number,
     url: raw.url,
@@ -301,6 +315,7 @@ function toPr(raw: GhPr): PullRequest | undefined {
     ...(open && raw.autoMergeRequest ? { autoMerge: true } : {}),
     ...(typeof raw.headRefOid === 'string' && raw.headRefOid ? { head: raw.headRefOid } : {}),
     ...(Number.isFinite(mergedAt) ? { mergedAt } : {}),
+    ...(fork ? { fork } : {}),
     ...(open && raw.mergeStateStatus === 'BEHIND' ? { mergeState: 'behind' as const } : open && raw.mergeStateStatus === 'BLOCKED' ? { mergeState: 'blocked' as const } : {}),
   };
 }
@@ -338,6 +353,8 @@ export function parsePrList(json: string): Map<string, PullRequest> | undefined 
 }
 
 const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,mergeStateStatus,autoMergeRequest,headRefOid,mergedAt';
+/** What says where a fork's pull request lives (PullRequest.fork). */
+const FORK_FIELDS = 'isCrossRepository,maintainerCanModify,headRepository,headRepositoryOwner,headRefName';
 /** How many PRs one `gh pr list` asks for. */
 export const PR_LIST_LIMIT = 60;
 
@@ -410,6 +427,25 @@ async function pushOnce(dir: string, head: string, opts: { readonly https?: bool
     await track();
     return 'replaced';
   }
+}
+
+/**
+ * Push HEAD to a fork's pull request (BLG-948), which its author lets maintainers edit: straight to
+ * its branch on the fork, over HTTPS with gh's login (the one Beluga already asks GitHub with), never
+ * forced. Then the kept head moves along, so those commits read as on the pull request at once.
+ */
+export async function pushToFork(dir: string, fork: Pick<PrFork, 'owner' | 'repo' | 'branch'>, pull: number): Promise<void> {
+  const origin = originRepo(dir);
+  if (!origin) throw new Error('origin isn’t on GitHub, so there’s no fork to push to');
+  const url = `https://${origin.host}/${fork.owner}/${fork.repo}.git`;
+  try {
+    await run('git', [...ghCredentials(), 'push', url, `HEAD:refs/heads/${fork.branch}`], dir, 120_000);
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    throw new PushError(pushWhy(raw), raw);
+  }
+  const sha = (await run('git', ['rev-parse', 'HEAD'], dir, 5000).catch(() => '')).trim();
+  if (sha) await run('git', ['update-ref', pullHeadRef(pull), sha], dir, 5000).catch(() => undefined);
 }
 
 export type BaseMergeResult = { readonly ok: true; readonly how: 'fast_forward' | 'merge_commit'; readonly sha: string } | { readonly ok: false; readonly reason: 'conflict'; readonly files: readonly string[] } | { readonly ok: false; readonly reason: 'moved' };
@@ -531,7 +567,9 @@ export async function setPrTarget(dir: string, branch: string, to: Pick<GitHubRe
 export async function findPr(dir: string, branch: string): Promise<PullRequest | undefined> {
   if (!(await hasGh())) return undefined;
   try {
-    return parsePr(await runGh(['pr', 'view', prOfBranch(dir, branch), '--json', PR_FIELDS], dir, 20_000));
+    // A fork's pull request checked out here: whose fork, and whether it lets maintainers push (BLG-948).
+    const fields = pullOfBranch(dir, branch) !== undefined ? `${PR_FIELDS},${FORK_FIELDS}` : PR_FIELDS;
+    return parsePr(await runGh(['pr', 'view', prOfBranch(dir, branch), '--json', fields], dir, 20_000));
   } catch (err) {
     if (err instanceof Error && /no pull requests? found/i.test(err.message)) return undefined;
     throw err;
@@ -609,6 +647,11 @@ export async function disableAutoMerge(dir: string, number: number): Promise<voi
 /** Run a workflow run's failed jobs again on the same commit (`gh run rerun <id> --failed`, see branch-state's failedRunIds). Throws gh's error. */
 export async function rerunFailed(dir: string, runId: number): Promise<void> {
   await runGh(['run', 'rerun', String(runId), '--failed'], dir, 30_000);
+}
+
+/** Stop a workflow run that's still queued or running (`gh run cancel <id>`): a skipped check after Merge Now, Skipping Checks. Throws gh's error. */
+export async function cancelRun(dir: string, runId: number): Promise<void> {
+  await runGh(['run', 'cancel', String(runId)], dir, 30_000);
 }
 
 export type PrStepKind = 'update_branch' | 'ready';

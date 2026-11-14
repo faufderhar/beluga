@@ -1,5 +1,6 @@
 import { type AgentRef, CLAUDE_AGENT, defaultAgentOf, type PeerInfo } from '../protocol.js';
 import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
+import { chatMentionsIn } from '../shared/chat-ref.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import type { Project } from '../workspaces/types.js';
 
@@ -109,6 +110,8 @@ export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo
   for (; i < tokens.length; i++) {
     const match = MENTION.exec(tokens[i] ?? '');
     if (!match) break;
+    // "@Fix the login (chat: …)" names a chat, nobody to ask (a person called Fix included).
+    if (chatMentionsIn(tokens.slice(i).join(' '))[0]?.start === 0) break;
     const root = match[1]!;
     const second = match[2];
     const lower = root.toLowerCase();
@@ -140,6 +143,7 @@ export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo
       } else ask(peer.peerId, agentOf(peer, second), Boolean(second));
     }
   }
+  if (i === 0 && chatMentionsIn(text)[0]?.start === 0) return { kind: 'chat', text };
   if (i === 0) {
     // "@zed hi" where nobody is zed: still chat, but say so instead of dropping it silently.
     const first = MENTION.exec(tokens[0] ?? '');

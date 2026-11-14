@@ -1,12 +1,22 @@
 /* The request pop-up: a small native-looking card in the screen's top-right corner. */
 
 .stack {
+  /*
+   * A soft shadow that fits in the see-through window: the app's --shadow-pop (28 to 32px of blur)
+   * ran past the window's edges and was cut off in hard lines. Each layer here stays inside the
+   * padding (blur - spread + offset), so it fades out before the window ends.
+   */
+  --popup-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06), 0 6px 12px -3px rgba(0, 0, 0, 0.12);
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   /* Room for the cards' shadow inside the see-through window. */
   padding: 10px 14px 18px;
+}
+
+:root[data-theme='dark'] .stack {
+  --popup-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 3px rgba(0, 0, 0, 0.25), 0 6px 12px -3px rgba(0, 0, 0, 0.4);
 }
 
 .card {
@@ -18,7 +28,7 @@
   background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
   backdrop-filter: blur(24px) saturate(1.6);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--popup-shadow);
   animation: drop var(--dur) var(--ease-out);
 }
 
@@ -165,7 +175,7 @@
   border-radius: 999px;
   color: var(--text-2);
   background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--popup-shadow);
 }
 
 .buttons {

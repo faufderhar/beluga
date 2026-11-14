@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { branchState, failedRunIds, prBlocker } from '../src/core/branch-state.js';
+import { branchState, failedRunIds, prBlocker, runningRunIds } from '../src/core/branch-state.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { PrCheck, PullRequest } from '../src/core/work-store.js';
 import type { WorkspaceController } from '../src/core/workspace-controller.js';
@@ -24,7 +24,7 @@ vi.mock('node:child_process', async (orig) => ({
     queueMicrotask(() => cb(null, '', ''));
   },
 }));
-const { parsePr, rerunFailed } = await import('../src/workspaces/pr.js');
+const { cancelRun, parsePr, rerunFailed } = await import('../src/workspaces/pr.js');
 
 const ws = (over: Partial<Workspace> = {}): Workspace => ({ id: 'w1', projectRoot: '/r', projectId: 'p1', name: 'w', path: '/r/w', kind: 'worktree', createdAt: 0, branch: 'feat/x', base: 'main', external: false, status: { changed: 0, ahead: 2, behind: 0 }, ...over });
 const project = (w: Workspace): Project => ({ id: 'p1', name: 'app', root: '/r', base: 'main', workspaces: [w] });
@@ -59,6 +59,21 @@ describe('branchState: the PR’s next step in plain words', () => {
     expect(b.pr).toEqual({ number: 366, state: 'OPEN' });
   });
 
+  it('someone’s fork’s PR its author doesn’t let maintainers edit: Open Your Own PR, never a Push that can’t land (BLG-948)', () => {
+    const b = at(fixedHere, pr({ fork: { owner: 'rstagi', repo: 'app', branch: 'feat/share', canPush: false } }));
+    expect([b.kind, b.label]).toEqual(['not_pushed', '2 commits not on PR']);
+    expect(b.detail).toBe('2 commits here aren’t on PR #366, and rstagi’s fork doesn’t let maintainers push to it');
+    expect(b.steps.map((s) => s.id)).toEqual(['pr_own', 'open_pr']);
+    expect(b.steps[0]).toMatchObject({ label: 'Open Your Own PR' });
+    expect(b.steps[0]?.hint).toBe('A new pull request into main with PR #366’s commits and your 2 commits, on a branch of its own');
+  });
+
+  it('one that does: Push goes to the fork, and your own PR is the other way', () => {
+    const b = at(fixedHere, pr({ fork: { owner: 'rstagi', repo: 'app', branch: 'feat/share', canPush: true } }));
+    expect(b.steps.map((s) => s.id)).toEqual(['push', 'pr_own', 'open_pr']);
+    expect(b.steps[0]?.hint).toContain('Pushes to feat/share on rstagi’s fork');
+  });
+
   it('not pushed after failing checks says so, in the singular for one commit, and keeps Commit for what’s left', () => {
     const one = ws({ status: { changed: 3, ahead: 1, behind: 0, unpushed: 1 } });
     const b = at(one, pr({ checks: 'failing' }));
@@ -73,6 +88,15 @@ describe('branchState: the PR’s next step in plain words', () => {
     expect([b.kind, b.label, b.tone]).toEqual(['conflicts', 'Conflicts with main', 'error']);
     expect(b.steps[0]).toMatchObject({ id: 'resolve_pr', label: 'Resolve Conflicts…', claude: true });
     expect(b.detail).toContain('conflicts with main');
+  });
+
+  it('gh’s word on a fork’s PR says whose fork, its branch there, and whether maintainers may push (BLG-948)', () => {
+    const raw = { number: 488, url: 'u', state: 'OPEN', headRefName: 'feat/share', isCrossRepository: true, maintainerCanModify: false, headRepository: { name: 'beluga' }, headRepositoryOwner: { login: 'rstagi' } };
+    expect(parsePr(JSON.stringify(raw))?.fork).toEqual({ owner: 'rstagi', repo: 'beluga', branch: 'feat/share', canPush: false });
+    expect(parsePr(JSON.stringify({ ...raw, maintainerCanModify: true }))?.fork?.canPush).toBe(true);
+    // Its own repository's PR, or one gh wasn't asked about: no fork.
+    expect(parsePr(JSON.stringify({ ...raw, isCrossRepository: false }))).not.toHaveProperty('fork');
+    expect(parsePr(JSON.stringify({ number: 1, url: 'u', state: 'OPEN' }))).not.toHaveProperty('fork');
   });
 
   it('GitHub still working out mergeability (UNKNOWN) is never a conflict', () => {
@@ -124,13 +148,37 @@ describe('failedRunIds / rerunFailed', () => {
   });
 });
 
+describe('runningRunIds / cancelRun', () => {
+  it('the Actions runs behind the queued and running checks, each once; not finished ones or commit statuses', () => {
+    const status: PrCheck = { name: 'vercel', state: 'in_progress', url: 'https://vercel.com/o/r/deploy' };
+    const checks = [run('a', 'in_progress', undefined, 21), run('b', 'queued', undefined, 21), run('c', 'queued', undefined, 22), run('d', 'completed', 'success', 23), run('e', 'completed', 'failure', 24), status];
+    expect(runningRunIds({ checkRuns: checks })).toEqual([21, 22]);
+    expect(runningRunIds({})).toEqual([]);
+  });
+
+  it('runs gh run cancel in the worktree', async () => {
+    exec.calls.length = 0;
+    await cancelRun('/code/auth', 21);
+    expect(exec.calls).toEqual([{ cmd: 'gh', args: ['run', 'cancel', '21'], cwd: '/code/auth' }]);
+  });
+});
+
 /** A Workbench with one worktree whose PR lives in a stubbed GitHub. */
 function bench(start: PullRequest, opts: { pushFails?: Error; dir?: string } = {}) {
   const store = new Store(initialState('t', 'ask'));
   const w: Record<string, unknown> = { id: 'auth', name: 'auth', kind: 'worktree', branch: 'klaud/auth', path: opts.dir ?? '/code/auth', projectId: 'p1', status: { changed: 0, ahead: 2, behind: 0, unpushed: 2 } };
-  const manager = { list: [{ id: 'p1', workspaces: [w] }], find: (id: string) => (id === w.id ? w : undefined) };
+  const manager = {
+    list: [{ id: 'p1', workspaces: [w] }],
+    find: (id: string) => (id === w.id ? w : undefined),
+    leavePull: async () => {
+      w.branch = 'beluga/auth';
+      return 'beluga/auth';
+    },
+  };
+  const opened: Array<{ base: string; head: string; title: string; body: string }> = [];
   let github = start;
   const pushes: string[] = [];
+  const forkPushes: string[] = [];
   const reruns: number[] = [];
   const toasts: Array<{ text: string; level?: string }> = [];
   let refreshed = 0;
@@ -145,6 +193,7 @@ function bench(start: PullRequest, opts: { pushFails?: Error; dir?: string } = {
     hasGh: async () => true,
     findPr: async () => github,
     remoteRef: () => undefined,
+    pushToFork: async (_dir, fork, pull) => void forkPushes.push(`${fork.owner}/${fork.repo}:${fork.branch}#${pull}`),
     pushForPr: async (_dir, head) => {
       if (opts.pushFails) throw opts.pushFails;
       pushes.push(head);
@@ -152,10 +201,14 @@ function bench(start: PullRequest, opts: { pushFails?: Error; dir?: string } = {
       return 'pushed';
     },
     rerunFailed: async (_dir, id) => void reruns.push(id),
+    createPr: async (_dir, made) => {
+      opened.push({ base: made.base, head: made.head, title: made.title, body: made.body });
+      return pr({ number: 77, title: made.title });
+    },
   });
   store.dispatch({ type: 'gh', ok: true });
   store.dispatch({ type: 'pr', id: 'auth', pr: start });
-  return { wb, store, pushes, reruns, toasts, refreshed: () => refreshed, pr: () => store.getState().prs.auth };
+  return { wb, store, opened, pushes, forkPushes, reruns, toasts, setGithub: (p: PullRequest) => void (github = p), refreshed: () => refreshed, pr: () => store.getState().prs.auth };
 }
 
 describe('Workbench.pushPr / rerunChecks', () => {
@@ -176,8 +229,59 @@ describe('Workbench.pushPr / rerunChecks', () => {
       const b = bench(pr({ number: 9, checks: 'failing' }), { dir });
       const out = await b.wb.pushPr('auth');
       expect(out.ok).toBe(false);
-      expect(out.message).toContain('PR #9 is from someone’s fork');
+      expect(out.message).toBe('PR #9’s fork doesn’t let maintainers push to PR #9. Open Your Own PR puts your commits on a new pull request, with #9’s');
       expect(b.pushes).toEqual([]);
+      expect(b.forkPushes).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const forkDir = (n: number): string => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-fork-pull-'));
+    mkdirSync(path.join(dir, '.git'));
+    writeFileSync(path.join(dir, '.git', 'config'), `[branch "klaud/auth"]\n\tremote = origin\n\tmerge = refs/pull/${n}/head\n`);
+    return dir;
+  };
+
+  it('Open Your Own PR makes the branch yours and opens a PR that says what it builds on (BLG-948)', async () => {
+    const dir = forkDir(488);
+    try {
+      const b = bench(pr({ number: 488, title: 'Share a plain chat', fork: { owner: 'rstagi', repo: 'app', branch: 'feat/share', canPush: false } }), { dir });
+      const out = await b.wb.quickPr('auth', { own: true });
+      expect(out).toEqual({ ok: true, message: 'Opened PR #77: Share a plain chat' });
+      expect(b.opened).toHaveLength(1);
+      expect(b.opened[0]).toMatchObject({ head: 'beluga/auth', title: 'Share a plain chat' });
+      expect(b.opened[0]!.body.split('\n')[0]).toBe('Builds on #488 from rstagi’s fork, which doesn’t take pushes from maintainers.');
+      expect(b.pr()?.number).toBe(77);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a fork that lets maintainers edit its PR gets the push on its own branch (BLG-948)', async () => {
+    const dir = forkDir(9);
+    try {
+      const b = bench(pr({ number: 9, fork: { owner: 'rstagi', repo: 'app', branch: 'feat/share', canPush: true } }), { dir });
+      expect(await b.wb.pushPr('auth')).toEqual({ ok: true, message: 'Pushed to rstagi’s fork: PR #9’s checks run again' });
+      expect(b.forkPushes).toEqual(['rstagi/app:feat/share#9']);
+      expect(b.pushes).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('one that doesn’t pushes nothing and points at Open Your Own PR, with what GitHub says now kept', async () => {
+    const dir = forkDir(9);
+    try {
+      // Saved before forks were told apart: GitHub is asked again, and its answer shows the right step.
+      const b = bench(pr({ number: 9 }), { dir });
+      b.setGithub(pr({ number: 9, fork: { owner: 'rstagi', repo: 'app', branch: 'feat/share', canPush: false } }));
+      const out = await b.wb.pushPr('auth');
+      expect(out).toEqual({ ok: false, message: 'rstagi’s fork doesn’t let maintainers push to PR #9. Open Your Own PR puts your commits on a new pull request, with #9’s' });
+      expect(b.toasts.at(-1)?.level).toBe('info');
+      expect(b.forkPushes).toEqual([]);
+      expect(b.pr()?.fork?.canPush).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

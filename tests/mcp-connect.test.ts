@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { McpServerStatus } from '@anthropic-ai/claude-agent-sdk';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { closeAllKeptSessions } from '../src/agent/runtime/claude/kept-sessions.js';
 import { McpConnect, type McpSession, type OpenMcpSession } from '../src/agent/runtime/claude/mcp-connect.js';
 
 /** A home with one server of yours, one plugin's and one a project sets. */
@@ -110,5 +111,219 @@ describe('McpConnect', () => {
     expect(f.opened).toHaveLength(0);
     expect(await mcp.signIn(['/room'], 'figma')).toEqual({ connected: true });
     expect(f.closed()).toBe(1);
+  });
+});
+
+describe('McpConnect.readUiResource (MCP Apps)', () => {
+  const st = (name: string, status: McpServerStatus['status']): McpServerStatus => ({ name, status }) as McpServerStatus;
+
+  it('reads the page once its server is up, without waiting for the others, and keeps the session for the app', async () => {
+    const { home: dir } = home();
+    const f = fake([[st('figma', 'pending'), st('linear', 'pending')], [st('figma', 'connected'), st('linear', 'pending')]]);
+    const read: Array<[string, string]> = [];
+    let closed = 0;
+    const open: OpenMcpSession = (cwd, servers) => {
+      const s = f.open(cwd, servers);
+      return {
+        ...s,
+        readMcpResource: async (server: string, uri: string) => {
+          read.push([server, uri]);
+          return { contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: '<p>app</p>', _meta: { ui: { csp: { connectDomains: ['https://api.example.com'] } } } }] };
+        },
+        close: () => void closed++,
+      };
+    };
+    const mcp = new McpConnect(open, { home: dir, env: {}, settleMs: 60_000, pollMs: 1 });
+    const page = await mcp.readUiResource([dir], 'figma', 'ui://figma/app.html');
+    expect(page).toEqual({ html: '<p>app</p>', meta: { ui: { csp: { connectDomains: ['https://api.example.com'] } } } });
+    expect(read).toEqual([['figma', 'ui://figma/app.html']]);
+    expect(closed).toBe(0);
+    mcp.close();
+    expect(closed).toBe(1);
+  });
+
+  it('says so when Claude Code cannot read resources', async () => {
+    const { home: dir } = home();
+    const f = fake([[st('figma', 'connected')]]);
+    const mcp = new McpConnect(f.open, { home: dir, env: {}, pollMs: 1 });
+    await expect(mcp.readUiResource([dir], 'figma', 'ui://figma/app.html')).rejects.toThrow(/can’t read MCP App views/);
+    expect(f.closed()).toBe(1);
+  });
+});
+
+describe('McpConnect app calls (MCP Apps: apps.call, apps.read)', () => {
+  const st = (name: string, status: McpServerStatus['status'], tools?: unknown[]): McpServerStatus => ({ name, status, ...(tools ? { tools } : {}) }) as McpServerStatus;
+
+  it('lists one server’s tools with their annotations and _meta, once it is up', async () => {
+    const { home: dir } = home();
+    const tools = [{ name: 'now', annotations: { readOnly: true }, _meta: { ui: { resourceUri: 'ui://f/a.html' } } }];
+    const f = fake([[st('figma', 'pending')], [st('figma', 'connected', tools)]]);
+    const mcp = new McpConnect(f.open, { home: dir, env: {}, settleMs: 60_000, pollMs: 1 });
+    expect(await mcp.appTools([dir], 'figma')).toEqual(tools);
+    expect(await mcp.appTools([dir], 'linear')).toEqual([]);
+    // linear is not up: its session is not kept.
+    expect(f.closed()).toBe(1);
+    mcp.close();
+    expect(f.closed()).toBe(2);
+  });
+
+  it('calls a tool with mcp_call over the session’s control channel', async () => {
+    const { home: dir } = home();
+    const f = fake([[st('figma', 'connected')]]);
+    const sent: unknown[] = [];
+    let closed = 0;
+    const open: OpenMcpSession = (cwd, servers) => ({
+      ...f.open(cwd, servers),
+      request: async (req: Record<string, unknown>) => {
+        sent.push(req);
+        return { response: { content: [{ type: 'text', text: 'ok' }] } };
+      },
+      close: () => void closed++,
+    });
+    const mcp = new McpConnect(open, { home: dir, env: {}, pollMs: 1 });
+    expect(await mcp.appCall([dir], 'figma', 'now', { a: 1 })).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+    expect(sent).toEqual([{ subtype: 'mcp_call', tool: 'mcp__figma__now', arguments: { a: 1 }, result_not_for_model: true }]);
+    mcp.close();
+    expect(closed).toBe(1);
+  });
+
+  it('says so when Claude Code cannot call tools for apps', async () => {
+    const { home: dir } = home();
+    const f = fake([[st('figma', 'connected')]]);
+    const mcp = new McpConnect(f.open, { home: dir, env: {}, pollMs: 1 });
+    await expect(mcp.appCall([dir], 'figma', 'now', {})).rejects.toThrow(/can’t call MCP App tools/);
+    expect(f.closed()).toBe(1);
+  });
+
+  it('reads a resource whole for the app', async () => {
+    const { home: dir } = home();
+    const f = fake([[st('figma', 'connected')]]);
+    const open: OpenMcpSession = (cwd, servers) => ({
+      ...f.open(cwd, servers),
+      readMcpResource: async (_s: string, uri: string) => ({ contents: [{ uri, blob: 'AA==' }] }),
+    });
+    const mcp = new McpConnect(open, { home: dir, env: {}, pollMs: 1 });
+    expect(await mcp.appRead([dir], 'figma', 'ui://figma/x.png')).toEqual({ contents: [{ uri: 'ui://figma/x.png', blob: 'AA==' }] });
+  });
+});
+
+describe('McpConnect: an MCP App whose server needs a sign-in', () => {
+  const st = (name: string, status: McpServerStatus['status']): McpServerStatus => ({ name, status }) as McpServerStatus;
+
+  it('says the server needs a sign-in, and never reads or calls it', async () => {
+    const { home: dir } = home();
+    const f = fake([[st('figma', 'needs-auth')]]);
+    const asked: string[] = [];
+    const open: OpenMcpSession = (cwd, servers) => ({
+      ...f.open(cwd, servers),
+      readMcpResource: async (_s: string, uri: string) => (asked.push(uri), { contents: [] }),
+      request: async () => (asked.push('call'), { response: { content: [] } }),
+    });
+    const mcp = new McpConnect(open, { home: dir, env: {}, pollMs: 1 });
+    await expect(mcp.readUiResource([dir], 'figma', 'ui://figma/app.html')).rejects.toThrow(/figma needs you to sign in/);
+    await expect(mcp.appCall([dir], 'figma', 'now', {})).rejects.toThrow(/sign in/);
+    expect(asked).toEqual([]);
+  });
+});
+
+describe('McpConnect: one kept session per server for app calls (BLG-391)', () => {
+  const st = (name: string, status: McpServerStatus['status']): McpServerStatus => ({ name, status }) as McpServerStatus;
+  const ok = { content: [{ type: 'text', text: 'ok' }] };
+
+  /** Claude Code whose servers are as given; each session's mcp_call answers ok unless `fails`. */
+  function claude(statuses: McpServerStatus[], fails = false): { open: OpenMcpSession; opened: () => number; closed: () => number; calls: () => number } {
+    const f = fake([statuses]);
+    let calls = 0;
+    const open: OpenMcpSession = (cwd, servers) => ({
+      ...f.open(cwd, servers),
+      request: async () => {
+        calls++;
+        if (fails) throw new Error('Claude Code went away');
+        return { response: ok };
+      },
+    });
+    return { open, opened: () => f.opened.length, closed: f.closed, calls: () => calls };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('opens no new session for a second call, or for the tool list before it', async () => {
+    const { home: dir } = home();
+    const c = claude([st('figma', 'connected')]);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, pollMs: 1 });
+    await mcp.appTools([dir], 'figma');
+    await mcp.appCall([dir], 'figma', 'now', {});
+    expect(await mcp.appCall([dir], 'figma', 'now', {})).toEqual(ok);
+    expect(c.opened()).toBe(1);
+    expect(c.calls()).toBe(2);
+    expect(c.closed()).toBe(0);
+    mcp.close();
+  });
+
+  it('keeps one session for each server', async () => {
+    const { home: dir } = home();
+    const c = claude([st('figma', 'connected'), st('linear', 'connected')]);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, pollMs: 1 });
+    await Promise.all([mcp.appCall([dir], 'figma', 'now', {}), mcp.appCall([dir], 'figma', 'now', {}), mcp.appCall([dir], 'linear', 'now', {})]);
+    expect(c.opened()).toBe(2);
+    mcp.close();
+    expect(c.closed()).toBe(2);
+  });
+
+  it('closes a session after it was idle for a while, and opens a new one after that', async () => {
+    vi.useFakeTimers();
+    const { home: dir } = home();
+    const c = claude([st('figma', 'connected')]);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, pollMs: 1, keepMs: 1_000 });
+    await mcp.appCall([dir], 'figma', 'now', {});
+    await vi.advanceTimersByTimeAsync(600);
+    // A use starts the idle time again.
+    await mcp.appCall([dir], 'figma', 'now', {});
+    await vi.advanceTimersByTimeAsync(600);
+    expect(c.closed()).toBe(0);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(c.closed()).toBe(1);
+    await mcp.appCall([dir], 'figma', 'now', {});
+    expect(c.opened()).toBe(2);
+    mcp.close();
+  });
+
+  it('closes the kept sessions when it closes, and when the daemon stops', async () => {
+    const { home: dir } = home();
+    const a = claude([st('figma', 'connected')]);
+    const b = claude([st('figma', 'connected')]);
+    const first = new McpConnect(a.open, { home: dir, env: {}, pollMs: 1 });
+    const second = new McpConnect(b.open, { home: dir, env: {}, pollMs: 1 });
+    await first.appCall([dir], 'figma', 'now', {});
+    await second.appCall([dir], 'figma', 'now', {});
+    first.close();
+    expect(a.closed()).toBe(1);
+    // The daemon's exit closes every session still kept.
+    closeAllKeptSessions();
+    expect(b.closed()).toBe(1);
+    await second.appCall([dir], 'figma', 'now', {});
+    expect(b.opened()).toBe(2);
+    second.close();
+  });
+
+  it('never keeps a session that failed', async () => {
+    const { home: dir } = home();
+    const c = claude([st('figma', 'connected')], true);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, pollMs: 1 });
+    await expect(mcp.appCall([dir], 'figma', 'now', {})).rejects.toThrow(/went away/);
+    expect(c.closed()).toBe(1);
+    await expect(mcp.appCall([dir], 'figma', 'now', {})).rejects.toThrow(/went away/);
+    expect(c.opened()).toBe(2);
+    expect(c.closed()).toBe(2);
+  });
+
+  it('never keeps a session whose server is not up', async () => {
+    const { home: dir } = home();
+    const c = claude([st('figma', 'failed')]);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, pollMs: 1 });
+    expect(await mcp.appTools([dir], 'figma')).toEqual([]);
+    expect(c.closed()).toBe(1);
   });
 });

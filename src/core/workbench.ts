@@ -16,9 +16,9 @@ import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, resetTo } from '../workspaces/git.js';
 import { fetchRemote } from '../workspaces/sync.js';
-import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, headCarries, listPrs, useHttpsRemote, mergePr, mergeToBase, prStep, pushForPr, remoteRef, rerunFailed, resetPrPrompt, setPrTarget, unpushedCommits } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, headCarries, listPrs, useHttpsRemote, mergePr, mergeToBase, prStep, pushForPr, pushToFork, remoteRef, rerunFailed, cancelRun, resetPrPrompt, setPrTarget, unpushedCommits } from '../workspaces/pr.js';
 import { prTargetOf, pullOfBranch } from '../workspaces/github.js';
-import { failedRunIds, prOnOriginal } from './branch-state.js';
+import { failedRunIds, prOnOriginal, runningRunIds } from './branch-state.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import { clonedSetup } from '../workspaces/setup-clone.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
@@ -101,8 +101,11 @@ export interface WorkbenchDeps {
   readonly createPr?: typeof createPr;
   readonly mergeToBase?: typeof mergeToBase;
   readonly pushForPr?: typeof pushForPr;
+  readonly pushToFork?: typeof pushToFork;
   /** Re-run a workflow run's failed jobs (tests stand in for gh). */
   readonly rerunFailed?: typeof rerunFailed;
+  /** Cancel a workflow run still going (tests stand in for gh). */
+  readonly cancelRun?: typeof cancelRun;
   readonly disableAutoMerge?: (dir: string, number: number) => Promise<void>;
   /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
   readonly remoteRef?: (dir: string, branch: string) => string | undefined;
@@ -151,6 +154,14 @@ const AGENT_FIRST_CHECK_MS = 60_000;
 const AGENT_CHECK_EVERY_MS = 6 * 60 * 60_000;
 /** How often to see which PRs are due a look (cheap: no gh unless one is). */
 const PR_TICK_MS = 5_000;
+
+/** How a command ended, in words: its exit code, or the signal that stopped it ("stopped by SIGHUP"). */
+export function endedWords(code: number | null, signal?: number): string {
+  if (code !== null) return `exit code ${code}`;
+  if (!signal) return 'exit code ?';
+  const name = Object.entries(os.constants.signals).find(([, n]) => n === signal)?.[0];
+  return `stopped by ${name ?? `signal ${signal}`}`;
+}
 /** PRs with checks running, or a branch just pushed. */
 export const PR_FAST_MS = 15_000;
 /** Other open PRs, and worktrees with commits but no PR yet. */
@@ -181,7 +192,7 @@ export function fixFailedPrompt(kind: 'setup' | 'run', command: string, code: nu
   return [
     `${what} didn't work: \`${command}\` stopped with exit code ${code ?? '?'}.`,
     tail ? `The end of its output:\n\n\`\`\`\n${tail}\n\`\`\`` : '',
-    `Find out why and fix it, so \`${command}\` works here. If the command itself is wrong, say which one is right: it can be set in the project's ⋯ menu (Setup and run commands), or in its beluga.json under "scripts" for everyone.`,
+    `Find out why and fix it, so \`${command}\` works here. If the command itself is wrong, say which one is right: it can be set in the project's ⋯ menu (Project Settings…), or in its beluga.json under "scripts" for everyone.`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -443,8 +454,11 @@ export class Workbench {
     return ws;
   }
 
-  /** Claude commits what belongs to the work, pushes and opens a PR with a short description. */
-  createPr(id: string, extra = ''): void {
+  /**
+   * Claude commits what belongs to the work, pushes and opens a PR with a short description.
+   * `auto`: Beluga asked by itself (a task reached In Review, BLG-927), so the screen stays where you are.
+   */
+  createPr(id: string, extra = '', opts: { readonly auto?: boolean } = {}): void {
     const ws = this.worktree(id);
     if (!ws?.branch) return;
     if (this.deps.store.getState().gh === false) {
@@ -454,19 +468,19 @@ export class Workbench {
     const project = this.manager.list.find((p) => p.id === ws.projectId);
     const prompt = buildPrPrompt({ branch: ws.branch, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', projectPrompt: project?.scripts?.prPrompt, extra });
     if (!this.deps.store.getState().prs[ws.id]) this.prAsked.add(ws.id);
-    this.deps.controller.open(ws.id);
+    if (!opts.auto) this.deps.controller.open(ws.id);
     const ask = (): void => this.deps.askClaude(prompt, `ws:${ws.id}`);
     // Its last PR went to a fork's original: this one goes to the fork, as the menu says (before the run reads where gh points).
     if (prTargetOf(ws.path, ws.branch)) void setPrTarget(ws.path, ws.branch, undefined).catch(() => undefined).finally(ask);
     else ask();
-    this.deps.toast(`${this.agent()} is preparing the pull request…`);
+    this.deps.toast(opts.auto ? `${ws.name} is ready for review: ${this.agent()} is opening a draft pull request…` : `${this.agent()} is preparing the pull request…`);
   }
 
   /**
    * Create PR, straight away and without Claude: commits anything left (as the branch's name),
    * pushes, and opens a pull request titled from the commits (`gh pr create`).
    */
-  async quickPr(id: string, opts: { readonly draft?: boolean; readonly https?: boolean; readonly original?: boolean } = {}): Promise<GitHubOutcome> {
+  async quickPr(id: string, opts: { readonly draft?: boolean; readonly https?: boolean; readonly original?: boolean; readonly own?: boolean } = {}): Promise<GitHubOutcome> {
     const fail = (message: string): { ok: false; message: string } => {
       this.deps.toast(message, 'error');
       return { ok: false, message };
@@ -485,8 +499,19 @@ export class Workbench {
     if (opts.original && !fork) return fail('This project’s origin isn’t a fork on GitHub, so there’s no original to open it on');
     if (this.creatingPr.has(id)) return { ok: false, message: 'The pull request is already being opened' };
     this.creatingPr.add(id);
-    const branch = ws.branch;
+    let branch = ws.branch;
     try {
+      // Open Your Own PR (BLG-948): a fork's pull request checked out here that can't be pushed to.
+      // The branch becomes yours (a name of its own, following nothing); the new PR has the fork's commits and yours.
+      const followed = opts.own ? pullOfBranch(ws.path, ws.branch) : undefined;
+      const from = followed !== undefined ? this.deps.store.getState().prs[id] : undefined;
+      if (followed !== undefined) {
+        try {
+          branch = await this.manager.leavePull(id);
+        } catch (err) {
+          return fail(`Couldn’t give it a branch of its own: ${firstLine(err)}`);
+        }
+      }
       this.deps.toast(`Opening a pull request for ${branch}${fork ? ` on ${fork.owner}/${fork.repo}` : ''}…`);
       try {
         if ((ws.status?.changed ?? 0) > 0) await this.manager.commitAll(id, titleOfBranch(branch));
@@ -495,7 +520,9 @@ export class Workbench {
       }
       const base = this.prBase(ws);
       const subjects = await commitSubjects(ws.path, `origin/${base}`).catch(() => []);
-      const text = prFromCommits(branch, subjects);
+      const commits = prFromCommits(branch, subjects);
+      const builds = followed !== undefined ? `Builds on #${followed}${from?.fork ? ` from ${from.fork.owner}’s fork` : ''}, which doesn’t take pushes from maintainers.` : '';
+      const text = builds ? { title: from?.title || commits.title, body: [builds, commits.body].filter(Boolean).join('\n\n') } : commits;
       let pr: PullRequest;
       try {
         pr = await (this.deps.createPr ?? createPr)(ws.path, { base: fork?.branch ?? base, head: branch, ...text, ...(opts.draft ? { draft: true } : {}), ...(opts.https ? { https: true } : {}), ...(fork ? { to: fork } : {}) });
@@ -809,7 +836,8 @@ export class Workbench {
         const commits = n === 0 ? 'the latest commits' : n === 1 ? '1 commit' : `${n} commits`;
         const them = n === 1 ? 'it' : 'them';
         // A fork's pull request checked out here (BLG-756): Beluga can't push to it, so merging would leave them out.
-        if (pullOfBranch(ws.path, ws.branch) !== undefined) return fail('unpushed', `PR #${pr.number} is from someone’s fork, so Beluga can’t push ${commits} here to it, and merging it would leave ${them} out. Suggest ${them} on the PR, or open a PR of your own`);
+        // BLG-948: what to do instead is the toolbar's step (Push to the fork, or Open Your Own PR).
+        if (pullOfBranch(ws.path, ws.branch) !== undefined) return fail('unpushed', `PR #${pr.number} is from someone’s fork, and merging it now would leave ${commits} here out. ${pr.fork?.canPush ? `Push ${them} to it first` : `Open Your Own PR puts ${them} on a new one, with #${pr.number}’s`}`);
         this.deps.toast(`Pushing ${commits} to ${ws.branch} before merging PR #${pr.number}…`);
         try {
           await (this.deps.pushForPr ?? pushForPr)(ws.path, ws.branch);
@@ -856,12 +884,27 @@ export class Workbench {
       if (merged && opts.deleteBranch) {
         await (this.deps.deleteRemoteBranch ?? deleteRemoteBranch)(ws.path, ws.branch).catch((err: unknown) => this.deps.toast(`Merged, but the branch on GitHub wasn’t deleted: ${err instanceof Error ? err.message : String(err)}`, 'warn'));
       }
-      const message = merged ? `Merged PR #${pr.number}` : opts.auto ? `PR #${pr.number} merges when its checks pass` : `PR #${pr.number} is queued to merge`;
+      // Merged past its checks: the ones still running check nothing anymore, so they stop (no CI minutes spent on them).
+      const stopped = merged && opts.admin ? await this.cancelRunning(ws, pr) : 0;
+      const message = merged ? `Merged PR #${pr.number}${stopped ? `, and stopped its ${stopped === 1 ? 'running check' : `${stopped} running checks`}` : ''}` : opts.auto ? `PR #${pr.number} merges when its checks pass` : `PR #${pr.number} is queued to merge`;
       this.deps.toast(message, 'success');
       return { ok: true, result: merged ? 'merged' : 'queued', message };
     } finally {
       this.merging.delete(id);
     }
+  }
+
+  /**
+   * Cancel the Actions runs still going on a PR just merged past its checks, as GitHub saw it
+   * before and after the merge (a run may have started in between) → how many stopped. A run
+   * that finished meanwhile can't be cancelled: that's fine, the merge stands either way.
+   */
+  private async cancelRunning(ws: Workspace, before: PullRequest): Promise<number> {
+    const after = this.deps.store.getState().prs[ws.id];
+    const runs = [...new Set([...runningRunIds(before), ...(after ? runningRunIds(after) : [])])];
+    const cancel = this.deps.cancelRun ?? cancelRun;
+    const done = await Promise.all(runs.map((run) => cancel(ws.path, run).then(() => true, () => false)));
+    return done.filter(Boolean).length;
   }
 
   /**
@@ -986,11 +1029,7 @@ export class Workbench {
     // A fork's pull request checked out here (BLG-756): its branch lives on the fork, so pushing to
     // origin wouldn't reach the PR, and would stop the branch following refs/pull/<n>/head.
     const pull = pullOfBranch(ws.path, ws.branch);
-    if (pull !== undefined) {
-      const message = `PR #${pull} is from someone’s fork: Beluga can’t push to it, so your commits stay here. Suggest them on the PR, or open a PR of your own`;
-      this.deps.toast(message, 'info');
-      return { ok: false, message };
-    }
+    if (pull !== undefined) return this.pushToForkPr(ws, pull);
     this.creatingPr.add(id);
     try {
       await (this.deps.pushForPr ?? pushForPr)(ws.path, ws.branch);
@@ -1006,6 +1045,46 @@ export class Workbench {
     const message = pr?.state === 'OPEN' ? `Pushed ${ws.branch}: PR #${pr.number}’s checks run again` : `Pushed ${ws.branch}`;
     this.deps.toast(message, 'success');
     return { ok: true, message };
+  }
+
+  /**
+   * Push to a fork's pull request checked out here (BLG-948): straight to its branch on the fork when
+   * its author lets maintainers edit it (GitHub is asked again, it may have changed). When it doesn't,
+   * nothing is pushed, and what's said points at Open Your Own PR, the step the toolbar shows then.
+   */
+  private async pushToForkPr(ws: Workspace, pull: number): Promise<GitHubOutcome> {
+    const id = ws.id;
+    if (this.creatingPr.has(id)) return { ok: false, message: 'It’s already being pushed' };
+    this.creatingPr.add(id);
+    try {
+      let pr: PullRequest | undefined;
+      try {
+        pr = await (this.deps.findPr ?? findPr)(ws.path, ws.branch!);
+      } catch (err) {
+        return this.troubleOr(ws, err, `Couldn’t ask GitHub about PR #${pull}`);
+      }
+      if (pr) this.deps.store.dispatch({ type: 'pr', id, pr });
+      const fork = pr?.fork;
+      if (!fork?.canPush) {
+        const message = `${fork ? `${fork.owner}’s fork` : `PR #${pull}’s fork`} doesn’t let maintainers push to PR #${pull}. Open Your Own PR puts your commits on a new pull request, with #${pull}’s`;
+        this.deps.toast(message, 'info');
+        return { ok: false, message };
+      }
+      try {
+        await (this.deps.pushToFork ?? pushToFork)(ws.path, fork, pull);
+      } catch (err) {
+        return this.troubleOr(ws, err, `Couldn’t push to ${fork.owner}’s fork`);
+      }
+      this.troubles.delete(id);
+      this.pushedAt.set(id, this.now());
+      await this.deps.controller.refresh();
+      await this.refreshPrs(id);
+      const message = `Pushed to ${fork.owner}’s fork: PR #${pull}’s checks run again`;
+      this.deps.toast(message, 'success');
+      return { ok: true, message };
+    } finally {
+      this.creatingPr.delete(id);
+    }
   }
 
   /** Run a PR's failed Actions jobs again on the same commit (a flaky test): `gh run rerun <id> --failed` for each run. */
@@ -1538,14 +1617,15 @@ export class Workbench {
         this.deps.toast(`${ws.name} is set up`, 'success');
         return;
       }
-      if (learn && this.deps.fixSetup) return void this.retrySetup(ws, command, code, session.backlog());
-      this.setupFailed(ws, command, code, session.backlog());
+      if (learn && this.deps.fixSetup) return void this.retrySetup(ws, command, code, session.backlog(), session.exited?.signal);
+      this.setupFailed(ws, command, code, session.backlog(), session.exited?.signal);
     });
   }
 
-  private setupFailed(ws: Workspace, command: string, code: number | null, output = ''): void {
-    this.deps.store.dispatch({ type: 'setup', id: ws.id, run: { status: 'failed', command, detail: `exit code ${code ?? '?'}` } });
-    this.deps.notify({ kind: 'problems', title: `Setup failed in ${ws.name}`, body: `${command} (exit code ${code ?? '?'}). See its Terminal tab`, channel: `ws:${ws.id}` });
+  private setupFailed(ws: Workspace, command: string, code: number | null, output = '', signal?: number): void {
+    const ended = endedWords(code, signal);
+    this.deps.store.dispatch({ type: 'setup', id: ws.id, run: { status: 'failed', command, detail: ended } });
+    this.deps.notify({ kind: 'problems', title: `Setup failed in ${ws.name}`, body: `${command} (${ended}). See its Terminal tab`, channel: `ws:${ws.id}` });
     this.offerFix(ws, 'setup', command, code, output);
   }
 
@@ -1598,11 +1678,11 @@ export class Workbench {
   }
 
   /** Setup failed: ask what it should be, remember the answer, and run that (once). */
-  private async retrySetup(ws: Workspace, command: string, code: number | null, output: string): Promise<void> {
+  private async retrySetup(ws: Workspace, command: string, code: number | null, output: string, signal?: number): Promise<void> {
     this.deps.toast(`Setup failed in ${ws.name}. Looking for the right one…`);
     const fix = await this.deps.fixSetup!(ws.path, command, output);
     const project = this.manager.find(ws.id) && this.manager.list.find((p) => p.id === ws.projectId);
-    if (!project || !fix || ('command' in fix && fix.command === command)) return this.setupFailed(ws, command, code, output);
+    if (!project || !fix || ('command' in fix && fix.command === command)) return this.setupFailed(ws, command, code, output, signal);
     if ('none' in fix) {
       this.deps.store.dispatch({ type: 'setup', id: ws.id });
       return this.learnSetup(project.id, fix, `${project.name} needs no setup. New worktrees skip it from now on`);
@@ -1686,7 +1766,7 @@ export class Workbench {
           said.push(`run \`${found.run.command}\``);
         } else if (found.run) said.push('nothing to run');
         this.remember(project.id, learned, mine);
-        if (said.length) this.deps.toast(`${project.name}: ${said.join(', ')}. Change them in its ⋯ menu (Setup and run commands)`, 'success');
+        if (said.length) this.deps.toast(`${project.name}: ${said.join(', ')}. Change them in its ⋯ menu (Project Settings…)`, 'success');
       })
       .catch(() => undefined)
       .finally(() => this.workingOut.delete(project.id));
@@ -1718,11 +1798,11 @@ export class Workbench {
       if (looking && ws) {
         void looking.then(() => {
           if (this.manager.find(wsId) && project && this.manager.scripts(project.id).run) this.run(wsId);
-          else this.deps.toast(`${this.agent()} couldn't find a way to run this project. Set one in its ⋯ menu (Setup and run commands)`, 'warn');
+          else this.deps.toast(`${this.agent()} couldn't find a way to run this project. Set one in its ⋯ menu (Project Settings…)`, 'warn');
         });
         return undefined;
       }
-      this.deps.toast("This project has no run command. Set one in its ⋯ menu (Setup and run commands)", 'warn');
+      this.deps.toast("This project has no run command. Set one in its ⋯ menu (Project Settings…)", 'warn');
       return undefined;
     }
     const current = this.deps.terminals?.get(runId(wsId));

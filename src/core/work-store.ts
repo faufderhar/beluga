@@ -120,6 +120,18 @@ export interface PullRequest {
   readonly head?: string;
   /** When it merged (ms), merged PRs only. */
   readonly mergedAt?: number;
+  /** Someone's fork's pull request, checked out here by its number (BLG-948). */
+  readonly fork?: PrFork;
+}
+
+/** Where a fork's pull request lives, and whether its author lets the repository's maintainers push to it. */
+export interface PrFork {
+  readonly owner: string;
+  readonly repo: string;
+  /** Its branch on the fork. */
+  readonly branch: string;
+  /** "Allow edits by maintainers" is on: a push to the fork's branch updates the pull request. */
+  readonly canPush: boolean;
 }
 
 export interface SetupRun {

@@ -202,7 +202,7 @@ const BRANCH_TONE: Record<string, { tone: Tone; Icon: typeof Check }> = {
 };
 
 /** Each step's icon (Claude's steps get Claude's sparkle). */
-const STEP_ICON: Record<string, LucideIcon> = { merge_pr: GitMerge, merge_auto: Clock, cancel_auto: X, merge_admin: GitMerge, merge: GitMerge, update_branch: RefreshCw, mark_ready: Check, open_pr: GitPullRequest, pr: GitPullRequest, pr_draft: GitPullRequest, pr_original: GitPullRequest, commit: GitCommitHorizontal, continue_after_merge: GitBranch, archive: ArchiveIcon, delete: Trash2, push: Upload, rerun_checks: RefreshCw };
+const STEP_ICON: Record<string, LucideIcon> = { merge_pr: GitMerge, merge_auto: Clock, cancel_auto: X, merge_admin: GitMerge, merge: GitMerge, update_branch: RefreshCw, mark_ready: Check, open_pr: GitPullRequest, pr: GitPullRequest, pr_draft: GitPullRequest, pr_original: GitPullRequest, pr_own: GitPullRequest, commit: GitCommitHorizontal, continue_after_merge: GitBranch, archive: ArchiveIcon, delete: Trash2, push: Upload, rerun_checks: RefreshCw };
 const iconOf = (s: BranchStepView): LucideIcon => (s.claude ? Sparkles : (STEP_ICON[s.id] ?? GitBranch));
 const toneOf = (s: BranchStepView): Tone => (s.danger ? 'rose' : s.claude ? 'peach' : s.id === 'archive' ? 'sky' : 'lavender');
 const bare = (label: string): string => label.replace(/…$/, '');

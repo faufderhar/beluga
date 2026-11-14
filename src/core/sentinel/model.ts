@@ -5,6 +5,7 @@ import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
 import { ASSISTANT_TITLE } from '../../shared/assistant.js';
+import { chatMentionsAsTitles } from '../../shared/chat-ref.js';
 
 /**
  * Sentinel (docs/sentinel.md): watchers that run on a schedule, by hand, or when something
@@ -17,17 +18,24 @@ import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 export const TRIGGER_KINDS = ['schedule', 'manual', 'after', 'beluga', 'github', 'stripe', 'uptime', 'sentry', 'webhook'] as const;
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
-export const SCHEDULE_EVERY = ['hours', 'day', 'other-day', 'week', 'month'] as const;
+export const SCHEDULE_EVERY = ['minutes', 'hours', 'day', 'other-day', 'week', 'month'] as const;
 export type ScheduleEvery = (typeof SCHEDULE_EVERY)[number];
 export const SCHEDULE_HOURS = [1, 2, 3, 6, 12] as const;
 export type ScheduleHours = (typeof SCHEDULE_HOURS)[number];
+/** Every few minutes: each divides the hour, so the runs line up on the clock (:00, :15, :30, :45). */
+export const SCHEDULE_MINUTES = [1, 5, 10, 15, 30] as const;
+export type ScheduleMinutes = (typeof SCHEDULE_MINUTES)[number];
+/** A minutes schedule's step: 30 when it's missing or not one of SCHEDULE_MINUTES (the clock and the sentence agree). */
+export const scheduleMinutes = (t: { readonly minutes?: number }): ScheduleMinutes => ((SCHEDULE_MINUTES as readonly number[]).includes(t.minutes ?? 0) ? (t.minutes as ScheduleMinutes) : 30);
 
 export interface ScheduleTrigger {
   readonly kind: 'schedule';
   readonly every: ScheduleEvery;
-  /** Local time, "HH:MM" (for `hours`: where the hours line up, "00:00" by default). */
+  /** Local time, "HH:MM" (for `hours`: where the hours line up, "00:00" by default; `minutes` doesn't use it). */
   readonly at: string;
   readonly hours?: ScheduleHours;
+  /** For `minutes`: 1, 5, 10, 15 or 30, on the clock (every 15: :00, :15, :30, :45). */
+  readonly minutes?: ScheduleMinutes;
   /** For `week`: 0 Sunday … 6 Saturday (Monday when empty). */
   readonly days?: readonly number[];
   /** For `month`: 1…28. */
@@ -597,10 +605,10 @@ export const activeSentinelChat = (c: SentinelChats | undefined): string => {
   const chat = c?.chats.find((x) => x.id === c.active) ?? c?.chats[0];
   return chat?.channel ?? sentinelChatChannel(FIRST_SENTINEL_CHAT);
 };
-/** A chat's name: the first line you wrote in it, short; "New chat" until then. */
+/** A chat's name: the first line you wrote in it, short; "New chat" until then. A chat it names shows by its title, not its ref. */
 export function sentinelChatTitle(channel: string, log: ReadonlyArray<{ readonly channel: string; readonly type: string; readonly byAgent?: boolean; readonly text?: string }>, max = 40): string {
   const first = log.find((l) => l.channel === channel && l.type === 'chat' && !l.byAgent && l.text?.trim());
-  const line = first?.text?.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const line = chatMentionsAsTitles(first?.text ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   if (!line) return 'New chat';
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 }
@@ -1142,6 +1150,8 @@ export function scheduleSentence(trigger: Trigger, nameOf: (id: string) => strin
     case 'schedule': {
       const at = clockText(trigger.at);
       switch (trigger.every) {
+        case 'minutes':
+          return scheduleMinutes(trigger) === 1 ? 'Every minute' : `Every ${scheduleMinutes(trigger)} minutes`;
         case 'hours': {
           const n = trigger.hours ?? 1;
           return n === 1 ? 'Every hour' : `Every ${n} hours`;
@@ -1182,6 +1192,24 @@ export function scheduleSentence(trigger: Trigger, nameOf: (id: string) => strin
     case 'webhook':
       return trigger.signature === 'github' ? 'When GitHub posts to its URL' : trigger.signature === 'stripe' ? 'When Stripe posts to its URL' : 'When something posts to its URL';
   }
+}
+
+/** An agent step this many times a day or more is worth a word about the plan it uses. */
+const FREQUENT_AGENT_RUNS = 24;
+
+/**
+ * A schedule every few minutes with an agent step: how many times a day it asks the agent, in a
+ * sentence (the When card, sentinel_create's answer). Runs per day (limits.perDay) counts.
+ * Otherwise undefined.
+ */
+export function frequentAgentNote(s: Pick<Sentinel, 'trigger' | 'steps' | 'limits'>): string | undefined {
+  const t = s.trigger;
+  if (t.kind !== 'schedule' || t.every !== 'minutes' || !s.steps.some((st) => st.kind === 'claude')) return undefined;
+  const slots = Math.floor((24 * 60) / scheduleMinutes(t));
+  const runs = s.limits.perDay ? Math.min(s.limits.perDay, slots) : slots;
+  if (runs < FREQUENT_AGENT_RUNS) return undefined;
+  const capped = s.limits.perDay && s.limits.perDay < slots;
+  return `Its agent step runs up to ${runs} times a day${capped ? ' (its runs-per-day limit)' : ''}, which uses your plan’s limits quickly. Fewer runs a day, or a schedule without an agent step, keeps it light.`;
 }
 
 /** When a sentinel runs, in one sentence, for every kind of trigger (scheduleSentence's name for what it is now). */

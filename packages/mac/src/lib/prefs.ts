@@ -8,6 +8,7 @@ import { type ShortcutOverrides, keyPlatform, overridesOf } from './shortcuts-mo
 import { type ThemeBase, allThemesCss, isSolid, themeFor, themeIdOf, themePatch } from './themes.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 import type { DuringTurnAction } from '../chat/send-action.js';
+import { type RowColors, rowColorsOf } from './row-colors.js';
 
 /**
  * How this window looks and behaves: kept on this Mac only (Beluga's shared settings, like the
@@ -113,6 +114,8 @@ export interface UiPrefs {
   readonly scratchSort: 'newest' | 'viewable';
   /** The icon you picked for each sidebar group (by name; unset: a folder). */
   readonly groupIcons: Readonly<Record<string, string>>;
+  /** Colours you gave projects, chats and worktrees in the sidebar (lib/row-colors.ts; none: everything plain). */
+  readonly rowColors: RowColors;
   /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
   readonly planTaskChats: readonly string[];
   /** How the message box burns on Max effort (Settings › Max Fire). */
@@ -149,6 +152,18 @@ export const ACCENTS = {
   graphite: '#6b7280',
 } as const;
 export type Accent = keyof typeof ACCENTS;
+
+/** macOS's own default accent, for a web view that can't draw the system's (AccentColor). */
+const ACCENT_FALLBACK = '#007aff';
+
+/**
+ * The CSS for an accent. `systemColor`: the web view draws CSS's AccentColor (WebKit does;
+ * Chromium, as in WebView2 on Windows, does not, and `var(--accent)` would then be nothing).
+ */
+export function accentCss(accent: Accent, systemColor: boolean): string {
+  const css: string = ACCENTS[accent];
+  return systemColor ? css : css.replace('AccentColor', ACCENT_FALLBACK);
+}
 
 export const DEFAULT_PREFS: UiPrefs = {
   appearance: 'system',
@@ -205,6 +220,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   phoneScreen: false,
   scratchSort: 'newest',
   groupIcons: {},
+  rowColors: {},
   planTaskChats: [],
   maxFire: DEFAULT_FIRE,
   menuBar: DEFAULT_MENU_BAR,
@@ -231,7 +247,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, sendDuringTurn: saved.sendDuringTurn === 'steer' ? 'steer' : 'queue', panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, chatWidth: chatWidthOf(saved), convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true, lightTheme: themeIdOf(saved.lightTheme, 'light'), darkTheme: themeIdOf(saved.darkTheme, 'dark'), accent: saved.accent in ACCENTS ? saved.accent : 'system' };
+    return { ...saved, sendDuringTurn: saved.sendDuringTurn === 'steer' ? 'steer' : 'queue', panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, chatWidth: chatWidthOf(saved), convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true, lightTheme: themeIdOf(saved.lightTheme, 'light'), darkTheme: themeIdOf(saved.darkTheme, 'dark'), accent: saved.accent in ACCENTS ? saved.accent : 'system', rowColors: rowColorsOf(saved.rowColors) };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -326,7 +342,7 @@ export function apply(p: UiPrefs = shown): void {
   root.dataset.os = keyPlatform();
   root.dataset.transparency = blur ? 'full' : 'reduce';
   vibrancy(blur);
-  root.style.setProperty('--accent', ACCENTS[p.accent]);
+  root.style.setProperty('--accent', accentCss(p.accent, CSS.supports('color', 'AccentColor')));
   root.style.setProperty('--text-size', `${p.textSize}px`);
   root.style.setProperty('--sidebar-w', `${p.sidebarWidth}px`);
   root.style.setProperty('--panel-w', `${p.panelWidth}px`);

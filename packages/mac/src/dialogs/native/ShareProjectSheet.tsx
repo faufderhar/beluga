@@ -59,15 +59,18 @@ export function ShareProjectSheet({ projectId, close }: { readonly projectId: st
         <div className={s.list} role="list" aria-label="Friends with access">
           {friends.map((f) => {
             const access: Access = grants?.[f.peerId]?.role ?? 'none';
-            const only = grants?.[f.peerId]?.only;
+            // Worktrees removed since don't count: only the ones they can still open.
+            const only = grants?.[f.peerId]?.only?.filter((id) => project.workspaces.some((w) => w.id === id && !w.archived));
             const presence = presenceOf({ network, peers }, f.peerId);
-            const detail = access === 'contribute' ? 'Talks to your agent in its worktrees' : 'Follows along, read-only';
+            // Only some worktrees: said so, so it never reads as the whole project.
+            const where = only ? (only.length === 1 ? 'in that worktree only' : 'in those worktrees only') : 'in all its worktrees, new ones too';
+            const detail = access === 'contribute' ? `Talks to your agent ${where}` : `Follows along ${where}, read-only`;
             return (
               <div key={f.peerId} role="listitem" className={s.item}>
                 <Avatar name={f.name} id={f.peerId} size={24} />
                 <div className={s.itemText}>
                   <span className={s.itemTitle}>
-                    {f.name} {presence.state === 'online' ? null : <Tag tone="muted">{presence.label}</Tag>} {only ? <Tag>{only.length === 1 ? 'one worktree' : `${only.length} worktrees`}</Tag> : null}
+                    {f.name} {presence.state === 'online' ? null : <Tag tone="muted">{presence.label}</Tag>} {only ? <Tag>{only.length === 1 ? 'one worktree' : only.length ? `${only.length} worktrees` : 'no worktrees now'}</Tag> : null}
                   </span>
                   <span className={s.itemDetail}>{detail}</span>
                 </div>

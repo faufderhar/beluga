@@ -79,6 +79,8 @@ export interface EnvKeys {
   readonly global: readonly string[];
   /** By project folder. */
   readonly projects: Readonly<Record<string, { readonly keys: readonly string[]; readonly dotenv: boolean }>>;
+  /** By worktree id: the names it sets over its project's (BLG-924). */
+  readonly worktrees?: Readonly<Record<string, readonly string[]>>;
 }
 
-export const NO_ENV_KEYS: EnvKeys = { global: [], projects: {} };
+export const NO_ENV_KEYS: EnvKeys = { global: [], projects: {}, worktrees: {} };

@@ -315,22 +315,25 @@ export function Toolbar() {
         // Whose machine and which agent runs there: the owner's (BLG-448), never yours.
         subtitle={
           <span className={s.meta}>
-            {`${owner}'s ${w?.project ?? 'project'} ·`}
+            {w?.chat ? `${owner}'s chat ·` : `${owner}'s ${w?.project ?? 'project'} ·`}
             <Icon name={agentMark(w?.agent)} size={11} />
             {`${agentLabel(w?.agent, owner, false, { model: true })} on their computer · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}
           </span>
         }
+        // A friend's plain chat has no project folder: no Files, no Diff (its Scratch is in the panel).
         center={
-          <Segmented
-            label="Views"
-            value={view.tab === 'terminal' ? 'files' : view.tab}
-            onChange={(tab) => actions.run({ type: 'open_shared', owner: view.owner, id: view.id, tab })}
-            options={[
-              { value: 'chat', label: 'Chat', icon: 'chat' },
-              { value: 'files', label: 'Files', icon: 'folder', hint: 'Browse and search the files' },
-              { value: 'diff', label: 'Diff', icon: 'diff' },
-            ]}
-          />
+          w?.chat ? undefined : (
+            <Segmented
+              label="Views"
+              value={view.tab === 'terminal' ? 'files' : view.tab}
+              onChange={(tab) => actions.run({ type: 'open_shared', owner: view.owner, id: view.id, tab })}
+              options={[
+                { value: 'chat', label: 'Chat', icon: 'chat' },
+                { value: 'files', label: 'Files', icon: 'folder', hint: 'Browse and search the files' },
+                { value: 'diff', label: 'Diff', icon: 'diff' },
+              ]}
+            />
+          )
         }
         right={
           <>

@@ -4,7 +4,7 @@ import { copyText } from '../../lib/copy.js';
 import { useClock } from '../../lib/window-active.js';
 import { type InlineElement, readInline, relative } from './inline-model.js';
 import { parseColor, toHex, toHsl, toneOf } from './format.js';
-import { PlanChip, TaskChip, WorktreeChip } from '../../tasks/TaskRef.js';
+import { ChatChip, PlanChip, TaskChip, WorktreeChip } from '../../tasks/TaskRef.js';
 import { SentinelChip } from '../../sentinel/marks.js';
 import { CallNotesChip } from '../../call/NotesBox.js';
 import v from './inline.module.css';
@@ -16,10 +16,10 @@ import v from './inline.module.css';
  */
 export function InlineCode({ text, fallback }: { text: string; fallback: ReactNode }) {
   const el = readInline(text);
-  return el ? <InlineView el={el} raw={text} /> : <>{fallback}</>;
+  return el ? <InlineView el={el} raw={text} fallback={fallback} /> : <>{fallback}</>;
 }
 
-function InlineView({ el, raw }: { el: InlineElement; raw: string }) {
+function InlineView({ el, raw, fallback }: { el: InlineElement; raw: string; fallback?: ReactNode }) {
   switch (el.kind) {
     case 'color':
       return <ColorChip value={el.value} />;
@@ -78,6 +78,8 @@ function InlineView({ el, raw }: { el: InlineElement; raw: string }) {
       return <SentinelChip id={el.id} />;
     case 'call':
       return <CallNotesChip id={el.id} />;
+    case 'chat':
+      return <ChatChip target={el.ref} raw={raw} fallback={fallback} />;
   }
 }
 

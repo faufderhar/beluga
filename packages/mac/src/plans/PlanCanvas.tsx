@@ -65,6 +65,9 @@ interface GateData extends Record<string, unknown> {
   readonly current: boolean;
   readonly selected: boolean;
   readonly folded: boolean;
+  readonly planId: string;
+  /** The plan runs (not a draft), so a gate waiting for you can be passed right from it. */
+  readonly canPass: boolean;
 }
 type PlanNode = Node<TaskData, 'task'> | Node<MilestoneData, 'milestone'> | Node<GateData, 'gate'>;
 
@@ -320,7 +323,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       }
       const gate = laid.places.get(gateId(id));
       if (gate) {
-        out.push({ id: gateId(id), type: 'gate', parentId: groupId(id), position: { x: gate.x, y: gate.y }, width: gate.width, height: gate.height, measured: { width: gate.width, height: gate.height }, draggable: false, ...hidden, data: { view: m, current, folded: away, selected: selected === gateId(id) } });
+        out.push({ id: gateId(id), type: 'gate', parentId: groupId(id), position: { x: gate.x, y: gate.y }, width: gate.width, height: gate.height, measured: { width: gate.width, height: gate.height }, draggable: false, ...hidden, data: { view: m, current, folded: away, selected: selected === gateId(id), planId: view.plan.id, canPass: Boolean(view.plan.body) && !view.plan.draft } });
       }
     }
     return out;
@@ -683,7 +686,15 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
   const state = m.state === 'merging' ? 'passed' : m.state;
   // Its checker's conversation, one click from its state (“Checking…”); the rest of the gate still opens its details.
   const checker = useCheckerChat(m);
-  const { openWorktree } = usePlanActions();
+  const { api, act, openWorktree } = usePlanActions();
+  // Waiting for you, its label (“Checked · pass it”) does what it says; the check's chat sits beside it.
+  const passable = m.state === 'gate' && data.canPass && !data.folded;
+  const [passing, setPassing] = useState(false);
+  const pass = (): void => {
+    if (passing) return;
+    setPassing(true);
+    void act(() => api.pass(data.planId, m.milestone.id)).finally(() => setPassing(false));
+  };
   return (
     <div
       ref={gate}
@@ -700,7 +711,33 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
         </span>
         <span className={c.gateTitle}>Pass criteria</span>
         {criteria.length ? <span className={c.gateCount}>{criteria.length}</span> : null}
-        {checker ? (
+        {passable ? (
+          <span className={c.gateActions}>
+            {checker ? (
+              <button
+                type="button"
+                className={cx(c.gateEye, 'nodrag', 'nopan')}
+                title="Open the check"
+                aria-label={`Open the Check of ${m.milestone.title}`}
+                onClick={(e) => (e.stopPropagation(), openWorktree(checker))}
+              >
+                <Icon name="eye" size={11} />
+                <TaskChatMark worktree={checker} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={cx(c.gatePass, 'nodrag', 'nopan')}
+              disabled={passing}
+              title={`Pass “${m.milestone.title}”`}
+              aria-label={`${label}: Pass ${m.milestone.title}`}
+              onClick={(e) => (e.stopPropagation(), pass())}
+            >
+              <Icon name="check" size={10} />
+              {passing ? 'Passing…' : label}
+            </button>
+          </span>
+        ) : checker ? (
           <button
             type="button"
             className={cx(c.gateState, c.gateWatch, 'nodrag', 'nopan')}

@@ -1,4 +1,5 @@
 import { git, tryGit } from '../workspaces/git.js';
+import { byYourHand } from '../core/by-hand.js';
 import { type WorktreeMover, worktreeMover } from '../core/worktree-move.js';
 import type { Session } from '../core/session.js';
 import { needFriendShares } from '../core/friend-share/launch.js';
@@ -23,6 +24,7 @@ import { NETWORK_HANDLERS } from './network-handlers.js';
 import { STRIPE_HANDLERS } from './stripe-handlers.js';
 import { REVENUECAT_HANDLERS } from './revenuecat-handlers.js';
 import { SUPPORT_HANDLERS } from './support-handlers.js';
+import { TELEMETRY_HANDLERS } from './telemetry-handlers.js';
 import { STATS_HANDLERS } from './stats-handlers.js';
 import { maybeStatsOf } from '../core/stats/counter.js';
 import { WEB_HANDLERS } from './web-handlers.js';
@@ -45,10 +47,12 @@ import { TRIAGE_HANDLERS } from './triage-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 import { VIEWS_HANDLERS } from './views-handlers.js';
 import { PREVIEW_HANDLERS } from './preview-handlers.js';
+import { MCP_APPS_HANDLERS } from './mcp-apps-handlers.js';
 import { FILES_EDIT_HANDLERS } from './files-handlers.js';
 import { COMPANION_HANDLERS } from './companion-handlers.js';
 import { MACHINE_HANDLERS } from './machine-handlers.js';
 import { ASSISTANT_HANDLERS } from './assistant-handlers.js';
+import { CHATS_HANDLERS } from './chats-handlers.js';
 import { VOICE_HANDLERS } from './voice-handlers.js';
 import { CALLS_HANDLERS } from './calls-handlers.js';
 import { TERMINAL_IMPORT_HANDLERS } from './terminal-import-handlers.js';
@@ -87,7 +91,8 @@ export const HANDLERS = {
   // Your prompts count for your stats here, where you typed them (core/stats/counter.ts).
   'session.submit': (s, raw, opts) => {
     maybeStatsOf(s)?.prompt(opts?.channel, raw);
-    return s.submit(raw, opts);
+    // What you sent yourself: its run uses Claude in Chrome as usual (core/by-hand.ts).
+    return byYourHand(raw, () => s.submit(raw, opts));
   },
   'session.copyInvite': (s) => s.copyInvite(),
   'session.copyLastAnswer': (s) => s.copyLastAnswer(),
@@ -217,8 +222,8 @@ export const HANDLERS = {
   'workspaces.refresh': (s) => ctl(s)?.refresh(),
   'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.agent ? { agent: opts.agent } : {}) }))?.id,
   'workspaces.newChat': async (s, projectId, title, dir) => (await ctl(s)?.newChat(projectId, title, dir))?.id,
-  'workspaces.startChat': (s, projectId, text, dir, opts) => (maybeStatsOf(s)?.prompt(`new-chat:${projectId}`, text), ctl(s)?.startChat(projectId, text, dir ?? undefined, { ...(opts?.terminal ? { terminal: true } : {}), ...(opts?.plan ? { plan: true } : {}) })),
-  'workspaces.startWorktree': async (s, projectId, text, opts) => (maybeStatsOf(s)?.prompt(`new-worktree:${projectId}`, text, opts?.agent?.runtime), await ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.plan ? { plan: true } : {}), ...(opts?.tasks ? { tasks: true } : {}), ...(opts?.quiet ? { quiet: true } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), ...(opts?.terminal ? { terminal: true } : {}), nameLater: true }))?.id,
+  'workspaces.startChat': (s, projectId, text, dir, opts) => (maybeStatsOf(s)?.prompt(`new-chat:${projectId}`, text), byYourHand(text, () => ctl(s)?.startChat(projectId, text, dir ?? undefined, { ...(opts?.terminal ? { terminal: true } : {}), ...(opts?.plan ? { plan: true } : {}) }))),
+  'workspaces.startWorktree': async (s, projectId, text, opts) => (maybeStatsOf(s)?.prompt(`new-worktree:${projectId}`, text, opts?.agent?.runtime), await byYourHand(text, () => ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.plan ? { plan: true } : {}), ...(opts?.tasks ? { tasks: true } : {}), ...(opts?.quiet ? { quiet: true } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), ...(opts?.terminal ? { terminal: true } : {}), ...(opts?.id ? { id: opts.id } : {}), nameLater: true })))?.id,
   'workspaces.branches': (s, projectId) => ctl(s)?.branches(projectId),
   'workspaces.fork': async (s, id, name) => (await ctl(s)?.fork(id, name))?.id,
   'workspaces.editPrompt': (s, id, line, text, mode) => ctl(s)?.editPrompt(id, line, text, mode),
@@ -241,7 +246,7 @@ export const HANDLERS = {
   'workspaces.commit': (s, id, message) => ctl(s)?.commit(id, message),
   'workspaces.merge': (s, id) => ctl(s)?.merge(id),
   'workspaces.prepareRemoval': (s, id) => ctl(s)?.prepareRemoval(id),
-  'workspaces.applyEnvBack': (s, id) => ctl(s)?.applyEnvBack(id),
+  'workspaces.applyEnvBack': (s, id, removed) => ctl(s)?.applyEnvBack(id, removed),
   'workspaces.keepEnvHere': (s, id) => ctl(s)?.keepEnvHere(id),
   'workspaces.saveEnvInBeluga': (s, id) => ctl(s)?.saveEnvInBeluga(id),
   'workspaces.checkEnv': (s, projectId) => ctl(s)?.checkEnv(projectId, false),
@@ -335,6 +340,12 @@ export const HANDLERS = {
   'env.testDatabase': (s, projectId) => testDatabase(s.env.viewEnvOf(projectId)),
   'env.importDotenv': (s, projectId) => s.env.importDotenv(projectId),
   'env.newKeysBack': (s, projectId, on) => s.env.setNewKeysBack(projectId, on),
+  'env.worktree': (s, id) => s.env.worktree(id),
+  'env.setWorktree': (s, id, rows) => s.env.setWorktree(id, rows),
+  'env.carryWorktree': (s, id) => s.env.carryWorktree(id),
+  'env.overview': (s, projectId) => s.env.overview(projectId),
+  'env.addToExample': (s, projectId) => s.env.addToExample(projectId),
+  'env.exampleSync': (s, projectId, on) => s.env.setExampleSync(projectId, on),
   'env.endpoints': (s) => s.local.views(),
   'env.saveEndpoint': async (s, change) => {
     const saved = s.env.saveEndpoint(change);
@@ -452,6 +463,7 @@ export const HANDLERS = {
   ...STRIPE_HANDLERS,
   ...REVENUECAT_HANDLERS,
   ...SUPPORT_HANDLERS,
+  ...TELEMETRY_HANDLERS,
   ...STATS_HANDLERS,
   ...WEB_HANDLERS,
   ...DIAGNOSTICS_HANDLERS,
@@ -471,10 +483,12 @@ export const HANDLERS = {
   ...GIT_HANDLERS,
   ...VIEWS_HANDLERS,
   ...PREVIEW_HANDLERS,
+  ...MCP_APPS_HANDLERS,
   ...FILES_EDIT_HANDLERS,
   ...COMPANION_HANDLERS,
   ...MACHINE_HANDLERS,
   ...ASSISTANT_HANDLERS,
+  ...CHATS_HANDLERS,
   ...VOICE_HANDLERS,
   ...CALLS_HANDLERS,
   ...TERMINAL_IMPORT_HANDLERS,

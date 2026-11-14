@@ -104,14 +104,14 @@ export function loadIdentity(file: string): Identity {
     // Not there yet: make one. A path that can't exist (the parent is a file) stays a one-off.
     if (code === 'ENOENT') return createIdentity(file);
     if (code === 'ENOTDIR') return generateIdentity();
-    throw new Error('Identity file is unreadable');
+    throw new Error(`Identity file ${file} is unreadable (${code ?? 'error'})`);
   }
   try {
     const raw = JSON.parse(text) as { privateKey?: unknown };
     if (typeof raw?.privateKey !== 'string' || !raw.privateKey) throw new Error('missing key');
     return identityFrom(createPrivateKey(raw.privateKey));
   } catch {
-    throw new Error('Identity file is invalid');
+    throw new Error(`Identity file ${file} is invalid: not a key`);
   }
 }
 

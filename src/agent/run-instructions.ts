@@ -1,18 +1,30 @@
+import os from 'node:os';
 import type { AgentRef } from '../protocol.js';
 import { buildGraphAppend } from './graph-prompt.js';
-import { buildAskOnlyAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShippedAppend, buildSystemAppend } from './prompt.js';
+import { type ShellSetup, buildAskOnlyAppend, buildChatSendAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShellAppend, buildShippedAppend, buildSystemAppend, loginShellSetup } from './prompt.js';
 import { buildSyncMainAppend } from './sync-main.js';
 import { buildTerminalAppend } from './terminal-prompt.js';
 import type { AgentRunInput } from './types.js';
-import { buildViewAppend } from './view-prompt.js';
+import { buildChatLinkAppend, buildViewAppend } from './view-prompt.js';
+
+/** Your login shell as the system has it (Codex runs commands in that one, not $SHELL); $SHELL when it can't say. */
+function loginShell(): string | undefined {
+  try {
+    return os.userInfo().shell ?? process.env.SHELL;
+  } catch {
+    return process.env.SHELL;
+  }
+}
 
 /**
  * What Beluga adds to an agent's own instructions for one run: who it is in the room, graphs and
  * views, the task's brief, the scratch folder, a worktree's keep/commit rules, a main folder's
  * ask-only rules. Plain text: Claude appends it to its system prompt, Codex takes it as developer
  * instructions. `agent` words what differs to be true for its runtime (.env files, kept processes).
+ * `shell`: the shell its commands run in, by default your login shell (Codex's, OpenCode's, Copilot's);
+ * Claude's runs pass Claude Code's own, and whether zsh-compat.sh is in (runtime/claude/zsh-compat.ts).
  */
-export function runInstructions(input: AgentRunInput, ownerName: string, agent?: AgentRef): string {
+export function runInstructions(input: AgentRunInput, ownerName: string, agent?: AgentRef, shell: ShellSetup = loginShellSetup(loginShell())): string {
   const place = input.place;
   const askOnly = place?.askOnly;
   const syncMain = askOnly ? place?.syncMain : undefined;
@@ -21,6 +33,8 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     buildSystemAppend(ownerName, agent) +
     buildGraphAppend(Boolean(input.terminal)) +
     buildViewAppend(Boolean(input.terminal)) +
+    (input.chatLink ? buildChatLinkAppend(input.chatLink) : '') +
+    (input.chatTools ? buildChatSendAppend() : '') +
     (input.taskBrief ?? '') +
     (input.planBrief ?? '') +
     (input.macBrief ?? '') +
@@ -31,6 +45,8 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (input.dialogue?.brief ?? '') +
     (input.setup && !askOnly ? input.setup.brief : '') +
     (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') +
+    // On zsh, how to write commands for it: the Claude runner says whether zsh-compat.sh is in (runtime/claude/zsh-compat.ts).
+    buildShellAppend(shell) +
     (worktree ? buildKeepAppend(agent) : '') +
     (worktree && !input.planBrief && !askOnly ? buildCommitAppend(place?.openPr) : '') +
     (place?.shipped && !askOnly ? buildShippedAppend(place.shipped) : '') +

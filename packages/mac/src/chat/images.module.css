@@ -247,6 +247,16 @@
   background: none;
   cursor: zoom-in;
 }
+/* Still being saved (BLG-942): shown at once, a touch quieter until Beluga has it; a path's waits as an image icon. */
+.pendingSaving {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--text) 45%, transparent);
+  cursor: progress;
+}
+.pendingSaving img {
+  opacity: 0.7;
+}
 .pendingItem img {
   width: 100%;
   height: 100%;

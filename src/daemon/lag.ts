@@ -18,6 +18,16 @@ export const SUMMARY_EVERY_MS = 60 * 60_000;
 export const SLOW_P95_MS = 50;
 /** …or when one stall was this long (a screen visibly froze). */
 export const SLOW_MAX_MS = 1000;
+/**
+ * Frozen (BLG-942): most of a period ran this late, or one stall was this long. Worth a copy of
+ * the black box in logs/incidents/, so what froze it can be read afterwards.
+ */
+export const FROZEN_P95_MS = 1000;
+export const FROZEN_MAX_MS = 5000;
+/** A stall longer than this is the Mac asleep, not the daemon stuck. */
+export const ASLEEP_MS = 120_000;
+/** At most one frozen incident this often (crash incidents keep their place among the ten kept). */
+export const FROZEN_EVERY_MS = 60 * 60_000;
 /** How often the loop is sampled. Each sample is the time between two ticks, so this much is subtracted from it. */
 const RESOLUTION_MS = 20;
 
@@ -48,6 +58,9 @@ export const summaryLine = (s: LagStats): string => `event loop delay, last hour
 
 /** Worth a line on its own: the daemon was noticeably late in this period. */
 export const isSlow = (s: LagStats): boolean => s.p95 >= SLOW_P95_MS || s.max >= SLOW_MAX_MS;
+
+/** The daemon froze in this period (not the Mac sleeping through it). */
+export const isFrozen = (s: LagStats): boolean => s.max < ASLEEP_MS && (s.p95 >= FROZEN_P95_MS || s.max >= FROZEN_MAX_MS);
 
 function monitor(): IntervalHistogram {
   const h = monitorEventLoopDelay({ resolution: RESOLUTION_MS });

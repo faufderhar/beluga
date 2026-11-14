@@ -9,6 +9,7 @@ import { useApi, useBeluga } from '../lib/beluga.js';
 import { type TaskItem, taskLabel } from './background-model.js';
 import s from './background.module.css';
 import { everyWhileShown } from '../lib/window-active.js';
+import { oneAtATime } from '../lib/one-at-a-time.js';
 import { revealLabel } from '../lib/os-words.js';
 import { useRevealFileLabel } from '../lib/remote-open.js';
 
@@ -38,9 +39,9 @@ function useTaskOutput(item: TaskItem): CcTaskOutput | null | undefined {
   useEffect(() => {
     let alive = true;
     let sig = '';
-    const look = (): void => {
+    const look = oneAtATime(() => {
       if (document.visibilityState !== 'visible') return;
-      api.claudeCode.taskOutput(item.sessionId, item.task.agentId, item.task.id).then(
+      return api.claudeCode.taskOutput(item.sessionId, item.task.agentId, item.task.id).then(
         (res) => {
           if (!alive) return;
           const key = res ? `${res.file}:${res.size}:${res.mtime}` : 'none';
@@ -50,7 +51,7 @@ function useTaskOutput(item: TaskItem): CcTaskOutput | null | undefined {
         },
         () => alive && sig === '' && setOut(null),
       );
-    };
+    });
     look();
     // While it runs: every second while the page can be seen, and at once when it can again.
     const stop = running ? everyWhileShown(look, POLL_MS) : undefined;

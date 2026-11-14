@@ -11,6 +11,38 @@
   min-height: 0;
   overflow-y: auto;
 }
+/* A preview: most of the window, the content filling it and scrolling itself (two classes: the base sheet's rule may load later). */
+.sheet.tall {
+  top: 32px;
+  height: calc(100vh - 64px);
+  max-height: none;
+}
+.tall .form {
+  flex: 1;
+  overflow: hidden;
+}
+.tall .fields {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 0;
+}
+/* Head and buttons pinned; the marked child takes what's left and scrolls (a long list of variables). */
+.scrolls .form {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.scrolls .fields {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.scrolls .fields > * {
+  flex: none;
+}
+.scrolls .fields > [data-sheet-scroll] {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 .head {
   display: flex;
   align-items: flex-start;

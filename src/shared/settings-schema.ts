@@ -6,6 +6,7 @@ import { CHAT_LIMIT_DEFAULT, CHAT_LIMIT_MAX } from './chat-limit.js';
 import { AUTO_CONTINUE_OFF_MAX } from './auto-continue.js';
 import { MAX_AGENT_ARGS, MAX_AGENT_ARG_LENGTH } from './agent-args.js';
 import { THREAD_LIMITS_DEFAULT, THREAD_LIMITS_MAX } from './threads.js';
+import { FETCH_EVERY_DEFAULT, fetchEveryMinutes } from './background-fetch.js';
 import { coercePerKind, coerceSound, DEFAULT_SOUND, DEFAULT_VOLUME, PerKindSounds, SoundChoice } from './notify-sound.js';
 
 // Settings as data (no file access), so the reducer and the clients can use them anywhere.
@@ -31,6 +32,8 @@ export const BRANCH_PREFIX_RE = /^(?![./-])(?!.*\.\.)(?!.*\/\/)(?!.*\/[.-])[\w./
 /** How many days without activity settle a chat (core/triage); 0: never. */
 export const SETTLE_IDLE_DAYS_DEFAULT = 3;
 export const SETTLE_IDLE_DAYS_MAX = 365;
+export const ARCHIVE_SETTLED_DAYS_DEFAULT = 14;
+export const ARCHIVE_SETTLED_DAYS_MAX = 3650;
 
 /** Keep the Mac awake for your phone: never, only on power, or always (the display may still sleep). */
 export const KEEP_AWAKE = ['off', 'power', 'always'] as const;
@@ -166,8 +169,14 @@ export const Settings = z.object({
   settleOnMerge: z.boolean().catch(true),
   /** Days without activity before a chat settles; 0: never. */
   settleIdleDays: z.number().int().min(0).max(SETTLE_IDLE_DAYS_MAX).catch(SETTLE_IDLE_DAYS_DEFAULT),
+  /** Days a chat stays settled before it is archived by itself; 0: never. */
+  archiveSettledDays: z.number().int().min(0).max(ARCHIVE_SETTLED_DAYS_MAX).catch(ARCHIVE_SETTLED_DAYS_DEFAULT),
   /** An agent in a worktree whose pull request is open pushes its commits there when its turn ends (BLG-840). */
   pushToPr: z.boolean().catch(true),
+  /** Minutes between Beluga's own fetches of each project's remote (#479); 0: only when you click Fetch or Update main. */
+  fetchEvery: z.number().transform(fetchEveryMinutes).catch(FETCH_EVERY_DEFAULT),
+  /** A worktree's task moving to In Review has its agent open a draft pull request there (BLG-927). */
+  prOnReview: z.boolean().catch(false),
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder. */
   scratchFolder: z.boolean().default(true),
   /** How much of Claude's sub-agent work the chat shows. */

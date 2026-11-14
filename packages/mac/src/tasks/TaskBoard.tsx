@@ -1,15 +1,16 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal, flushSync } from 'react-dom';
-import { AnimatePresence, animate, frame as nextFrame, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'motion/react';
+import { flushSync } from 'react-dom';
+import { AnimatePresence, animate, frame as nextFrame, motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { ISSUE_STATUSES, type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank, isEpic } from '@beluga/core/board/model.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
+import { Lifted, useLean } from '../components/Lifted.js';
 import { Icon } from '../components/Icon.js';
 import { IconButton, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
-import { type ColumnGeometry, type Slot, type Span, clipBox, closeUp, edgeSpeed, foldedAround, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
+import { type ColumnGeometry, type Slot, type Span, clipBox, closeUp, edgeSpeed, foldedAround, isDrag, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon, assigneeWords } from './marks.js';
 import { AssigneePicker } from './pickers.js';
 import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, PrivateMark, useIssueMenu } from './parts.js';
@@ -105,7 +106,7 @@ export function TaskBoard({ issues, statuses, projectId, repo }: { issues: reado
   const justDragged = useRef(false);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const lean = useSpring(useTransform(useVelocity(x), (v) => (reduce ? 0 : leanFor(v))), { stiffness: 260, damping: 22 });
+  const lean = useLean(x);
 
   // Columns as the board says, with a move made here shown where it was dropped until the board catches up.
   // A column whose cards didn't change keeps its list, so it doesn't render again.
@@ -417,11 +418,10 @@ export function TaskBoard({ issues, statuses, projectId, repo }: { issues: reado
       })}
       {fold('after', folded.after)}
       {lift && lifted
-        ? createPortal(
-            <motion.div className={t.cardLifted} style={{ x, y, width: lift.width, rotate: lean }} initial={reduce ? false : { scale: 1 }} animate={{ scale: settling ? 1 : 1.035 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }} aria-hidden="true">
+        ? (
+            <Lifted className={t.cardLifted} x={x} y={y} lean={lean} width={lift.width} down={settling}>
               <CardFace issue={lifted} selfId={selfId} solo={soloIn.split('\n').includes(lifted.projectId)} lifted />
-            </motion.div>,
-            document.body,
+            </Lifted>
           )
         : null}
     </div>

@@ -49,6 +49,35 @@ describe('nextRunAt', () => {
     expect(iso(nextRunAt(hourly, undefined, t('2026-10-26T04:10:00-04:00'), NY))).toBe('2026-10-26T09:00:00.000Z');
   });
 
+  it('every few minutes, on the clock whatever `at` says', () => {
+    const quarter = every({ every: 'minutes', minutes: 15, at: '07:10' });
+    expect(iso(nextRunAt(quarter, undefined, t('2026-10-26T09:07:00-04:00'), NY))).toBe('2026-10-26T13:15:00.000Z');
+    expect(iso(nextRunAt(quarter, undefined, t('2026-10-26T09:15:00-04:00'), NY))).toBe('2026-10-26T13:30:00.000Z');
+    expect(iso(nextRunAt(quarter, undefined, t('2026-10-26T23:50:00-04:00'), NY))).toBe('2026-10-27T04:00:00.000Z');
+    const five = every({ every: 'minutes', minutes: 5 });
+    expect(iso(nextRunAt(five, undefined, t('2026-10-26T09:01:30-04:00'), NY))).toBe('2026-10-26T13:05:00.000Z');
+    const ten = every({ every: 'minutes', minutes: 10 });
+    expect(iso(nextRunAt(ten, t('2026-10-26T09:50:00-04:00'), t('2026-10-26T09:52:00-04:00'), NY))).toBe('2026-10-26T14:00:00.000Z');
+    // Left out (or not one that divides the hour): every 30.
+    const half = every({ every: 'minutes' });
+    expect(iso(nextRunAt(half, undefined, t('2026-10-26T09:01:00-04:00'), NY))).toBe('2026-10-26T13:30:00.000Z');
+    expect(iso(nextRunAt(every({ every: 'minutes', minutes: 7 as 5 }), undefined, t('2026-10-26T09:31:00-04:00'), NY))).toBe('2026-10-26T14:00:00.000Z');
+  });
+
+  it('every minute, on the minute', () => {
+    const minute = every({ every: 'minutes', minutes: 1 });
+    expect(iso(nextRunAt(minute, undefined, t('2026-10-26T09:07:20-04:00'), NY))).toBe('2026-10-26T13:08:00.000Z');
+    expect(iso(nextRunAt(minute, t('2026-10-26T23:59:00-04:00'), t('2026-10-26T23:59:00-04:00'), NY))).toBe('2026-10-27T04:00:00.000Z');
+    expect(iso(lastSlotAt(minute, t('2026-10-26T09:07:59-04:00'), NY))).toBe('2026-10-26T13:07:00.000Z');
+  });
+
+  it('every few minutes, the slot before now', () => {
+    const quarter = every({ every: 'minutes', minutes: 15 });
+    expect(iso(lastSlotAt(quarter, t('2026-10-26T09:44:59-04:00'), NY))).toBe('2026-10-26T13:30:00.000Z');
+    expect(iso(lastSlotAt(quarter, t('2026-10-26T00:05:00-04:00'), NY))).toBe('2026-10-26T04:00:00.000Z');
+    expect(iso(lastSlotAt(quarter, t('2026-10-26T00:00:00-04:00'), NY))).toBe('2026-10-26T04:00:00.000Z');
+  });
+
   it('every other day: two days apart, whenever it last ran', () => {
     const other = every({ every: 'other-day', at: '08:00' });
     const a = nextRunAt(other, undefined, t('2026-10-25T09:00:00-04:00'), NY)!;
@@ -82,6 +111,16 @@ describe('daylight saving', () => {
     const berlin = nextRunAt(every({ at: '02:30' }), undefined, t('2026-10-25T00:00:00+02:00'), BERLIN)!;
     expect(iso(berlin)).toBe('2026-10-25T00:30:00.000Z');
     expect(iso(nextRunAt(every({ at: '02:30' }), berlin, berlin, BERLIN))).toBe('2026-10-26T01:30:00.000Z');
+  });
+
+  it('every 30 minutes across the change: no slot twice, none in the gap', () => {
+    const half = every({ every: 'minutes', minutes: 30 });
+    // Spring, Berlin: 02:00 → 03:00 on 29 March 2026. After 01:30, the next is 03:00 (02:00 and 02:30 don't happen).
+    expect(iso(nextRunAt(half, t('2026-03-29T01:30:00+01:00'), t('2026-03-29T01:30:00+01:00'), BERLIN))).toBe('2026-03-29T01:00:00.000Z');
+    expect(iso(nextRunAt(half, t('2026-03-29T03:00:00+02:00'), t('2026-03-29T03:00:00+02:00'), BERLIN))).toBe('2026-03-29T01:30:00.000Z');
+    // Autumn, New York: 01:00–02:00 happens twice on 1 November 2026; its slots run the first time.
+    const first = t('2026-11-01T01:30:00-04:00');
+    expect(iso(nextRunAt(half, first, first, NY))).toBe('2026-11-01T07:00:00.000Z');
   });
 
   it('7:00 stays 7:00 local across the change', () => {
@@ -123,6 +162,42 @@ describe('missed slots', () => {
   it('on time: runs, not late', () => {
     const at = t('2026-10-26T07:00:20-04:00');
     expect(dueNow(daily, t('2026-10-25T07:00:00-04:00'), at, { tz: NY })).toEqual({ kind: 'run', slot: t('2026-10-26T07:00:00-04:00'), late: false, missed: 1 });
+  });
+
+  it('every few minutes, asleep all night: one catch-up run for the latest slot, then on the clock', () => {
+    const quarter = every({ every: 'minutes', minutes: 15 });
+    const slept = t('2026-10-25T23:00:00-04:00');
+    const woke = t('2026-10-26T07:40:00-04:00');
+    const due = dueNow(quarter, slept, woke, { tz: NY });
+    expect(due).toEqual({ kind: 'run', slot: t('2026-10-26T07:30:00-04:00'), late: true, missed: 34 });
+    if (due.kind !== 'run') throw new Error('expected a run');
+    expect(dueNow(quarter, due.slot, woke + 1000, { tz: NY })).toEqual({ kind: 'wait', at: t('2026-10-26T07:45:00-04:00') });
+  });
+
+  it('every few minutes, skipping: the missed ones don’t run, the next on the clock does', () => {
+    const five = every({ every: 'minutes', minutes: 5, missed: 'skip' });
+    const slept = t('2026-10-26T06:00:00-04:00');
+    // Half the gap late counts as missed (a 5-minute schedule is never more than 5 minutes late).
+    expect(dueNow(five, slept, t('2026-10-26T07:04:00-04:00'), { tz: NY })).toMatchObject({ kind: 'skip', slot: t('2026-10-26T07:00:00-04:00') });
+    expect(dueNow(five, t('2026-10-26T07:00:00-04:00'), t('2026-10-26T07:04:00-04:00'), { tz: NY })).toEqual({ kind: 'wait', at: t('2026-10-26T07:05:00-04:00') });
+    // A slot that only just passed (a tick is 30 s) still runs.
+    expect(dueNow(five, slept, t('2026-10-26T07:00:40-04:00'), { tz: NY })).toMatchObject({ kind: 'run', late: false });
+  });
+
+  it('every minute: a tick that comes a little late still runs it on time; a night asleep is one run', () => {
+    const minute = every({ every: 'minutes', minutes: 1, missed: 'skip' });
+    // The tick is every 30 s: 45 s after its slot is not a missed one.
+    expect(dueNow(minute, t('2026-10-26T07:00:00-04:00'), t('2026-10-26T07:01:45-04:00'), { tz: NY })).toEqual({ kind: 'run', slot: t('2026-10-26T07:01:00-04:00'), late: false, missed: 1 });
+    const due = dueNow(every({ every: 'minutes', minutes: 1 }), t('2026-10-25T23:00:00-04:00'), t('2026-10-26T07:00:30-04:00'), { tz: NY });
+    expect(due).toMatchObject({ kind: 'run', slot: t('2026-10-26T07:00:00-04:00'), late: false, missed: 480 });
+  });
+
+  it('every 5 minutes, asleep for a week: still one run, worked out quickly', () => {
+    const five = every({ every: 'minutes', minutes: 5 });
+    const started = performance.now();
+    const due = dueNow(five, t('2026-10-19T07:00:00-04:00'), t('2026-10-26T07:02:00-04:00'), { tz: NY });
+    expect(due).toMatchObject({ kind: 'run', slot: t('2026-10-26T07:00:00-04:00'), missed: 1000 });
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   it('turned on just now: waits for the next slot', () => {

@@ -4,11 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { composerPlan, FIELD_LINE_HEIGHT, FIELD_PAD, fieldHeight, MAX_PHOTOS } from '../lib/composer';
+import { useSupports } from '../lib/hooks';
 import { pickPhoto } from '../lib/pick';
 import { color, ink, spring, tint } from '../lib/theme';
 import { appendSpoken } from '../lib/dictate';
 import { useVoice, voiceAvailable } from '../lib/voice';
 import { type Option, Options } from './Options';
+import { InlineThing } from './render/Inline';
+import { chatMentionsAsTitles, parseChatRef } from '../lib/render';
 import { Card, haptic, Press, T } from './ui';
 import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from './Voice';
 import { matchTags, withTag } from '../../../src/shared/agent-tags';
@@ -53,8 +56,8 @@ function TagChips({ tags, onPick }: { readonly tags: readonly Tag[]; readonly on
 /** A photo picked to go with the message (lib/pick.ts). */
 export type Photo = NonNullable<Awaited<ReturnType<typeof pickPhoto>>>;
 
-/** Your messages waiting for Claude here: steer with one now, or take it out. */
-export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readonly { id: string; text: string; waiting?: string }[]; readonly onSteer: (id: string) => void; readonly onRemove: (id: string) => void }) {
+/** What waits for Claude here: your messages, and messages from your other chats with their source (1.46). Steer with one now, or take it out. */
+export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readonly { id: string; text: string; waiting?: string; origin?: { ref: string; title: string; agent: string } }[]; readonly onSteer: (id: string) => void; readonly onRemove: (id: string) => void }) {
   if (!queue.length) return null;
   return (
     <Animated.View entering={FadeIn.duration(240)} exiting={FadeOut.duration(160)} layout={LinearTransition.duration(180)}>
@@ -80,9 +83,13 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
                 {i + 1}
               </T>
             </View>
-            <T v="callout" c={color.text} numberOfLines={1} style={{ flex: 1 }}>
-              {q.text}
-            </T>
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <T v="callout" c={color.text} numberOfLines={1}>
+                {/* One line: a chat it names by its title, never its ref. */}
+                {chatMentionsAsTitles(q.text)}
+              </T>
+              {q.origin ? <QueuedFrom origin={q.origin} /> : null}
+            </View>
             <Press onPress={() => (haptic.commit(), onSteer(q.id))} accessibilityLabel="Steer with it now" style={{ height: 30, paddingHorizontal: 10, borderRadius: 15, justifyContent: 'center', backgroundColor: tint.sky }}>
               <T v="caption" c={ink.sky} style={{ fontWeight: '700' }}>
                 Steer
@@ -95,6 +102,20 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
         ))}
       </Card>
     </Animated.View>
+  );
+}
+
+/** Who sent a queued message that isn't yours: the chat's chip, which opens it, and the agent. */
+function QueuedFrom({ origin }: { readonly origin: { ref: string; title: string; agent: string } }) {
+  const on = useSupports('chatLinks');
+  const ref = parseChatRef(origin.ref);
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+      <T v="caption">From</T>
+      {/* An older Mac has no chip: the title, never the long ref. */}
+      {on && ref ? <InlineThing el={{ kind: 'chat', ref }} /> : <T v="caption">{origin.title}</T>}
+      <T v="caption">· {origin.agent}, an agent</T>
+    </View>
   );
 }
 

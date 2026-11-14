@@ -25,6 +25,7 @@ export const SYNCED_SETTINGS = [
   'theme',
   // How you work, and which experimental features you turned on (a computer then runs them too).
   'pushToPr',
+  'prOnReview',
   'experiments',
   'agentThreads',
   'runOn',
@@ -45,6 +46,7 @@ export const SYNCED_SETTINGS = [
   'chatCategories',
   'settleOnMerge',
   'settleIdleDays',
+  'archiveSettledDays',
   'scratchFolder',
   'subagents',
   'hiddenButtons',
@@ -71,6 +73,8 @@ export const LOCAL_SETTINGS = [
   'tunnel',
   'keepAwake',
   'lowPower',
+  // Whether a background fetch is welcome depends on this computer's git keys (#479: a vault that asks each time).
+  'fetchEvery',
   'shell',
   'shellLogin',
   'shellArgs',
@@ -95,6 +99,7 @@ export const LOCAL_SETTINGS = [
 export const SETTING_LABELS: Readonly<Record<SyncedSetting, string>> = {
   theme: 'Theme',
   pushToPr: 'Keep open pull requests current',
+  prOnReview: 'Open a pull request when work is ready',
   experiments: 'Experimental features',
   agentThreads: 'Agent threads',
   runOn: 'Run New Work On',
@@ -115,6 +120,7 @@ export const SETTING_LABELS: Readonly<Record<SyncedSetting, string>> = {
   chatCategories: 'Chat categories',
   settleOnMerge: 'Settle on merge',
   settleIdleDays: 'Settle after',
+  archiveSettledDays: 'Archive settled chats after',
   scratchFolder: 'Scratch folder',
   subagents: 'Sub-agents',
   hiddenButtons: 'Hidden buttons',
@@ -484,7 +490,7 @@ export class SettingsSync {
       const now = stable(values[key]);
       if (now === base[key]) continue;
       const value = values[key];
-      next = { ...next, base: { ...next.base, [key]: now }, entries: { ...next.entries, [key]: { at: Math.max(this.now(), (next.entries[key]?.at ?? 0) + 1), by: self.id, name: self.name, ...(value !== undefined ? { value } : {}) } } };
+      next = { ...next, base: { ...next.base, [key]: now }, entries: { ...next.entries, [key]: { at: this.stampAfter(next.entries[key]?.at), by: self.id, name: self.name, ...(value !== undefined ? { value } : {}) } } };
     }
     if (next === this.ledger) return;
     this.ledger = next;
@@ -503,7 +509,7 @@ export class SettingsSync {
       const s = { ...next.secretBase };
       if (hash) s[key] = hash;
       else delete s[key];
-      next = { ...next, secretBase: s, secrets: { ...next.secrets, [key]: { at: Math.max(this.now(), (next.secrets[key]?.at ?? 0) + 1), by: self.id, name: self.name, ...(hash ? { hash } : {}) } } };
+      next = { ...next, secretBase: s, secrets: { ...next.secrets, [key]: { at: this.stampAfter(next.secrets[key]?.at), by: self.id, name: self.name, ...(hash ? { hash } : {}) } } };
     };
     for (const [key, hash] of Object.entries(now)) if (base[key] !== hash) stamp(key, hash);
     for (const key of Object.keys(base)) if (!(key in now)) stamp(key, undefined);
@@ -511,6 +517,15 @@ export class SettingsSync {
     this.ledger = next;
     this.save();
     if (this.ledger.secretsWith.length) this.schedule();
+  }
+
+  /**
+   * When a change made here now is stamped: after its last stamp, and after this device last heard
+   * from any other. A conflict counts changes made since then, and one made in the same millisecond
+   * as a sync (a busy machine) would otherwise read as known to the other side when it wasn't.
+   */
+  private stampAfter(previous = 0): number {
+    return Math.max(this.now(), previous + 1, ...Object.values(this.ledger.seen).map((at) => at + 1));
   }
 
   /** The app's settings as they are, before anything changed: what a computer joining takes. */

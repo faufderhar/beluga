@@ -72,6 +72,8 @@
 :global(html[data-arranging]),
 :global(html[data-arranging]) * {
   cursor: default !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 /* A project's triangle and icon sit in the same columns as a group's: at the top level they're

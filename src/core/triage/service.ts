@@ -5,6 +5,7 @@ import { type NoticeEvent, mentionOf, placeName } from '../notify.js';
 import { planById, planTitle } from '../plans/model.js';
 import type { Action, DomainState, LogItem, Store } from '../store.js';
 import type { WorktreeEvent } from '../workspace-controller.js';
+import { autoArchive } from './auto-archive.js';
 import { autoSettle } from './auto-settle.js';
 import { channelsOf, handSourceOf, lastLogAt, triageFacts } from './facts.js';
 import { type ChatTriage, type TriageEvent, applyTriage, handRaisedOf, settleRefusal, triageKey } from './model.js';
@@ -29,6 +30,8 @@ export interface TriageServiceDeps {
   readonly onWorktree?: (listener: (event: WorktreeEvent) => void) => () => void;
   /** Clear these worktrees' Remind Me Later from before BLG-770 (`remindAt` on their record): it's carried in here. */
   readonly forgetReminders?: (ids: readonly string[]) => void;
+  /** Archive a workspace quietly (a chat settled for `archiveSettledDays`); true when it did. */
+  readonly archive?: (workspaceId: string) => Promise<boolean>;
   readonly now?: () => number;
 }
 
@@ -64,6 +67,8 @@ export class TriageService {
   private unprompted = false;
   /** Worktrees whose old Remind Me Later was carried in already (clearing it on their record publishes later). */
   private readonly carried = new Set<string>();
+  /** Workspaces archived by themselves since the daemon started: each is tried once, so a refused archive doesn't repeat each minute. */
+  private readonly archiving = new Set<string>();
 
   constructor(private readonly deps: TriageServiceDeps) {
     for (const [key, record] of Object.entries(this.load())) deps.store.dispatch({ type: 'triage_set', channel: key, record });
@@ -173,11 +178,16 @@ export class TriageService {
     }
   }
 
-  /** A merge into main here settles the chat, now or when it next can. */
+  /** A merge into main here settles the chat, now or when it next can. A restored chat is back: un-settled, so it isn't archived again. */
   private onWorktree(event: WorktreeEvent): void {
-    if (!this.on || event.kind !== 'merged') return;
-    this.applyIn(`ws:${event.id}`, { kind: 'merged_here' });
-    this.settleWhatCan();
+    if (!this.on) return;
+    if (event.kind === 'restored') {
+      this.archiving.delete(event.id);
+      this.applyIn(`ws:${event.id}`, { kind: 'unsettle' });
+    } else if (event.kind === 'merged') {
+      this.applyIn(`ws:${event.id}`, { kind: 'merged_here' });
+      this.settleWhatCan();
+    } else return;
     this.saveSoon();
   }
 
@@ -187,6 +197,18 @@ export class TriageService {
     const now = this.now();
     this.lastAuto = now;
     for (const { key, why, pr } of autoSettle(this.state(), now)) this.apply(key, { kind: 'settle', at: now, why, ...(pr !== undefined ? { pr } : {}) });
+    this.archiveWhatCan(now);
+  }
+
+  /** Chats settled for `archiveSettledDays` go to the archive, the same lossless one as the row's Archive. */
+  private archiveWhatCan(now: number): void {
+    const archive = this.deps.archive;
+    if (!archive) return;
+    for (const id of autoArchive(this.state(), now)) {
+      if (this.archiving.has(id)) continue;
+      this.archiving.add(id);
+      void archive(id).catch(() => false);
+    }
   }
 
   private onChat(action: Extract<Action, { type: 'chat' }>): void {

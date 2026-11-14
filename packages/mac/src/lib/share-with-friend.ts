@@ -17,6 +17,8 @@ export interface ShareWithFriend {
   readonly projectId?: string;
   readonly workspaceId?: string;
   readonly role: 'view' | 'contribute';
+  /** The whole project, even for a friend who has only some of its worktrees. */
+  readonly whole?: boolean;
 }
 
 /** Whether this Beluga can share with friends over the network. */

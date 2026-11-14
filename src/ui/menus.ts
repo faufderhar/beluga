@@ -65,7 +65,7 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
       { id: 'p-worktree', label: 'New worktree', hint: 'from the latest origin' },
       { id: 'p-chat', label: 'New chat', hint: "a new one each time, in the project's main folder" },
       ...(p.root ? [{ id: 'p-invite', label: 'Invite someone to this project…', hint: 'a link: they watch, prompt or edit here' }] : []),
-      { id: 'p-scripts', label: 'Setup and run commands…', hint: p.scripts?.setup ? `setup: ${p.scripts.setup.command}` : 'none yet' },
+      { id: 'p-scripts', label: 'Project Settings…', hint: p.scripts?.setup ? `setup: ${p.scripts.setup.command}` : 'none yet' },
       { id: 'p-finder', label: `Open in ${FILE_MANAGER}`, hint: '' },
       ...otherGroups.map((g) => ({ id: `p-group:${g.name}`, label: `Move to "${g.name}"`, hint: 'group' })),
       { id: 'p-newgroup', label: 'Move to a new group…', hint: 'type a name' },
@@ -130,7 +130,14 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
         ),
       ]
     : [];
-  const envOption = env.length ? [{ id: `confirm-${action}-env`, label: `Copy env changes to the main folder, then ${action}`, hint: 'keeps your new keys' }] : [];
+  const removedKeys = env.flatMap((c) => c.removed);
+  const envOption = env.length
+    ? [
+        { id: `confirm-${action}-env`, label: `Copy env changes to the main folder, then ${action}`, hint: 'keeps your new keys' },
+        // Removed keys go from the main folder's file too, only when chosen.
+        ...(removedKeys.length ? [{ id: `confirm-${action}-env-all`, label: `Copy env changes and removals to the main folder, then ${action}`, hint: `also removes ${removedKeys.join(', ')}` }] : []),
+      ]
+    : [];
   if (action === 'archive') {
     return {
       title: `Archive ${ws.name}?`,

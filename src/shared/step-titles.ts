@@ -1,3 +1,4 @@
+import { chatLinkOf, formatChatRef } from './chat-ref.js';
 import { editDiff } from './line-diff.js';
 import { underPart } from './path-inside.js';
 
@@ -111,12 +112,26 @@ function belugaTool(name: string, input: Readonly<Record<string, unknown>>): Hum
       return both(str(input.app) ? `Looked at ${str(input.app)}` : 'Took a screenshot', 'Taking a screenshot');
     case 'device_info':
       return both('Looked at this Mac’s details', 'Looking at this Mac’s details');
+    case 'list_chats':
+      return both('Looked through your chats', 'Looking through your chats');
+    case 'read_chat':
+      return both('Read another chat', 'Reading another chat');
+    case 'send_to_chat':
+      return str(input.ref) ? both(`Sent a message to chat:${refWord(str(input.ref))}`, `Sending a message to chat:${refWord(str(input.ref))}`) : both('Sent a message to another chat', 'Sending a message to another chat');
+    case 'wait_for_chat':
+      return both('Waited for another chat', 'Waiting for another chat');
     default:
       return undefined;
   }
 }
 
 /** A tool call in words, from its name and input. Paths read relative to `cwd`. */
+/** A chat ref as the tool got it (a link, or `chat:` in front), as one word for the step's chip. */
+function refWord(text: string): string {
+  const link = chatLinkOf(text.trim());
+  return (link && formatChatRef(link)) ?? text.trim().replace(/^chat:/, '');
+}
+
 export function humanizeTool(tool: string, input: Readonly<Record<string, unknown>> = {}, cwd?: string): HumanStep {
   const file = rel(str(input.file_path) || str(input.notebook_path) || str(input.path), cwd);
   switch (tool) {
@@ -183,7 +198,7 @@ export function humanizeTool(tool: string, input: Readonly<Record<string, unknow
         // Steps kept from before the rename name the servers klaud, klaud_task, klaud_board…
         const server = mcp[1]!.replace(/^klaud(?=_|$)/, 'beluga');
         const own = belugaTool(mcp[2]!, input);
-        if (own && (server === 'beluga' || server === 'beluga_task')) return own;
+        if (own && (server === 'beluga' || server === 'beluga_task' || server === 'beluga_chats')) return own;
         return both(`Used ${spaced(mcp[2]!)} from ${spaced(server)}`, `Using ${spaced(mcp[2]!)} from ${spaced(server)}`);
       }
       return belugaTool(tool, input) ?? both(`Used ${spaced(tool)}`, `Using ${spaced(tool)}`);

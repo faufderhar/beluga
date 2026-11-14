@@ -1,6 +1,8 @@
-import type { PlanTools } from '../../agent/types.js';
+import type { ChatChain, PlanTools } from '../../agent/types.js';
 import type { AgentRef } from '../../protocol.js';
 import { agentName } from '../../shared/agent-label.js';
+import type { RuntimeChoice } from '../../shared/agent-runtimes.js';
+import type { Workspace } from '../../workspaces/types.js';
 import type { Actor, ExternalActor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { CombineResult } from '../../workspaces/git.js';
@@ -32,10 +34,15 @@ export interface PlansWorkDeps {
   readonly plans: Plans;
   readonly board: BoardWork;
   readonly controller?: WorkspaceController;
-  /** Ask your Claude in a conversation; returns the request's id, when it can (to follow a steered message). */
-  readonly askClaude: (prompt: string, channel: string, echo: boolean) => string | void;
+  /** Ask your Claude in a conversation; returns the request's id, when it can (to follow a steered message). `chain`: the chain it goes on in (BLG-303). */
+  readonly askClaude: (prompt: string, channel: string, echo: boolean, chain?: ChatChain) => string | void;
   /** Steer a waiting message in now: the agent host's Steer Now (AgentHost.promote). */
   readonly promote?: (requestId: string) => boolean;
+  /**
+   * A message the plan's agent sends on to a task, in the chain of its run: the chain it goes on
+   * in (one hop on), or why the chat-links guard refuses it (ChatSendService.sendOn). Default: one hop on.
+   */
+  readonly sendOn?: (chain: ChatChain) => { readonly chain: ChatChain } | { readonly refused: string };
   /** Stop your Claude in one conversation (its queued messages too): the agent host's Stop. */
   readonly stopRun?: (channel: string) => void;
   readonly intend: (intent: Intent) => void;
@@ -58,9 +65,30 @@ export interface PlansWorkDeps {
   readonly forYou?: PilotDeps['forYou'];
   /** How long a plan may sit quiet before Beluga moves it along: see PilotDeps.rescueMs. */
   readonly rescueMs?: number;
+  /**
+   * Put the plan's own conversation on `agent` (undefined: your default), as its own picker does:
+   * another runtime gets the recent conversation with the next message (a quiet switch, BLG-592).
+   */
+  readonly followAgent?: (channel: string, agent: AgentRef | undefined) => void;
 }
 
 const WS = 'ws:';
+
+/**
+ * Whether a conversation already runs on `pick` (undefined: your default): its runtime, and its
+ * model when the pick names one. A pick naming no model leaves the conversation's own model alone,
+ * unless that model is what the plan's last pick (`was`) put there.
+ */
+export function chatRunsOn(chat: Pick<Workspace, 'agent' | 'model'>, pick: AgentRef | undefined, was: AgentRef | undefined): boolean {
+  if (chat.agent?.runtime !== pick?.runtime) return false;
+  if (pick?.model) return chat.model === pick.model;
+  return !(chat.model && was?.runtime === pick?.runtime && was?.model === chat.model);
+}
+
+/** Whether this Mac runs `agent`'s runtime, as the agent pickers know it (none listed yet: assumed). */
+function runsHere(runtimes: readonly RuntimeChoice[], agent: AgentRef): boolean {
+  return !runtimes.length || Boolean(runtimes.find((r) => r.id === agent.runtime)?.available);
+}
 
 export class PlansWork {
   readonly plans: Plans;
@@ -174,6 +202,10 @@ export class PlansWork {
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
     const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}), ...(input.agent ? { agent: input.agent } : {}) }, this.me());
+    // Its conversation plans on the agent picked for its work (a new conversation: nothing to hand off).
+    // One this Mac can't run would fail the first turn, so your default plans it and the plan keeps the pick.
+    if (input.agent && runsHere(this.deps.store.getState().runtimes, input.agent)) controller.manager.setAgent(chat.id, input.agent);
+    else if (input.agent) this.deps.store.dispatch({ type: 'system', channel: home, text: `${agentName(input.agent)} isn’t set up on this Mac, so your default agent plans this.`, level: 'warn' });
     if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
     // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.
@@ -342,10 +374,16 @@ export class PlansWork {
   /**
    * Who works the plan's milestones and tasks (BLG-498): `agent`, or your default (null). Work that
    * starts from now on gets it; milestones and tasks already at work keep the agent they opened with
-   * (switching mid-run would lose their sessions). A task's own agent still beats it. → in words.
+   * (switching mid-run would lose their sessions). A task's own agent still beats it. The plan's own
+   * conversation moves to it too. → in words.
    */
   setWorkAgent(id: string, agent: AgentRef | null): string {
+    const was = this.plans.need(id).agent;
     const plan = this.plans.setWorkAgent(id, agent ?? undefined, this.me());
+    // The plan's own conversation follows it, so the one you plan with is the one you picked (even when the pick didn't change: it brings a drifted conversation back).
+    // One already on it isn't moved: a move clears the conversation's own effort and model.
+    const chat = plan.status !== 'done' && plan.home.startsWith(WS) ? this.deps.controller?.manager?.find(plan.home.slice(WS.length)) : undefined;
+    if (chat && !chatRunsOn(chat, agent ?? undefined, was)) this.deps.followAgent?.(plan.home, agent ?? undefined);
     const who = agent ? agentName(agent, { model: true }) : 'your default agent';
     const busy = Object.values(plan.runs).filter((r) => r?.agent && !r.passedAt).length;
     return busy ? `${who} works what starts next; the ${busy === 1 ? 'milestone' : `${busy} milestones`} already at work keep${busy === 1 ? 's' : ''} ${busy === 1 ? 'its' : 'their'} agent` : `${who} works this plan’s milestones and tasks`;
@@ -445,7 +483,7 @@ export class PlansWork {
   // ------------------------------------------------------------------ for Claude
 
   /** A run in a plan's home conversation (yours): the plan's tools, and how to plan or run it. */
-  forRun(channel: string, from: string): { readonly tools?: PlanTools; readonly brief?: string; readonly checker?: boolean } | undefined {
+  forRun(channel: string, from: string, chain?: () => ChatChain): { readonly tools?: PlanTools; readonly brief?: string; readonly checker?: boolean } | undefined {
     const me = this.deps.board.me();
     if (me.kind !== 'person' || from !== me.id) return undefined;
     // A milestone's checker: its brief, and only plan_get and plan_gate.
@@ -464,7 +502,7 @@ export class PlansWork {
     const board = this.deps.store.getState().board;
     const view = this.pilot.view(plan);
     const brief = plan.body ? headBrief(view) + planningBrief(plan, board, this.plans.planningStyle) : planningBrief(plan, board, this.plans.planningStyle);
-    return { tools: this.toolsFor(plan.id), brief };
+    return { tools: this.toolsFor(plan.id, undefined, chain), brief };
   }
 
   /** In a task's worktree: the plan it's part of. */
@@ -573,7 +611,8 @@ export class PlansWork {
     };
   }
 
-  private toolsFor(planId: string, external?: Actor): PlanTools {
+  /** `chain`: the chain of the run that has the tools; a message to a task goes on in it, one hop on (BLG-303). */
+  private toolsFor(planId: string, external?: Actor, chain?: () => ChatChain): PlanTools {
     const by = (): Actor => external ?? this.claude();
     const plans = this.plans;
     const after = (change: () => Plan): string => {
@@ -624,10 +663,13 @@ export class PlansWork {
         const w = issue.worktrees.at(-1);
         if (!w || issue.worktreeGone) throw new Error(`${issue.key} hasn't started: nothing to tell yet (start it, or change its brief)`);
         const steer = mode === 'steer';
+        const now = chain?.();
+        const on = now && (this.deps.sendOn?.(now) ?? { chain: { chainId: now.chainId, hop: now.hop + 1 } });
+        if (on && 'refused' in on) throw new Error(`Not sent to ${issue.key}: ${on.refused}`);
         // Shown there as the plan's message, not as yours.
         this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s agent: ${text.trim().slice(0, 2000)}`, level: 'info' });
         const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another agent coordinating the plan, not the user):\n\n${text.trim()}`;
-        const id = this.deps.askClaude(prompt, `${WS}${w}`, false);
+        const id = this.deps.askClaude(prompt, `${WS}${w}`, false, on?.chain);
         if (!steer) return `Queued for the agent working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
         // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
         if (id) this.pilot.steer(planId, hit.task.id, id, prompt);

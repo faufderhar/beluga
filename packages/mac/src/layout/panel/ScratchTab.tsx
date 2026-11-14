@@ -22,6 +22,7 @@ import { type ScratchEntry, type ScratchKind, type ScratchSort, type ScratchTota
 import s from './panel.module.css';
 import k from './scratch.module.css';
 import { everyWhileShown } from '../../lib/window-active.js';
+import { oneAtATime } from '../../lib/one-at-a-time.js';
 import { revealLabel } from '../../lib/os-words.js';
 import { useRevealFileLabel, useRevealLabel } from '../../lib/remote-open.js';
 
@@ -78,10 +79,11 @@ function useScratch(of: ScratchOf): Listing | undefined | null {
     let shown = 0;
     let sig: string | undefined;
     setList(undefined);
-    const look = (): void => {
+    // One look at a time: a slow answer is waited for, not asked again behind it.
+    const look = oneAtATime(() => {
       if (document.visibilityState !== 'visible') return;
       const n = ++asked;
-      lookIn(api, of).then(
+      return lookIn(api, of).then(
         (res) => {
           if (!alive || n < shown) return;
           shown = n;
@@ -96,7 +98,7 @@ function useScratch(of: ScratchOf): Listing | undefined | null {
           if (alive && sig === undefined) setList(null);
         },
       );
-    };
+    });
     look();
     const stop = everyWhileShown(look, POLL_MS);
     return () => {
@@ -119,13 +121,13 @@ export function useScratchNewest(of: ScratchOf | undefined): number | undefined 
     setNewest(undefined);
     if (!of) return;
     let alive = true;
-    const look = (): void => {
+    const look = oneAtATime(() => {
       if (document.visibilityState !== 'visible') return;
-      lookIn(api, of).then(
+      return lookIn(api, of).then(
         (res) => alive && setNewest(Math.max(0, ...(res?.files ?? []).filter((f) => !isSentPath(f.path)).map((f) => f.mtime))),
         () => undefined,
       );
-    };
+    });
     look();
     const stop = everyWhileShown(look, NEWEST_MS);
     return () => {

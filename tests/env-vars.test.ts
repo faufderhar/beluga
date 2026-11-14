@@ -134,7 +134,7 @@ describe('EnvVars (kept by the core)', () => {
     // One set in Beluga wins over the .env.
     env.set('p1', [{ key: 'SHARED', value: 'project' }]);
     expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' });
-    expect(env.get('p1')).toEqual({
+    expect(env.get('p1')).toMatchObject({
       vars: [{ key: 'SHARED', value: 'project' }],
       dotenv: true,
       dotenvKeys: ['FROM_DOTENV', 'SHARED'],

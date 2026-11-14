@@ -10,7 +10,7 @@ import type { BoardTools } from './types.js';
  * sub-tasks and mark what waits on what. Every change shows in the task's activity as Claude's.
  */
 
-export const BOARD_TOOL_NAMES = ['task_define', 'task_get', 'task_list', 'task_create', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`);
+export const BOARD_TOOL_NAMES = ['task_define', 'task_get', 'task_list', 'task_create', 'task_start', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`);
 
 const key = z.string().min(2).max(40).optional().describe('The task’s key, like BOB-12. Leave out for the task this worktree is doing');
 const STATUS = z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']);
@@ -19,11 +19,11 @@ const SECTION = z.enum(['goal', 'context', 'acceptance', 'decisions', 'questions
 const ESTIMATE = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(8)]).describe('Points: 1 an hour or so, 2 half a day, 3 a day, 5 a few days, 8 a week (split it)');
 const items = (max: number) => z.array(z.string().min(1).max(400)).max(max);
 
-function guarded(fn: () => string): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+async function guarded(fn: () => string | Promise<string>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
   try {
-    return Promise.resolve({ content: [{ type: 'text', text: fn() }] });
+    return { content: [{ type: 'text', text: await fn() }] };
   } catch (err) {
-    return Promise.resolve({ content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true });
+    return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true };
   }
 }
 
@@ -113,6 +113,12 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.private ? { private: true } : {}),
           }),
         ),
+    ),
+    tool(
+      'task_start',
+      'Start a task, as the user’s Start does: a worktree of its own in the repo it runs in (this project or another), with an agent working it from its brief right away. task_create first when it isn’t on the board. Only when the user asks you to start, kick off or hand off work. Name both in your answer as the result says (`task:KEY`, `worktree:<id>`).',
+      { key: z.string().min(2).max(40).describe('The task’s key, like BOB-12') },
+      (a) => guarded(() => board.start(a.key)),
     ),
     tool(
       'board_create',

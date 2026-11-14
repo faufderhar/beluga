@@ -5,7 +5,7 @@ import { personMentions } from '../person-mentions.js';
 import { teammatesOf } from '../team/model.js';
 import { slugify } from '../../agent/namer.js';
 import { isSecretPath } from '../shares.js';
-import type { Action, LogItem, Store } from '../store.js';
+import { type Action, type LogItem, type Store, busyChannels } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
 import { Board, type IssuePatch, type NewIssue } from './board.js';
@@ -120,7 +120,8 @@ export class BoardWork {
       const via = issue.carriedBy ?? issue.worktrees.at(-1);
       const root = roots.get(issue.projectId);
       if (!issue.branch || !root || issue.archivedAt !== undefined || (via && live.has(via))) continue;
-      if (issue.status !== 'in_progress' && issue.status !== 'in_review') continue;
+      // Held after its merge (BLG-952): already merged, waiting on its criteria, not on gh.
+      if ((issue.status !== 'in_progress' && issue.status !== 'in_review') || issue.mergedHeld) continue;
       const key = `${root}\0${issue.branch}`;
       const group = waiting.get(key) ?? { root, branch: issue.branch, ids: [] };
       group.ids.push(issue.id);
@@ -886,6 +887,17 @@ export class BoardWork {
         const where = repos.length > 1 ? ` on ${boardName(state(), boardOf(issue), this.repoName)}, running in ${named(issue.projectId)}${covered ? '' : ` (the board covers ${named(issue.projectId)} from now on)`}` : '';
         return `Created ${issue.key}: ${issue.title} (${issue.status}${issue.private ? ', private: only the user sees it' : ''})${where}${leftOut(boardOf(issue), input.labels)}`;
       },
+      start: async (key) => {
+        // Starting work runs an agent on this Mac: your own runs only, never a friend's or an outside agent's.
+        if (home) onlyHome('starting work is the owner’s: ask them to Start it');
+        if (external) throw new Error('Starting a task is for the owner’s own agent: ask them to Start it');
+        const issue = pick(key);
+        const wsId = await this.start(issue.id, { claude: true, by: by() });
+        const started = this.workspaces().find((w) => w.id === wsId);
+        const repos = reposOf(state(), boardOf(issue));
+        const inRepo = repos.length > 1 || issue.projectId !== wsProject() ? ` in ${named(issue.projectId)}` : '';
+        return `Started ${issue.key} in the worktree "${started?.name ?? wsId}"${inRepo}: its agent is working it from its brief now. Name both in your answer: \`task:${issue.key}\` and \`worktree:${wsId}\`.`;
+      },
       createBoard: (input) => {
         if (home) onlyHome('making a new board is the owner’s');
         const repos = [...new Set(input.repos.map(projectByName))];
@@ -956,14 +968,9 @@ export interface RunBoard {
   readonly planApproved?: () => void;
 }
 
-const issueForWorkspaceOf = (board: Board, channel: string): Issue | undefined => (channel.startsWith(WS) ? issueForWorkspace(board.state(), channel.slice(WS.length)) : undefined);
+export { busyChannels };
 
-/** Conversations where a Claude is working right now. */
-export function busyChannels(log: readonly LogItem[]): Set<string> {
-  const last = new Map<string, string>();
-  for (const l of log) if (l.type === 'agent') last.set(l.channel, l.status);
-  return new Set([...last].filter(([, s]) => s === 'queued' || s === 'awaiting_approval' || s === 'started' || s === 'answered').map(([c]) => c));
-}
+const issueForWorkspaceOf = (board: Board, channel: string): Issue | undefined => (channel.startsWith(WS) ? issueForWorkspace(board.state(), channel.slice(WS.length)) : undefined);
 
 /** A checklist from lines or text ("- [ ] …" each; ticks kept). */
 export function checklistOf(input: string | readonly string[] | undefined): string | undefined {

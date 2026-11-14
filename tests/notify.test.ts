@@ -4,6 +4,7 @@ import { AttentionRegistry } from '../src/core/attention.js';
 import { ClientStore } from '../src/client/client-store.js';
 import { Notifier, detectNotices, enabled, placeName, planOfChannel, type NoticeEvent } from '../src/core/notify.js';
 import type { Issue } from '../src/core/board/model.js';
+import { needsYou } from '../src/companion/needs-you.js';
 import type { Plan, PlanBody } from '../src/core/plans/model.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
@@ -584,6 +585,16 @@ describe('plans: you hear from the plan, not each task', () => {
     expect(detectNotices(woken, twice)).toEqual([
       { kind: 'needsYou', tag: 'milestone', title: 'Auth: “Login form” stopped twice', body: 'it ended its turn without handing off. Resume it, or open its chat', channel: 'ws:home', plan: 'pl1', need: 'plan:pl1:stalled:t1', key: 'plan:pl1:t1:stalled:4' },
     ]);
+    // What it said last (usually what it waits on you for) is what the notification says.
+    const asking = apply(woken, { type: 'plan_put', plan: plan({ watch: { t1: { at: 5, reason: 'it ended its turn without handing off', line: 'KLD-12 stopped', wokeAt: 2, needsYou: true, said: 'Put the .env in /opt/app on the server, then I deploy.' } } }) });
+    expect(detectNotices(woken, asking)).toMatchObject([
+      { kind: 'needsYou', title: 'Auth: “Login form” needs you', body: 'It says: “Put the .env in /opt/app on the server, then I deploy.” Do what it asks, then Resume it', need: 'plan:pl1:stalled:t1' },
+    ]);
+    // On the phone (its card and its push), what it said comes without code, as Claude's answers do.
+    const withCode = apply(woken, { type: 'plan_put', plan: plan({ watch: { t1: { at: 5, reason: 'r', line: 'KLD-12 stopped', wokeAt: 2, needsYou: true, said: 'Run this on the server:\n```sh\nexport DB_PASSWORD=hunter2\n```\nthen I deploy.' } } }) });
+    const card = needsYou(withCode).find((n) => n.id === 'plan:pl1:stalled:t1');
+    expect(card?.detail).toMatch(/^It says: “Run this on the server:.*then I deploy\.” Do what it asks, then Resume it\.$/);
+    expect(card?.detail).not.toContain('hunter2');
     const rescued = apply(before, { type: 'plan_put', plan: plan({ rescue: { m1: { sig: 's', tries: 3, at: 7, tried: ['woke KLD-12', 'restarted it'], yours: true } } }) });
     expect(detectNotices(before, rescued)).toMatchObject([{ kind: 'needsYou', title: 'Auth: stuck on “API”', body: 'Beluga tried: woke KLD-12; restarted it', need: 'plan:pl1:rescue:m1' }]);
     const conflict = { at: 8, dir: '/wt/merge', merging: 'klaud/a', key: 'KLD-12', files: ['src/a.ts'] };

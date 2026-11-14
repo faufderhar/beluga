@@ -1,16 +1,17 @@
 import * as Popover from '@radix-ui/react-popover';
 import { EFFORTS, type Effort } from '@beluga/shared/settings-schema.js';
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useRef, useState } from 'react';
 import type { AppState } from '@beluga/core/store.js';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import { type HandoffMode, limitHit, needsHandoff } from '@beluga/shared/agent-handoff.js';
-import { type AgentMark, modelMark, runtimeMark } from '@beluga/shared/agent-marks.js';
+import { runtimeMark } from '@beluga/shared/agent-marks.js';
 import { type AgentPicker, type PickerGroup, type PickerState, agentPicker, pickAction } from '@beluga/shared/agent-picker.js';
 import type { RuntimeModel } from '@beluga/shared/agent-runtimes.js';
 import type { AgentOption } from '@beluga/ui/agent-choice.js';
 import { Icon } from '../components/Icon.js';
 import type { SelectEntry } from '../components/Select.js';
 import { cx } from '../components/ui.js';
+import { ModelList } from './ModelList.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import s from './picker.module.css';
 
@@ -55,15 +56,7 @@ export function modelInfo(st: Pick<AppState, 'runtimes' | 'models'>, runtime: st
   return models.find((m) => m.value === model);
 }
 
-/** The maker a runtime's models usually come from: its own models carry no second mark. */
-const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode', copilot: 'copilot', grok: 'grok' };
-
-/** A model's maker mark when it isn't its runtime's own (a local runtime serving a GPT model); else none. */
-export function foreignMark(model: string, runtime: string): AgentMark | undefined {
-  if (!model) return undefined;
-  const mark = modelMark(model, runtime);
-  return mark === (HOUSE[runtime] ?? 'localModel') ? undefined : mark;
-}
+export { foreignMark } from './model-words.js';
 
 /**
  * The agents (agentChoices) as a pop-up's entries: a section per runtime, each row with the
@@ -92,15 +85,6 @@ export const EFFORT_INFO: Record<Effort, { label: string; detail: string }> = {
   xhigh: { label: 'Extra High', detail: 'Works hard problems through carefully' },
   max: { label: 'Max', detail: 'As much thinking as it can; slowest' },
 };
-
-/** A friendlier word for a model, from its name (Opus is the most capable, Haiku the fastest). */
-function flavor(value: string, label: string, runtime: string): string {
-  const v = `${value} ${label}`.toLowerCase();
-  if (v.includes('opus')) return 'Most capable';
-  if (v.includes('sonnet')) return 'Fast and capable';
-  if (v.includes('haiku')) return 'Fastest';
-  return value ? '' : `${runtime} chooses`;
-}
 
 export const samePicker = (a: AgentPicker, b: AgentPicker): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -131,7 +115,8 @@ interface Move {
  * The agent for this conversation, and how hard it thinks, in one compact popover (BLG-446): the
  * agents down a rail on the left (each with its mark, a dot on the one at work here, greyed when it
  * isn't set up), the shown agent's models on the right, one line each with what they're good at,
- * scrolling inside a popover that never outgrows the window; effort below, Auto then Low to Max
+ * scrolling inside a popover that never outgrows the window (a long list searchable, under its
+ * providers, drawn a page at a time: ModelList, BLG-945); effort below, Auto then Low to Max
  * on one track, what the level means above it. `draft`: a new worktree's pick (it has no conversation yet), kept by the New Worktree box.
  */
 export function ModelPicker({ channel, draft, onDraft }: { channel: string; draft?: AgentRef; onDraft?: (agent: AgentRef | undefined) => void }) {
@@ -151,6 +136,7 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   const carried = useApp((st) => carriedOf(st, channel), sameCarried);
   const [seen, setSeen] = useState<string>();
   const [move, setMove] = useState<Move>();
+  const search = useRef<HTMLInputElement>(null);
   const conversation = picker.conversation;
   const groups = picker.groups;
   const home = groups.find((g) => g.isDefault);
@@ -189,22 +175,6 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   };
   // The agent whose models show: the one at work here, until you look at another.
   const shown = groups.find((g) => g.runtime === seen) ?? groups.find((g) => g.current) ?? home ?? groups[0];
-  const rows = (g: PickerGroup) => (
-    <div className={s.models} role="radiogroup" aria-label={`${g.label} models`}>
-      {g.models.map((m) => {
-        const maker = foreignMark(m.value, g.runtime);
-        const desc = m.why ?? (m.description || flavor(m.value, m.label, g.label));
-        return (
-          <button key={m.value || 'default'} type="button" role="radio" aria-checked={m.on} disabled={Boolean(m.why) && !m.on} title={desc || m.label} className={cx(s.model, m.on && s.modelOn, m.why && s.modelOff)} onClick={() => pick(g, m.value)}>
-            <span className={s.radio}>{m.on ? <Icon name="check" size={9} /> : null}</span>
-            {maker ? <Icon name={maker} size={12} className={s.maker} /> : null}
-            <span className={s.modelName}>{m.label}</span>
-            {desc ? <span className={s.modelDesc}>{desc}</span> : null}
-          </button>
-        );
-      })}
-    </div>
-  );
   // Narrow (a side panel): the effort alone, the whole of it in the tooltip; never two lines.
   const words = effort ? (
     <>
@@ -225,7 +195,19 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
         </button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className={s.popover} side="top" align="start" sideOffset={8} collisionPadding={12}>
+        <Popover.Content
+          className={s.popover}
+          side="top"
+          align="start"
+          sideOffset={8}
+          collisionPadding={12}
+          onOpenAutoFocus={(e) => {
+            // A long list (OpenCode's every provider): straight into its search.
+            if (!search.current) return;
+            e.preventDefault();
+            search.current.focus();
+          }}
+        >
           {move ? (
             <MoveChoice move={move} limited={carried.limited} onPick={moveWith} onBack={() => setMove(undefined)} />
           ) : (
@@ -254,7 +236,7 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
                   ))}
                 </div>
                 <div className={s.pane} role="tabpanel" aria-label={shown?.label ?? 'Models'}>
-                  {shown ? (shown.available ? rows(shown) : <div className={s.why}>{shown.why}</div>) : null}
+                  {shown ? shown.available ? <ModelList key={shown.runtime} group={shown} onPick={(value) => pick(shown, value)} searchRef={search} /> : <div className={s.why}>{shown.why}</div> : null}
                 </div>
               </div>
               <div className={s.thinking}>

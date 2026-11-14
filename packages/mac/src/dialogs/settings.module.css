@@ -194,6 +194,17 @@
   box-shadow: 0 0 0 0.5px var(--hairline-strong);
   user-select: text;
 }
+.daysField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.days {
+  composes: text;
+  width: 64px;
+  text-align: right;
+}
 .slider {
   width: 180px;
   accent-color: var(--accent);

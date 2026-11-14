@@ -1,3 +1,5 @@
+import type { ChatCategory } from '../../../../src/core/triage/model.js';
+
 export interface ChatSelection {
   readonly anchor?: string;
   readonly ids: readonly string[];
@@ -25,6 +27,32 @@ export const chatBulkActions = [
   { id: 'archive', label: 'Archive', done: 'Archived', icon: 'archive', message: 'Archive these chats. Their conversations stay available in Archived.' },
   { id: 'delete', label: 'Delete', done: 'Deleted', icon: 'x', message: 'Permanently delete these chats and their conversations. You cannot undo this action.' },
 ] as const;
+
+/** A picked chat's place in the categories, and why Settle refuses it (a hand is up). */
+export interface PickedTriage {
+  readonly channel: string;
+  readonly category: ChatCategory;
+  readonly refusal?: string;
+}
+
+/** The channels each triage action of the picked chats goes to: an empty list hides the action. */
+export interface BulkTriage {
+  readonly later: readonly string[];
+  readonly showAgain: readonly string[];
+  readonly settle: readonly string[];
+  readonly unsettle: readonly string[];
+}
+
+/** One chat's triage menu, for many: each action goes to the chats it applies to. With the categories off, only Remind Me Later and Show Again Now. */
+export function bulkTriage(picked: readonly PickedTriage[], categories: boolean): BulkTriage {
+  const where = (test: (p: PickedTriage) => boolean): string[] => picked.filter(test).map((p) => p.channel);
+  return {
+    later: where((p) => p.category !== 'snoozed'),
+    showAgain: where((p) => p.category === 'snoozed'),
+    settle: categories ? where((p) => p.category !== 'settled' && !p.refusal) : [],
+    unsettle: categories ? where((p) => p.category === 'settled') : [],
+  };
+}
 
 /** "1 chat", "3 chats"; `word` "Chat" for menu titles. */
 export const chatCount = (n: number, word = 'chat'): string => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -67,8 +95,9 @@ export function chatJoins(selected: readonly RowBox[]): ReadonlyMap<string, Chat
 /** The row's `data-chat-join`: "up", "down", "up down", or nothing. */
 export const joinValue = (join: ChatJoin | undefined): string => [join?.up && 'up', join?.down && 'down'].filter(Boolean).join(' ');
 
+/** The chats in screen order. One drawn twice (its category, and Projects for the one you're in) counts where it first shows. */
 export function visibleChatIds(rows: readonly ChatRow[]): string[] {
-  return rows.filter((row) => !row.folded).map((row) => row.id);
+  return [...new Set(rows.filter((row) => !row.folded).map((row) => row.id))];
 }
 
 export function retainVisibleChats(selection: ChatSelection, visible: readonly string[]): ChatSelection {

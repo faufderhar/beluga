@@ -3,6 +3,8 @@ import { Board } from '../src/core/board/board.js';
 import { criteria, criterionLine, tally, tallyWords, unexplained } from '../src/core/board/criteria.js';
 import type { Issue } from '../src/core/board/model.js';
 import { BoardWork } from '../src/core/board/work.js';
+import { taskPageView, tasksView } from '../src/companion/views.js';
+import { TaskPageView } from '../src/companion/protocol.js';
 import { briefOf } from '../src/core/plans/apply.js';
 import type { MilestoneView, PlanView, TaskView } from '../src/core/plans/progress.js';
 import { checkPrompt, criteriaNeedCheck, deferredItems } from '../src/core/plans/prompt.js';
@@ -23,7 +25,7 @@ function setup() {
   const issue = board.create({ projectId: 'api', title: 'Auth', status: 'in_progress', brief: { acceptance: '- [x] Routes use it\n- [ ] The network e2e passes\n- [ ] Expired sessions rejected' } }, work.me());
   board.linkWorktree(issue.key, 'w1', { branch: 'klaud/add-auth', name: 'add-auth' }, work.me());
   const tools = work.forRun('ws:w1', 'p-me')!.tools!;
-  return { board, tools, key: issue.key };
+  return { board, tools, work, store, key: issue.key };
 }
 
 const pr = (over: Record<string, unknown> = {}) => ({ number: 7, url: 'https://x/7', state: 'OPEN' as const, title: 'T', draft: false, checks: 'pending' as const, ...over });
@@ -116,6 +118,157 @@ describe('a task goes to review only with every criterion met or explained', () 
     expect(() => tools.update(undefined, { status: 'in_review' })).toThrow();
     board.update(key, { status: 'in_review' }, { kind: 'person', id: 'p-me', name: 'Kay' } as never);
     expect(board.need(key).needsChecks).toBeUndefined();
+  });
+});
+
+const SETTLED = '- [x] Routes use it\n- [ ] The network e2e passes — deferred: at the end\n- [x] Expired sessions rejected';
+const OPEN_LINE = '“The network e2e passes”; “Expired sessions rejected”';
+const person = { kind: 'person', id: 'p-me', name: 'Kay' } as never;
+
+describe('a merge moves it to Done only with every criterion met or explained (BLG-952)', () => {
+  it('its pull request merging with criteria open leaves it In Review, held, and says which', () => {
+    const { board, key } = setup();
+    board.prChanged('w1', pr());
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    const held = board.need(key);
+    expect(held).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true, pr: { state: 'MERGED' } });
+    expect(held.closedAt).toBeUndefined();
+    expect(held.activity.map((a) => a.text).slice(-2)).toEqual([
+      'pull request #7 was merged',
+      `kept this out of Done: 2 criteria are neither ticked nor explained (${OPEN_LINE}): moved this from In Progress to In Review`,
+    ]);
+  });
+
+  it('settling the last open criterion afterwards finishes it: Done', () => {
+    const { board, tools, key } = setup();
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    tools.editBrief(undefined, 'acceptance', '- [x] Routes use it\n- [x] The network e2e passes\n- [ ] Expired sessions rejected');
+    expect(board.need(key)).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true });
+    tools.editBrief(undefined, 'acceptance', SETTLED);
+    const done = board.need(key);
+    expect(done.status).toBe('done');
+    expect(done.needsChecks).toBeUndefined();
+    expect(done.mergedHeld).toBeUndefined();
+    expect(done.activity.at(-1)?.text).toBe('every criterion is ticked or explained and its work is merged: moved this from In Review to Done');
+  });
+
+  it('already In Review when it merges: it stays there, held', () => {
+    const { board, key } = setup();
+    board.update(key, { status: 'in_review' }, person);
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    const held = board.need(key);
+    expect(held).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true });
+    expect(held.activity.at(-1)?.text).toBe(`kept this out of Done: 2 criteria are neither ticked nor explained (${OPEN_LINE})`);
+  });
+
+  it('every criterion ticked or explained, or none at all: Done, as before', () => {
+    const { board, tools, key } = setup();
+    tools.editBrief(undefined, 'acceptance', SETTLED);
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    expect(board.need(key)).toMatchObject({ status: 'done' });
+    expect(board.need(key).needsChecks).toBeUndefined();
+    expect(board.need(key).activity.at(-1)?.text).toBe('moved this from In Progress to Done');
+
+    const bare = setup();
+    bare.tools.editBrief(undefined, 'acceptance', '');
+    bare.board.prChanged('w1', pr({ state: 'MERGED' }));
+    expect(bare.board.need(bare.key).status).toBe('done');
+  });
+
+  it('a merged pull request found later (the worktree gone) follows the same rule', () => {
+    const { board, tools, key } = setup();
+    const held = board.branchShipped(key, pr({ state: 'MERGED' }));
+    expect(held).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true });
+    expect(held.activity.at(-1)?.text).toContain('kept this out of Done: 2 criteria');
+    tools.editBrief(undefined, 'acceptance', SETTLED);
+    expect(board.need(key).status).toBe('done');
+  });
+
+  it('a worktree merged into main here follows the same rule', () => {
+    const { board, tools, key } = setup();
+    board.worktreeMerged('w1');
+    const held = board.need(key);
+    expect(held).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true });
+    expect(held.activity.map((a) => a.text).slice(-2)).toEqual([
+      'its worktree was merged into main',
+      `kept this out of Done: 2 criteria are neither ticked nor explained (${OPEN_LINE}): moved this from In Progress to In Review`,
+    ]);
+    tools.editBrief(undefined, 'acceptance', SETTLED);
+    expect(board.need(key).status).toBe('done');
+
+    const ok = setup();
+    ok.tools.editBrief(undefined, 'acceptance', SETTLED);
+    ok.board.worktreeMerged('w1');
+    expect(ok.board.need(ok.key).status).toBe('done');
+  });
+
+  it('marking it Done by hand still works, by a person or by its Claude', () => {
+    const { board, key } = setup();
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    const done = board.update(key, { status: 'done' }, person);
+    expect(done.status).toBe('done');
+    expect(done.needsChecks).toBeUndefined();
+    expect(done.mergedHeld).toBeUndefined();
+
+    const viaClaude = setup();
+    viaClaude.board.prChanged('w1', pr({ state: 'MERGED' }));
+    expect(viaClaude.tools.update(undefined, { status: 'done' })).toContain('done');
+    expect(viaClaude.board.need(viaClaude.key).status).toBe('done');
+  });
+
+  it('an epic doesn’t roll up to Done through a sub-task held this way', () => {
+    const { board, tools, key } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Sign-in', status: 'in_progress' }, person);
+    const other = board.create({ projectId: 'api', title: 'Copy', status: 'in_progress', parent: epic.key }, person);
+    board.update(key, { parent: epic.key }, person);
+    board.update(other.key, { status: 'done' }, person);
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    expect(board.need(key).status).toBe('in_review');
+    expect(board.need(epic.key).status).toBe('in_review');
+    // Settled: the sub-task is Done, and the epic with it.
+    tools.editBrief(undefined, 'acceptance', SETTLED);
+    expect(board.need(key).status).toBe('done');
+    expect(board.need(epic.key).status).toBe('done');
+  });
+
+  it('a sub-task going Done with its parent’s merge is held the same way', () => {
+    const { board, key } = setup();
+    const kid = board.create({ projectId: 'api', title: 'Moved along by hand', status: 'in_progress', parent: key, brief: { acceptance: '- [ ] Retries on 429' } }, person);
+    const easy = board.create({ projectId: 'api', title: 'Also by hand', status: 'in_progress', parent: key }, person);
+    board.editBrief(key, 'acceptance', SETTLED, person);
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    expect(board.need(key).status).toBe('done');
+    expect(board.need(easy.key).status).toBe('done');
+    expect(board.need(kid.key)).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true });
+    expect(board.need(kid.key).activity.at(-1)?.text).toBe('kept this out of Done: a criterion is neither ticked nor explained (“Retries on 429”): moved this from In Progress to In Review');
+  });
+
+  it('Continue After Merge takes a held task back to In Progress: its next pull request ships it', () => {
+    const { board, key } = setup();
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    board.continuedAfterMerge('w1', 7);
+    const back = board.need(key);
+    expect(back.status).toBe('in_progress');
+    expect(back.mergedHeld).toBeUndefined();
+    expect(back.pr).toBeUndefined();
+  });
+
+  it('the phone sees the hold the way the Mac shows it', () => {
+    const { board, store, key } = setup();
+    const id = board.need(key).id;
+    expect(taskPageView(store.getState(), id)!.needsChecks).toBeUndefined();
+    board.prChanged('w1', pr());
+    const opened = taskPageView(store.getState(), id)!;
+    expect(opened.needsChecks).toEqual({ open: 2 });
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    const merged = taskPageView(store.getState(), id)!;
+    expect(merged.needsChecks).toEqual({ open: 2, merged: true });
+    expect(TaskPageView.parse(merged).needsChecks).toEqual({ open: 2, merged: true });
+    const listed = tasksView(store.getState()).projects.flatMap((p) => p.groups.flatMap((g) => g.tasks)).find((t) => t.key === key);
+    expect(listed?.needsChecks).toEqual({ open: 2, merged: true });
+    // Marked Done by hand: no longer held, on the phone either.
+    board.update(key, { status: 'done' }, person);
+    expect(taskPageView(store.getState(), id)!.needsChecks).toBeUndefined();
   });
 });
 

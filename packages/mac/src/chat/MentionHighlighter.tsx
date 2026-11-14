@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { splitWorktreeRefs } from "@beluga/shared/worktree-refs.js";
-import { useApp } from "../lib/beluga.js";
+import { useApp, useBeluga } from "../lib/beluga.js";
+import { type ChatRefOf, boxedChats, chatRefOf, plainChats } from "./chat-box.js";
 import { ImageChip } from "./ImageChip.js";
 import { IMAGE_REF, refOf } from "./image-refs.js";
 import {
@@ -52,6 +53,20 @@ function withWorktrees(piece: MentionPiece, names: WorktreeNames): MentionPiece[
   );
 }
 
+/** A chat's mention written short in the box ("[@\u2007Title]", chat-box.ts): a chip with its title. */
+function withChats(piece: MentionPiece, refOf: ChatRefOf | undefined): MentionPiece[] {
+  if ("ref" in piece || !refOf) return [piece];
+  const out: MentionPiece[] = [];
+  let last = 0;
+  for (const c of boxedChats(piece.text, refOf)) {
+    if (c.start > last) out.push({ text: piece.text.slice(last, c.start) });
+    out.push({ raw: piece.text.slice(c.start, c.end), ref: { kind: "chat", label: c.label.replace(/\u00a0/g, " "), id: c.ref } });
+    last = c.end;
+  }
+  if (last < piece.text.length) out.push({ text: piece.text.slice(last) });
+  return out;
+}
+
 /** Each worktree's name by id, as one string (so the box draws again only when one changes). */
 const namesOf = new WeakMap<object, string>();
 function worktreeNames(projects: Parameters<typeof worktreeNamesOf>[0]): string {
@@ -60,18 +75,25 @@ function worktreeNames(projects: Parameters<typeof worktreeNamesOf>[0]): string 
   return names;
 }
 
-/** A bare "worktree:wt-…" takes more room than its name: its chip starts at the start of that room. */
-const isBare = (p: MentionPiece): boolean => "ref" in p && p.raw.startsWith("worktree:");
+/**
+ * A bare "worktree:wt-…" or a whole chat mention ("@Title (chat: …)", typed or from before) takes
+ * more room than its name: its chip starts at the start of that room.
+ */
+const isBare = (p: MentionPiece): boolean => "ref" in p && (p.raw.startsWith("worktree:") || (p.ref.kind === "chat" && !p.raw.startsWith("[")));
 
-/** Copied or cut from the box, a worktree's short link goes on the clipboard whole ("worktree:wt-…"). */
+/**
+ * Copied or cut from the box, a worktree's short link goes on the clipboard whole ("worktree:wt-…"),
+ * and a chat's short mention with its ref ("@Title (chat: …)").
+ */
 function useWholeLinksOnCopy(input: RefObject<HTMLTextAreaElement | null>, known: string): void {
+  const { client } = useBeluga();
   useEffect(() => {
     const el = input.current;
-    if (!el || known === "[]") return;
+    if (!el) return;
     const names = new Map(JSON.parse(known) as [string, string][]);
     const onCopy = (e: ClipboardEvent): void => {
       const picked = el.value.slice(el.selectionStart, el.selectionEnd);
-      const whole = plainWorktrees(picked, names);
+      const whole = plainChats(plainWorktrees(picked, names), chatRefOf(client.store.getState()));
       if (whole === picked || !e.clipboardData) return;
       e.preventDefault();
       e.clipboardData.setData("text/plain", whole);
@@ -83,27 +105,27 @@ function useWholeLinksOnCopy(input: RefObject<HTMLTextAreaElement | null>, known
       el.removeEventListener("copy", onCopy);
       el.removeEventListener("cut", onCopy);
     };
-  }, [input, known]);
+  }, [input, known, client]);
 }
 
 /** Drawn as a chip over the room its words take (the box's own words go see-through). */
-const isChip = (p: MentionPiece): boolean => "ref" in p && (p.ref.kind === "image" || p.ref.kind === "worktree");
+const isChip = (p: MentionPiece): boolean => "ref" in p && (p.ref.kind === "image" || p.ref.kind === "worktree" || p.ref.kind === "chat");
 
 /** Where each chip's words are in the text (the pieces, laid end to end, are the text). */
-function chipSpans(pieces: readonly MentionPiece[]): { all: ChipSpan[]; worktrees: ChipSpan[] } {
+function chipSpans(pieces: readonly MentionPiece[]): { all: ChipSpan[]; whole: ChipSpan[] } {
   const all: ChipSpan[] = [];
-  const worktrees: ChipSpan[] = [];
+  const whole: ChipSpan[] = [];
   let at = 0;
   for (const p of pieces) {
     const length = "ref" in p ? p.raw.length : p.text.length;
     if (isChip(p)) {
       const span = { start: at, end: at + length };
       all.push(span);
-      if ("ref" in p && p.ref.kind === "worktree") worktrees.push(span);
+      if ("ref" in p && p.ref.kind !== "image") whole.push(span);
     }
     at += length;
   }
-  return { all, worktrees };
+  return { all, whole };
 }
 
 /**
@@ -136,16 +158,21 @@ export function MentionHighlighter({
   className: string;
 }) {
   const layer = useRef<HTMLDivElement>(null);
+  const { client } = useBeluga();
   const known = useApp((st) => (text.includes("worktree:") || text.includes("\u2007") ? worktreeNames(st.projects) : "[]"));
+  // Chats' titles too: a short mention whose chat was renamed or removed is found again (or not).
+  const chatTitles = useApp((st) => (text.includes("[@\u2007") ? st.projects : undefined));
   const pieces = useMemo(() => {
     const names = new Map(JSON.parse(known) as [string, string][]);
+    const refOf = chatTitles ? chatRefOf(client.store.getState()) : undefined;
     return splitMentions(text, world)
+      .flatMap((p) => withChats(p, refOf))
       .flatMap(withImages)
       .flatMap((p) => withWorktrees(p, names));
-  }, [text, world, known]);
+  }, [text, world, known, chatTitles, client]);
   const chips = pieces.some(isChip);
   const spans = useMemo(() => chipSpans(pieces), [pieces]);
-  useChipCaret(input, text, spans.all, spans.worktrees);
+  useChipCaret(input, text, spans.all, spans.whole);
   useWholeLinksOnCopy(input, known);
   useEffect(() => {
     const el = input.current;
@@ -176,7 +203,7 @@ export function MentionHighlighter({
         "ref" in p && isChip(p) ? (
           <mark key={i} className={m.imageChip} data-mention={p.raw} data-kind={p.ref.kind}>
             <span className={m.chipRoom}>{p.raw}</span>
-            <ImageChip className={isBare(p) ? `${m.chipFace} ${m.chipHug}` : p.ref.kind === "worktree" ? `${m.chipFace} ${m.chipSnug}` : m.chipFace} label={p.ref.label} icon={p.ref.kind === "worktree" ? "branch" : "image"} />
+            <ImageChip className={isBare(p) ? `${m.chipFace} ${m.chipHug}` : p.ref.kind === "image" ? m.chipFace : `${m.chipFace} ${m.chipSnug}`} label={p.ref.label} icon={p.ref.kind === "worktree" ? "branch" : p.ref.kind === "chat" ? "chat" : "image"} />
           </mark>
         ) : "ref" in p ? (
           <mark

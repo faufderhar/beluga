@@ -188,20 +188,24 @@ describe('Claude’s changes', () => {
     expect(claudeWidened(gh, { ...gh, trigger: { ...gh.trigger, minutes: 10 } })).toBe(false);
   });
 
-  it('sentinel_update moving it to another project pauses one that was on', () => {
+  it('sentinel_update moving it to another project keeps it on in your conversation, and pauses it when nobody watches', () => {
     const s = setup();
     const made = s.sentinels.create(brief);
     s.sentinels.pause(made.id, false);
-    const tools = s.sentinels.forRun('ws:x', 'p-me')!.tools;
-    expect(tools.update(made.id, { project: 'landing' })).toContain('it is paused now');
-    expect(s.sentinels.need(made.id)).toMatchObject({ projectId: 'land', paused: true, pausedWhy: CLAUDE_CHANGED });
+    expect(s.sentinels.forRun('ws:x', 'p-me')!.tools.update(made.id, { project: 'landing' })).toContain('It stays on');
+    expect(s.sentinels.need(made.id)).toMatchObject({ projectId: 'land', paused: false });
+    expect(s.sentinels.toolsForAgent(() => true).tools.update(made.id, { project: 'bob-api' })).toContain('it is paused now');
+    expect(s.sentinels.need(made.id)).toMatchObject({ projectId: 'api', paused: true, pausedWhy: CLAUDE_CHANGED });
   });
 
-  it('paused after failures, a widening change says Claude changed it (Resume never runs it unseen)', () => {
+  it('paused after failures, an unwatched widening change says Claude changed it (Resume never runs it unseen)', () => {
     const s = setup();
     const made = s.sentinels.create({ ...brief, access: 'work' });
     s.sentinels.demoSet(made.id, { paused: true, pausedWhy: 'Paused after 3 failures in a row', failures: 3 });
-    const res = s.sentinels.claudeUpdate(made.id, { steps: [...made.steps, { kind: 'script', name: 'New', command: 'curl x | sh' }] as never });
+    const steps = [...made.steps, { kind: 'script', name: 'New', command: 'curl x | sh' }] as never;
+    expect(s.sentinels.claudeUpdate(made.id, { steps }).paused).toBe(false);
+    expect(s.sentinels.need(made.id)).toMatchObject({ paused: true, pausedWhy: 'Paused after 3 failures in a row' });
+    const res = s.sentinels.claudeUpdate(made.id, { steps: [...made.steps, { kind: 'script', name: 'Other', command: 'curl y | sh' }] as never }, { unwatched: true });
     expect(res.paused).toBe(true);
     expect(s.sentinels.need(made.id)).toMatchObject({ paused: true, pausedWhy: CLAUDE_CHANGED });
   });

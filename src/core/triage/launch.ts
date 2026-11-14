@@ -25,7 +25,7 @@ export function launchTriage(host: TriageHost): () => void {
     file: path.join(dir, 'triage.json'),
     notify: (e) => session.notifier.notify(e),
     history: (id) => session.workspaces?.manager.loadHistory<LogItem>(id) ?? [],
-    ...(session.workspaces ? { onWorktree: (listener: (event: WorktreeEvent) => void) => session.workspaces!.onWorktree(listener), forgetReminders: (ids: readonly string[]) => session.workspaces!.forgetReminders(ids) } : {}),
+    ...(session.workspaces ? { onWorktree: (listener: (event: WorktreeEvent) => void) => session.workspaces!.onWorktree(listener), forgetReminders: (ids: readonly string[]) => session.workspaces!.forgetReminders(ids), archive: (id: string) => session.workspaces!.archive(id, false, { quiet: true }) } : {}),
   });
   services.set(session, service);
   return () => {

@@ -117,12 +117,16 @@ export interface TeamPart {
 }
 
 const REPOS_GAP_MS = 5_000;
+/** Left links remembered, so a late invite or accept for one can't make that team again. */
+const MAX_LEFT_LINKS = 500;
 const keyOf = (peerId: string, projectId: string): string => `${peerId}|${projectId}`;
 const newLink = (): string => `tl_${randomBytes(9).toString('base64url')}`;
 
 export class TeamBoards {
   readonly courier: Courier<TeamMsg>;
   private links: Record<string, TeamLink> = {};
+  /** Links you or they left (newest last): an invite or accept for one, come late, is turned down. */
+  private readonly left = new Set<string>();
   private offers: Record<string, OfferRec> = {};
   /** Project id → its repository (key and label), as its remote says. */
   private repos = new Map<string, { readonly key: string; readonly label: string }>();
@@ -412,6 +416,8 @@ export class TeamBoards {
   private drop(link: TeamLink): void {
     const { [link.id]: _gone, ...rest } = this.links;
     this.links = rest;
+    this.left.add(link.id);
+    if (this.left.size > MAX_LEFT_LINKS) this.left.delete(this.left.values().next().value!);
     // Not offered again by itself: it waits until either of you asks.
     this.offers = { ...this.offers, [keyOf(link.peerId, link.projectId)]: { peerId: link.peerId, projectId: link.projectId, state: 'found', at: this.now(), dismissed: true } };
     this.save();
@@ -545,7 +551,8 @@ export class TeamBoards {
 
   private onInvite(from: string, print: string, link: string, theirProject: string, team?: readonly string[]): void {
     const projectId = this.projectForPrint(from, print);
-    if (!projectId) return;
+    // An invite for a team that's since been left, come late (a retry): it was answered back then.
+    if (!projectId || this.left.has(link)) return;
     const joined = this.linksOf(projectId).find((l) => l.peerId === from);
     if (joined) {
       // Already a team (an accept of ours got lost): say it again.
@@ -579,7 +586,8 @@ export class TeamBoards {
     if (!projectId) return;
     if (this.linksOf(projectId).some((l) => l.peerId === from)) return;
     const rec = this.offers[keyOf(from, projectId)];
-    if (rec?.state !== 'asked') {
+    // An accept for a team that's since been left, come late while you ask again (BLG-721): not that team again.
+    if (rec?.state !== 'asked' || this.left.has(link)) {
       // We'd left (or never asked): they hear so.
       this.send(from, { k: 'leave', link });
       return;

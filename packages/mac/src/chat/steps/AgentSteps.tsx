@@ -36,6 +36,8 @@ const LAUNCH = new Set(['Task', 'Agent']);
 const RECENT_LIVE = 2;
 /** How long folding a finished card's steps takes (twice --dur, see .fold). */
 const FOLD_MS = 380;
+/** The fold's words when all it holds is what Claude said on the way (no steps of its own). */
+const SAID_LABEL = 'What it said on the way';
 
 const NO_TASKS: readonly TaskView[] = [];
 const NO_STEPS: readonly StepSummary[] = [];
@@ -134,7 +136,8 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part, subs: 
   const ownBefore = useRef<ReadonlyMap<string, readonly StepSummary[]>>(undefined);
   const own = useMemo(() => (ownBefore.current = ownStepsOf(ownBefore.current, rich, subagents)), [rich, subagents]);
   const keep = running ? RECENT_LIVE : DONE_STEPS;
-  const split = useMemo(() => foldOf(timeline, keep), [timeline, keep]);
+  // While it works, the newest thing it said stays in sight; once done, all it said folds away.
+  const split = useMemo(() => foldOf(timeline, keep, running), [timeline, keep, running]);
   // Several rows changing sides of the fold at once (the answer landing, sub-agents finishing
   // together) move as one: they don't each slide (KLD-72).
   const folded = useRef<{ ids: readonly string[]; together: boolean }>({ ids: [], together: false });
@@ -167,10 +170,11 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part, subs: 
   };
   const entry = (e: Entry) => {
     if (e.kind === 'step') return row(e.step, false);
-    if (e.kind === 'remark') return <RemarkRow text={e.remark.text} mine={mine} />;
+    if (e.kind === 'remark') return <RemarkRow text={e.remark.text} mine={mine} now={running && e.id === latestSaid} />;
     const mineToo = (richOnes && own.get(e.sub.id)) || NO_STEPS;
     return <SubAgentRow sub={e.sub} own={mineToo} detail={detail} toggle={toggle} load={load} live={running} {...subRowView(e.sub, mineToo, open.isOpen, running, now)} />;
   };
+  const latestSaid = remarks.length ? `remark:${remarks.at(-1)!.ts}` : undefined;
   const olderSteps = older.flatMap((e) => (e.kind === 'step' ? [e.step] : []));
   const olderWork = workIn(older);
   const span = olderSteps.length === olderWork ? spanOf(olderSteps) : undefined;
@@ -193,19 +197,26 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part, subs: 
                     Hide earlier steps
                   </button>
                 ) : (
-                  <button type="button" className={s.fold} onClick={() => setEarlier(true)} aria-expanded="false" aria-label={`Show ${olderWork} earlier steps`} data-folded-count={olderWork}>
+                  <button type="button" className={s.fold} onClick={() => setEarlier(true)} aria-expanded="false" aria-label={olderWork ? `Show ${olderWork} earlier steps` : SAID_LABEL} data-folded-count={olderWork}>
                     <span className={s.chev}>
                       <Icon name="chevronRight" size={9} />
                     </span>
-                    <span className={s.foldIcon}>
-                      <Icon name="check" size={11} />
-                    </span>
-                    <span className={s.count}>
-                      <span key={olderWork} className={s.countNow}>
-                        {olderWork}
-                      </span>
-                    </span>
-                    {olderWork === 1 ? 'step' : 'steps'}{span ? ` · ${span}` : ''}
+                    {olderWork ? (
+                      <>
+                        <span className={s.foldIcon}>
+                          <Icon name="check" size={11} />
+                        </span>
+                        <span className={s.count}>
+                          <span key={olderWork} className={s.countNow}>
+                            {olderWork}
+                          </span>
+                        </span>
+                        {olderWork === 1 ? 'step' : 'steps'}
+                        {span ? ` · ${span}` : ''}
+                      </>
+                    ) : (
+                      SAID_LABEL
+                    )}
                   </button>
                 )}
               </div>
@@ -235,11 +246,12 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part, subs: 
 
 /**
  * Something Claude said between its steps ("Found it, now the tests"): quiet, like the steps
- * around it, so only its answer (the words after its last step) reads as the answer.
+ * around it, so only its answer (the words after its last step) reads as the answer. The newest
+ * one, while Claude works (`now`), reads a little stronger: it's what Claude is up to.
  */
-const RemarkRow = memo(function RemarkRow({ text, mine }: { text: string; mine: boolean }) {
+const RemarkRow = memo(function RemarkRow({ text, mine, now }: { text: string; mine: boolean; now: boolean }) {
   return (
-    <div className={s.remark} data-remark="">
+    <div className={cx(s.remark, now && s.remarkNow)} data-remark={now ? 'now' : ''}>
       <Markdown text={text} paths={mine} localImages={mine} />
     </div>
   );

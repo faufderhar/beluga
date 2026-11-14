@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useCallback, useEffect, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
 import type { AlwaysOnView } from '@beluga/machines/always-on.js';
 import type { ComputerOffer } from '@beluga/machines/enroll.js';
 import type { MachineView } from '@beluga/machines/machines.js';
@@ -21,6 +21,7 @@ import c from '../machines/machines.module.css';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import { everyWhileShown } from '../lib/window-active.js';
+import { oneAtATime } from '../lib/one-at-a-time.js';
 
 /**
  * Settings › Your Computers (BLG-780): where new work runs, adding a computer (over SSH, or with
@@ -41,12 +42,19 @@ export function MachinesSettings() {
   const [placement, setPlacement] = useState<Placement | undefined>();
   const [sync, setSync] = useState<SettingsSyncView | undefined>();
   const [you, setYou] = useState<AlwaysOnView | undefined>();
-  const refresh = useCallback(() => {
-    void client.call('machines.alwaysOn.status').then((v) => setYou(v as AlwaysOnView), () => undefined);
-    void client.call('machines.list').then((list) => setMachines(list as readonly MachineView[]), () => setMachines([]));
-    void client.call('machines.placement').then((p) => setPlacement(p as Placement), () => undefined);
-    void client.call('machines.settingsSync').then((v) => setSync(v as SettingsSyncView), () => undefined);
-  }, [client]);
+  // One round at a time: a slow daemon's answers are waited for, not asked for again behind them.
+  const refresh = useMemo(
+    () =>
+      oneAtATime(() =>
+        Promise.all([
+          client.call('machines.alwaysOn.status').then((v) => setYou(v as AlwaysOnView), () => undefined),
+          client.call('machines.list').then((list) => setMachines(list as readonly MachineView[]), () => setMachines([])),
+          client.call('machines.placement').then((p) => setPlacement(p as Placement), () => undefined),
+          client.call('machines.settingsSync').then((v) => setSync(v as SettingsSyncView), () => undefined),
+        ]),
+      ),
+    [client],
+  );
   useEffect(() => {
     refresh();
     // The daemon asks each computer every 30 s; what it has is read more often while you look (and not while the window can't be seen).

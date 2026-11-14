@@ -6,6 +6,8 @@ import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDo
 import { ThreadsSheet, threadsSummary } from '../../components/ThreadsSheet';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
+import { InlineThing } from '../../components/render/Inline';
+import { chatMentionsAsTitles, parseChatRef } from '../../lib/render';
 import { openOnMac } from '../../lib/mac';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
@@ -239,13 +241,13 @@ function Conversation() {
                 {t.dialogue ? (
                   <DialogueTurn d={t.dialogue} />
                 ) : t.who === 'you' ? (
-                  <YourTurn t={t} chips={chipsOf(t)} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : reactPress(t)} />
+                  <YourTurn t={t} chatLinks={c?.chatLinks === true} chips={chipsOf(t)} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : reactPress(t)} />
                 ) : t.who === 'friend' && reactPress(t) ? (
                   <Press onLongPress={reactPress(t)} haptics={false} scaleTo={0.99}>
-                    <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} runtime={c?.agent?.runtime} chips={chipsOf(t)} />
+                    <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} runtime={c?.agent?.runtime} chatLinks={c?.chatLinks === true} chips={chipsOf(t)} />
                   </Press>
                 ) : (
-                  <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} runtime={c?.agent?.runtime} chips={chipsOf(t)} />
+                  <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} runtime={c?.agent?.runtime} chatLinks={c?.chatLinks === true} chips={chipsOf(t)} />
                 )}
               </Animated.View>
             ))}
@@ -416,8 +418,11 @@ function Conversation() {
 }
 
 /** Your message. Steered into Claude's turn and not read yet: dimmed, with a clock (long-press: Send now, or Cancel from 1.43); else long-press edits it (1.28). */
-function YourTurn({ t, onLongPress, chips }: { t: TurnView; onLongPress?: (() => void) | undefined; chips?: React.ReactNode }) {
+function YourTurn({ t, chatLinks, onLongPress, chips }: { t: TurnView; chatLinks: boolean; onLongPress?: (() => void) | undefined; chips?: React.ReactNode }) {
   const waiting = t.steer?.waiting;
+  // A chat you named is its chip, as on the Mac (BLG-306); an older Mac's words stay words. With the Mac's chat links off: its title, no chip.
+  const chats = useSupports('chatLinks') && chatLinks;
+  const prose = chats ? t.prose : { ...t.prose, text: chatMentionsAsTitles(t.prose.text) };
   return (
     <Press onLongPress={onLongPress} disabled={!onLongPress} scaleTo={0.99} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
       {t.via ? (
@@ -426,7 +431,7 @@ function YourTurn({ t, onLongPress, chips }: { t: TurnView; onLongPress?: (() =>
         </T>
       ) : null}
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: waiting ? 0.6 : 1 }}>
-        <Prose prose={t.prose} size={15} tasks />
+        <Prose prose={prose} size={15} tasks chats={chats} />
       </View>
       {chips ? <View style={{ marginTop: 4 }}>{chips}</View> : null}
       {waiting ? (
@@ -498,14 +503,35 @@ function DialogueTurn({ d }: { d: NonNullable<TurnView['dialogue']> }) {
   );
 }
 
+/** A message from an agent in another chat (1.45): a card with its source, never your bubble. */
+function FromChatCard({ origin, topic, turn, chats }: { origin: NonNullable<TurnView['origin']>; topic: Topic; turn: string; chats: boolean }) {
+  const on = useSupports('chatLinks');
+  const ref = parseChatRef(origin.ref);
+  return (
+    <View style={{ gap: 8, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: color.hairline, backgroundColor: color.code }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+        <T v="caption" style={{ fontWeight: '600' }}>
+          From
+        </T>
+        {on && ref ? <InlineThing el={{ kind: 'chat', ref }} /> : <T v="caption">{origin.title}</T>}
+        <T v="caption">· {origin.agent}, an agent</T>
+      </View>
+      <Prose prose={origin.prose} at={{ topic, turn }} chats={chats} />
+    </View>
+  );
+}
+
 /** An agent's turn, under its name with its mark (BLG-498: the agent the Mac sends; an older Mac's, by the name, else the conversation's runtime). */
-function ClaudeTurn({ t, all, onAgent, topic, runtime, chips }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic; runtime?: string | undefined; chips?: React.ReactNode }) {
+function ClaudeTurn({ t, all, onAgent, topic, runtime, chatLinks, chips }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic; runtime?: string | undefined; chatLinks: boolean; chips?: React.ReactNode }) {
+  // A chat it names by its ref is the chat's chip, as on the Mac; with the Mac's chat links off, words as before.
+  const chats = useSupports('chatLinks') && chatLinks;
   const working = t.status === 'working';
   const outs = t.outputs ?? [];
   const mins = t.endTs ? Math.max(1, Math.round((t.endTs - t.ts) / 60000)) : undefined;
   // No card around Claude's answer: it takes the screen's full width, your bubbles sit on the right.
   return (
     <View style={{ gap: 12, paddingTop: 2 }}>
+      {t.origin ? <FromChatCard origin={t.origin} topic={topic} turn={t.id} chats={chats} /> : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
         <Avatar name={t.name} size={26} {...(t.who === 'claude' ? { mark: t.agent ? agentMark(t.agent) : markOfName(t.name, runtime) } : {})} />
         <T v="callout" c={color.text} style={{ fontWeight: '700' }}>
@@ -518,7 +544,7 @@ function ClaudeTurn({ t, all, onAgent, topic, runtime, chips }: { t: TurnView; a
         </T>
         <T v="caption">{ago(t.ts)}</T>
       </View>
-      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} tasks /> : null}
+      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} tasks chats={chats} /> : null}
       {chips}
       {working ? <LivePanel t={t} /> : <StepsFold t={t} />}
       {t.subagents?.length ? (

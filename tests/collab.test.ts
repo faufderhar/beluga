@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync } from 'node:fs';
+import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -179,6 +179,22 @@ describe('sharing a workspace', () => {
     kay.session.sharing.remove(ws.id, bob.session.selfId);
     await waitFor(() => bob.state().shared.length === 0);
     await expect(bob.session.listFiles({ owner: kay.session.selfId, share: shared.share, path: '' })).rejects.toThrow();
+  });
+
+  it('shares only the Scratch of a plain chat with someone in your room', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { workspaces: demo });
+    const bob = peer('bob');
+    await room(kay, bob);
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'beluga-chat-')));
+    writeFileSync(path.join(dir, 'private.txt'), 'not for the room');
+    const chat = await demo.createStandaloneChat('room plans', dir);
+    await kay.session.workspaces!.refresh();
+    expect(kay.session.sharing.invite(chat.id, bob.session.selfId, 'contribute')).toBe(true);
+    const shared = await waitFor(() => bob.state().shared.find((w) => w.id === chat.id));
+    const noFiles = 'A chat has no project files: only its Scratch is shared';
+    await expect(bob.session.readFile({ owner: kay.session.selfId, share: shared.share, path: 'private.txt' })).rejects.toThrow(noFiles);
+    await expect(bob.session.listFiles({ owner: kay.session.selfId, share: shared.share, path: '' })).rejects.toThrow(noFiles);
   });
 
   it("a guest's @claude is their own agent, answering in the worktree for everyone; the owner's answers the rest", async () => {

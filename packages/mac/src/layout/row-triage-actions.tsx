@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { type AppState } from '@beluga/core/store.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { laterUntil, triageFacts } from '@beluga/core/triage/facts.js';
 import { type ChatCategory, categoryOf, settleRefusal, triageKey } from '@beluga/core/triage/model.js';
 import { remindLabel, remindPresets } from '@beluga/shared/remind.js';
@@ -10,6 +11,7 @@ import { useActions } from '../lib/actions.js';
 import { toast, useBeluga } from '../lib/beluga.js';
 import { type CategoryEntry, conversationEntries, nextActive, wakeWords } from './attention-model.js';
 import { hereOf, openEntry } from './EntryRow.js';
+import { toolbarActions } from './toolbar-actions.js';
 import s from './Sidebar.module.css';
 
 /**
@@ -22,6 +24,9 @@ type Run = ReturnType<typeof useActions>['run'];
 type Client = ReturnType<typeof useBeluga>['client'];
 
 const CUSTOM_SNOOZE = 'beluga:snooze-custom';
+
+/** What a reminder time is for, once picked. */
+type LaterPick = (until: number) => void;
 
 /**
  * The right-click items of a chat, by channel: none for what has no category. With the setting off,
@@ -60,41 +65,45 @@ export function RowTriageTools({ e }: { e: CategoryEntry }) {
       {toolsOf(e.category).includes('settle') ? <IconButton icon="check" label={`Settle ${e.name}`} onClick={(ev) => (ev.stopPropagation(), settle(client, actions.run, e.channel))} /> : null}
       {toolsOf(e.category).includes('wake') ? <IconButton icon="eye" label={`Show ${e.name} again now`} onClick={(ev) => (ev.stopPropagation(), wake(client, e.channel))} /> : null}
       {toolsOf(e.category).includes('unsettle') ? <IconButton icon="inbox" label={`Un-settle ${e.name}`} onClick={(ev) => (ev.stopPropagation(), unsettle(client, e.channel))} /> : null}
+      {/* Settled, and done with: put it away (Archive…, as from its menu). */}
+      {e.category === 'settled' && e.kind === 'workspace' && canArchive(client.store.getState(), e.ws) ? (
+        <IconButton icon="archive" label={`Archive ${e.name}`} onClick={(ev) => (ev.stopPropagation(), actions.run({ type: 'ws', id: e.ws.id, action: 'archive' }))} />
+      ) : null}
     </span>
   );
 }
 
 /** Custom…: a date and a time, from any menu that offers it. */
 export function SnoozeCustomSheet() {
-  const actions = useActions();
-  const { client } = useBeluga();
-  const [channel, setChannel] = useState<string>();
+  // What the time you pick is for: one chat's reminder, or the picked chats'.
+  const [pick, setPick] = useState<(until: number) => void>();
   const [value, setValue] = useState('');
   useEffect(() => {
     const show = (e: Event): void => {
       setValue('');
-      setChannel((e as CustomEvent<string>).detail);
+      const detail = (e as CustomEvent<LaterPick>).detail;
+      setPick(() => detail);
     };
     document.addEventListener(CUSTOM_SNOOZE, show);
     return () => document.removeEventListener(CUSTOM_SNOOZE, show);
   }, []);
-  if (!channel) return null;
+  if (!pick) return null;
   const until = value ? new Date(value).getTime() : 0;
   const ok = until > Date.now();
   const confirm = (): void => {
     if (!ok) return;
-    snooze(client, actions.run, channel, until);
-    setChannel(undefined);
+    pick(until);
+    setPick(undefined);
   };
   return (
     <Sheet
       title="Remind me at"
       icon="clock"
-      close={() => setChannel(undefined)}
+      close={() => setPick(undefined)}
       onReturn={confirm}
       footer={
         <>
-          <Button onClick={() => setChannel(undefined)}>Cancel</Button>
+          <Button onClick={() => setPick(undefined)}>Cancel</Button>
           <Button variant="primary" disabled={!ok} onClick={confirm}>
             Remind Me
           </Button>
@@ -104,6 +113,21 @@ export function SnoozeCustomSheet() {
       <input type="datetime-local" aria-label="Date and time" autoFocus value={value} onChange={(e) => setValue(e.target.value)} />
     </Sheet>
   );
+}
+
+/** Remind Me Later's times, for `pick`: the presets, and Custom… (a date and a time, in the sheet). */
+export function laterTimes(pick: LaterPick): ActionItem[] {
+  const now = Date.now();
+  return [
+    ...remindPresets(now).map((p) => ({ label: p.label, keys: wakeWords(p.at, now), onSelect: () => pick(p.at) })),
+    { label: 'Custom…', separate: true, onSelect: () => document.dispatchEvent(new CustomEvent<LaterPick>(CUSTOM_SNOOZE, { detail: pick })) },
+  ];
+}
+
+/** Archive is there for it (as on its menu): not a sub-agent's, nothing that keeps it. */
+function canArchive(state: AppState, ws: Workspace): boolean {
+  const { primary, icons, more } = toolbarActions(state, ws);
+  return [...(primary ? [primary] : []), ...icons, ...more.flat()].some((a) => a.action === 'archive' && !a.disabled);
 }
 
 function toolsOf(category: ChatCategory): readonly ('snooze' | 'settle' | 'wake' | 'unsettle')[] {
@@ -134,11 +158,7 @@ function showAgainItem(state: AppState, channel: string, client: Client): Action
 }
 
 function snoozeItems(client: Client, run: Run, channel: string): ActionItem[] {
-  const now = Date.now();
-  return [
-    ...remindPresets(now).map((p) => ({ label: p.label, keys: wakeWords(p.at, now), onSelect: () => snooze(client, run, channel, p.at) })),
-    { label: 'Custom…', separate: true, onSelect: () => document.dispatchEvent(new CustomEvent(CUSTOM_SNOOZE, { detail: channel })) },
-  ];
+  return laterTimes((until) => snooze(client, run, channel, until));
 }
 
 function settle(client: Client, run: Run, channel: string): void {

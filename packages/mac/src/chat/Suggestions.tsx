@@ -20,13 +20,15 @@ const KIND_ICON: Record<SuggestionKind, IconName> = {
   folder: 'folder',
   file: 'file',
   task: 'task',
+  chat: 'chat',
   option: 'check',
 };
 
-/** A section's heading above its first row: Claude's skills, tasks, other projects' tasks. */
+/** A section's heading above its first row: Claude's skills, tasks, chats, other projects' tasks. */
 export function sectionOf(sug: Suggestion, prev: Suggestion | undefined): string | undefined {
   if (sug.task?.elsewhere && !prev?.task?.elsewhere) return 'In other projects, not this one';
   if (sug.task && !sug.task.elsewhere && !prev?.task) return 'Tasks';
+  if (sug.kind === 'chat' && prev?.kind !== 'chat') return 'Chats';
   if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Your agent’s skills and commands';
   return undefined;
 }

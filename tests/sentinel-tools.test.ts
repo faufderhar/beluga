@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { SENTINEL_TOOL_NAMES, createSentinelToolDefs } from '../src/agent/sentinel-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 import { attachSentinel } from '../src/core/sentinel/registry.js';
@@ -49,6 +50,27 @@ describe('beluga_sentinel', () => {
     expect(made).toMatchObject({ projectId: 'api', paused: true, access: 'look', steps: [{ kind: 'claude', name: 'Triage' }, { kind: 'notify', phone: false }] });
     const bad = await call(defs, 'sentinel_create', { name: 'X', project: 'nope', trigger: { kind: 'manual' }, steps: [{ kind: 'notify', name: 'n' }] });
     expect(bad).toMatchObject({ isError: true, content: [{ text: "There's no project nope" }] });
+  });
+
+  it('sentinel_create and sentinel_update take every few minutes; a frequent agent step comes with a word about the plan', async () => {
+    const s = setup();
+    const defs = createSentinelToolDefs(s.sentinels.forRun('ws:else', 'p-me')!.tools);
+    const every = (minutes: number) => ({ kind: 'schedule', every: 'minutes', minutes, at: '00:00', missed: 'skip' });
+    const stars = await call(defs, 'sentinel_create', { name: 'Stars', trigger: every(30), steps: [{ kind: 'notify', name: 'Tell me' }] });
+    expect(stars.content[0]!.text).toMatch(/^Made “Stars” \(Every 30 minutes\), paused/);
+    expect(stars.content[0]!.text).not.toMatch(/Tell the user/);
+    expect(s.sentinels.list()[0]!.trigger).toEqual(every(30));
+    const triage = await call(defs, 'sentinel_create', { name: 'Triage', trigger: every(15), steps: [{ kind: 'claude', name: 'Look', where: 'project', prompt: 'Look' }] });
+    expect(triage.content[0]!.text).toMatch(/Tell the user: Its agent step runs up to 96 times a day/);
+    const changed = await call(defs, 'sentinel_update', { id: 'Triage', limits: { perDay: 6 } });
+    expect(changed.content[0]!.text).not.toMatch(/Tell the user/);
+    // Only 5, 10, 15 or 30: the tool's schema says no to anything else.
+    const shape = z.object(defs.find((d) => d.name === 'sentinel_create')!.inputSchema);
+    const draft = (minutes: number) => ({ name: 'Odd', trigger: every(minutes), steps: [{ kind: 'notify', name: 'n' }] });
+    for (const ok of [1, 5, 10, 15, 30]) expect(shape.safeParse(draft(ok)).success).toBe(true);
+    for (const no of [0, 2, 7, 60]) expect(shape.safeParse(draft(no)).success).toBe(false);
+    expect(SentinelDraftSchema.safeParse({ name: 'Odd', trigger: every(7) }).success).toBe(false);
+    expect(SentinelDraftSchema.safeParse({ name: 'Ok', trigger: every(10) }).success).toBe(true);
   });
 
   it('sentinel_list, sentinel_pause and sentinel_run', async () => {

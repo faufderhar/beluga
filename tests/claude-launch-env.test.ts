@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRunInput } from '../src/agent/types.js';
-import { claudeLaunchEnv } from '../src/agent/runtime/claude/runner.js';
+import { claudeLaunchEnv, withSignInHint, withZshCompat } from '../src/agent/runtime/claude/runner.js';
+import { ZSH_COMPAT, ZSH_COMPAT_FILE } from '../src/agent/runtime/claude/zsh-compat.js';
+import { failureTitle } from '../src/shared/run-failure.js';
 import { room } from './runtime-conformance.js';
 
 const sdk = vi.hoisted(() => ({ options: undefined as Options | undefined }));
@@ -128,5 +130,110 @@ describe('a friend or guest Claude launch', () => {
     expect(String((viaCanUse as { updatedInput?: { pattern?: string } }).updatedInput?.pattern)).toContain('credentials.json');
     const listed = await hook({ hook_event_name: 'PreToolUse', tool_name: 'LS', tool_input: { path: dir }, tool_use_id: 't3' } as never, 't3', { signal: new AbortController().signal });
     expect(listed).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+  });
+});
+
+describe("a friend's run keeps Claude Code's own settings", () => {
+  const friend = { channel: 'room', vetTool: () => undefined } as unknown as AgentRunInput;
+  it('keeps where its config lives, its endpoint and a plain proxy; drops keys, tokens and a proxy with a password', () => {
+    const env = claudeLaunchEnv(friend, {
+      PATH: '/usr/bin',
+      CLAUDE_CONFIG_DIR: '/Users/me/.claude-work',
+      ANTHROPIC_BASE_URL: 'https://gateway.example',
+      HTTPS_PROXY: 'http://proxy.example:3128',
+      HTTP_PROXY: 'http://me:hunter2@proxy.example:3128',
+      ANTHROPIC_API_KEY: 'sk-ant-planted',
+      CLAUDE_CODE_OAUTH_TOKEN: 'planted',
+    })!;
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/me/.claude-work');
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://gateway.example');
+    expect(env.HTTPS_PROXY).toBe('http://proxy.example:3128');
+    expect(env.HTTP_PROXY).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+  });
+});
+
+describe("a friend's run that can't sign in", () => {
+  const signedOut = { kind: 'signed_out', detail: 'Invalid API key · Please run /login' } as const;
+  const daemon = { PATH: '/usr/bin', ANTHROPIC_API_KEY: 'sk-ant-planted' };
+
+  it('says the owner signs Claude Code in with a variable friends never get', () => {
+    const scrubbed = claudeLaunchEnv({ channel: 'room', vetTool: () => undefined } as unknown as AgentRunInput, daemon)!;
+    const hinted = withSignInHint(signedOut, scrubbed, false, daemon);
+    expect(hinted.envSignIn).toBe('ANTHROPIC_API_KEY');
+    expect(failureTitle(hinted)).toContain('ANTHROPIC_API_KEY');
+    expect(failureTitle(hinted)).not.toContain('isn’t signed in on this Mac');
+    // An auth error from the API says it too; one about something else doesn't.
+    expect(withSignInHint({ kind: 'api', detail: 'authentication_failed' }, scrubbed, false, daemon).envSignIn).toBe('ANTHROPIC_API_KEY');
+    expect(withSignInHint({ kind: 'api', detail: 'overloaded' }, scrubbed, false, daemon).envSignIn).toBeUndefined();
+  });
+
+  it("leaves your own run's failure, and a sign-in that isn't from a variable, as they were", () => {
+    expect(withSignInHint(signedOut, undefined, true, daemon)).toEqual(signedOut);
+    expect(withSignInHint(signedOut, { PATH: '/usr/bin' }, false, { PATH: '/usr/bin' })).toEqual(signedOut);
+    expect(withSignInHint({ kind: 'crash', detail: 'exit 1' }, { PATH: '/usr/bin' }, false, daemon).envSignIn).toBeUndefined();
+  });
+});
+
+/** zsh-compat.sh (runtime/claude/zsh-compat.ts) reaches Claude Code on every kind of run, on top of the env it has. */
+describe.skipIf(process.platform === 'win32')("zsh-compat in Claude Code's launch (Git Bash on Windows)", () => {
+  const compatFile = (): string => path.join(process.env.BELUGA_HOME!, ZSH_COMPAT_FILE);
+  afterEach(() => {
+    sdk.options = undefined;
+    vi.unstubAllEnvs();
+    restore();
+  });
+
+  it('gives your own run the daemon environment with CLAUDE_ENV_FILE added', async () => {
+    plant();
+    vi.stubEnv('CLAUDE_ENV_FILE', '');
+    vi.stubEnv('CLAUDE_CODE_SHELL', '');
+    vi.stubEnv('SHELL', '/bin/zsh');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-launch-zsh-'));
+    const backend = createClaudeBackend({ cwd: dir, autoEdit: false, additionalDirectories: [], bridge: room });
+    await backend.run(input(dir, { ownerMcp: true, channel: 'ws:1' }));
+    const env = sdk.options?.env;
+    expect(env?.CLAUDE_ENV_FILE).toBe(compatFile());
+    expect(readFileSync(compatFile(), 'utf8')).toBe(ZSH_COMPAT);
+    // Still everything your own run inherits.
+    expect(env?.ANTHROPIC_API_KEY).toBe('planted-api');
+    expect(env?.PATH).toBe(process.env.PATH);
+    const append = (sdk.options?.systemPrompt as { append?: string } | undefined)?.append ?? '';
+    if (existsSync('/bin/zsh')) expect(append).toContain('set up to take common bash');
+  });
+
+  it("gives a friend's scrubbed run the file, and still none of the daemon's secrets", async () => {
+    plant();
+    vi.stubEnv('CLAUDE_ENV_FILE', '');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-launch-zsh-'));
+    const backend = createClaudeBackend({ cwd: dir, autoEdit: false, additionalDirectories: [], bridge: room });
+    await backend.run(input(dir, { channel: 'room', env: { BELUGA_WORKTREE: dir } }));
+    const env = sdk.options?.env;
+    expect(env?.CLAUDE_ENV_FILE).toBe(compatFile());
+    expect(env?.CI).toBe('1');
+    expect(env?.BELUGA_WORKTREE).toBe(dir);
+    expect(env?.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env?.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  });
+
+  it('leaves your own CLAUDE_ENV_FILE: your run inherits it as it was', async () => {
+    vi.stubEnv('CLAUDE_ENV_FILE', '/x/yours.sh');
+    vi.stubEnv('CLAUDE_CODE_SHELL', '');
+    vi.stubEnv('SHELL', '/bin/zsh');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-launch-zsh-'));
+    const backend = createClaudeBackend({ cwd: dir, autoEdit: false, additionalDirectories: [], bridge: room });
+    await backend.run(input(dir, { ownerMcp: true, channel: 'ws:1' }));
+    expect(sdk.options?.env).toBeUndefined();
+    const append = (sdk.options?.systemPrompt as { append?: string } | undefined)?.append ?? '';
+    if (existsSync('/bin/zsh')) expect(append).toContain('Your shell commands run in zsh, not bash.');
+  });
+
+  it('adds nothing when there is nothing to add', () => {
+    expect(withZshCompat(undefined, {})).toBeUndefined();
+    const scrubbed = { PATH: '/usr/bin', CI: '1' };
+    expect(withZshCompat(scrubbed, {})).toBe(scrubbed);
+    expect(withZshCompat(scrubbed, { CLAUDE_ENV_FILE: '/b/zsh-compat.sh' })).toEqual({ ...scrubbed, CLAUDE_ENV_FILE: '/b/zsh-compat.sh' });
+    expect(withZshCompat(undefined, { CLAUDE_ENV_FILE: '/b/zsh-compat.sh' }, { PATH: '/bin' })).toEqual({ PATH: '/bin', CLAUDE_ENV_FILE: '/b/zsh-compat.sh' });
   });
 });

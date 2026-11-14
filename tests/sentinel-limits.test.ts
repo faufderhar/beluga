@@ -175,6 +175,43 @@ describe('the clock', () => {
     expect(s.asked).toEqual([]);
   });
 
+  it('every 15 minutes: on the clock, and a night asleep is caught up once', async () => {
+    let now = new Date(2026, 9, 26, 9, 7).getTime();
+    const s = setup({ now: () => now, reply: () => 'Stars' });
+    const made = s.sentinels.create({ ...brief, trigger: { kind: 'schedule', every: 'minutes', minutes: 15, at: '07:00', missed: 'catch-up' } });
+    s.sentinels.pause(made.id, false);
+    expect(s.store.getState().sentinel.nextAt[made.id]).toBe(new Date(2026, 9, 26, 9, 15).getTime());
+    now = new Date(2026, 9, 26, 9, 15, 10).getTime();
+    s.sentinels.tick();
+    s.sentinels.tick();
+    expect(s.sentinels.runsOf(made.id)).toHaveLength(1);
+    expect(s.sentinels.runsOf(made.id)[0]!.trigger.summary).toBe('Every 15 minutes');
+    await until(() => s.sentinels.runsOf(made.id)[0]!.state === 'done');
+    expect(s.store.getState().sentinel.nextAt[made.id]).toBe(new Date(2026, 9, 26, 9, 30).getTime());
+    // Asleep all night: dozens of slots passed, one run.
+    now = new Date(2026, 9, 27, 7, 40).getTime();
+    s.sentinels.tick();
+    s.sentinels.tick();
+    expect(s.sentinels.runsOf(made.id)).toHaveLength(2);
+    expect(s.sentinels.runsOf(made.id)[0]!.trigger.summary).toBe('Every 15 minutes (caught up: the Mac was asleep or Beluga was closed)');
+    await until(() => s.sentinels.runsOf(made.id)[0]!.state === 'done');
+    expect(s.store.getState().sentinel.nextAt[made.id]).toBe(new Date(2026, 9, 27, 7, 45).getTime());
+  });
+
+  it('every few minutes keeps to its runs per day', async () => {
+    let now = new Date(2026, 9, 26, 9, 0, 10).getTime();
+    const s = setup({ now: () => now, reply: () => 'Stars' });
+    const made = s.sentinels.create({ ...brief, limits: { minutes: 10, perDay: 2 }, trigger: { kind: 'schedule', every: 'minutes', minutes: 5, at: '00:00', missed: 'catch-up' } });
+    s.sentinels.pause(made.id, false);
+    for (let i = 1; i <= 3; i++) {
+      now = new Date(2026, 9, 26, 9, 5 * i, 10).getTime();
+      s.sentinels.tick();
+      await until(() => s.sentinels.runsOf(made.id).length === i && s.sentinels.runsOf(made.id)[0]!.state !== 'running');
+    }
+    expect(s.sentinels.runsOf(made.id).map((r) => r.state)).toEqual(['skipped', 'done', 'done']);
+    expect(s.sentinels.runsOf(made.id)[0]!.headline).toBe('Skipped: it ran 2 times today already');
+  });
+
   it('paused and by-hand sentinels never start on their own', () => {
     let now = new Date(2026, 9, 26, 6, 0).getTime();
     const s = setup({ now: () => now });

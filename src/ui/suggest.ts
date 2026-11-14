@@ -5,10 +5,11 @@ import { agentLabel, agentName } from '../shared/agent-label.js';
 import type { ClaudeSkill } from '../shared/skills.js';
 import type { AgentMark } from '../shared/agent-marks.js';
 import type { AgentTag } from '../shared/agent-tags.js';
-import { MAX_ELSEWHERE_SUGGESTIONS, MAX_TASK_SUGGESTIONS, type TaskMention, matchTasks } from '../shared/task-refs.js';
+import { chatMention, parseChatRef } from '../shared/chat-ref.js';
+import { MAX_ELSEWHERE_SUGGESTIONS, MAX_TASK_SUGGESTIONS, type TaskMention, matchTasks, titleRank } from '../shared/task-refs.js';
 
 /** What a suggestion is (the list shows its icon). */
-export type SuggestionKind = 'command' | 'skill' | 'claude' | 'person' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'option';
+export type SuggestionKind = 'command' | 'skill' | 'claude' | 'person' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'chat' | 'option';
 
 export interface Suggestion {
   /** What the list shows. */
@@ -46,6 +47,8 @@ export interface SuggestContext {
   readonly entries?: (dir: string) => readonly FsEntry[] | undefined;
   /** Tasks on the board ("@BLG-24", "@24", "@login"); those marked `elsewhere` are another project's. */
   readonly tasks?: readonly TaskMention[];
+  /** Chats it can name ("@login" → "@Fix the login (chat: <ref>)"); left out where it can't name any. */
+  readonly chats?: ReadonlyArray<{ readonly title: string; readonly ref: string; readonly hint: string }>;
   /** Claude's skills and custom commands in this conversation ("/frontend-design"). */
   readonly skills?: readonly ClaudeSkill[];
   /** How this conversation's agent takes them (its runtime's `skills` capability): 'mapped' (Codex) says what doesn't carry over. */
@@ -119,6 +122,7 @@ function localPathSuggestions(sub: string, typed: string, ctx: SuggestContext): 
 }
 
 const MAX = 300;
+const MAX_CHAT_SUGGESTIONS = 6;
 /** How many suggestions are visible at once; the list scrolls to follow the highlight. */
 export const VISIBLE_SUGGESTIONS = 7;
 
@@ -270,7 +274,21 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   const paths = pathMentions(typed, ctx)
     .filter((o) => !seen.has(o.label.toLowerCase()))
     .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
-  return [...named, ...tasks, ...paths, ...elsewhere];
+  return [...named, ...tasks, ...chatMentions(typed, before, ctx), ...paths, ...elsewhere];
+}
+
+/** The chats a typed "@…" may mean, best first (as tasks: a word of the title, nothing for a lone @). */
+function chatMentions(typed: string, before: string, ctx: SuggestContext): Suggestion[] {
+  return (ctx.chats ?? [])
+    .flatMap((c) => {
+      const rank = titleRank(typed, c.title);
+      const ref = parseChatRef(c.ref);
+      const words = ref && chatMention(c.title, ref);
+      return rank === undefined || !words ? [] : [{ rank, row: { label: `@${c.title}`, hint: c.hint, value: `${before}${words} `, enter: 'complete' as const, kind: 'chat' as const } }];
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, MAX_CHAT_SUGGESTIONS)
+    .map((c) => c.row);
 }
 
 /**

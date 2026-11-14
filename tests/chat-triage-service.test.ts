@@ -15,6 +15,7 @@ import { triageFacts } from '../src/core/triage/facts.js';
 import { PHONE } from '../src/companion/coverage.js';
 import { encodeFailure } from '../src/shared/run-failure.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
+import type { WorktreeEvent } from '../src/core/workspace-controller.js';
 
 const NOW = 1_800_000_000_000;
 const HOUR = 3_600_000;
@@ -943,6 +944,123 @@ describe('auto-settle', () => {
       expect(store.getState().triage[CH]?.settled).toBeUndefined();
       setPr(store, 7, 'CLOSED');
       expect(store.getState().triage[CH]?.settled?.why).toBe('idle');
+    });
+  });
+
+  describe('archive settled chats', () => {
+    let archived: string[];
+    const serve = (store: Store) => {
+      const service = new TriageService({ store, file, notify: () => undefined, history: () => [], now: () => Date.now(), archive: (id) => (archived.push(id), Promise.resolve(true)) });
+      services.push(service);
+      return service;
+    };
+    const archiveStore = () => {
+      const store = makeStore();
+      return { store, service: serve(store) };
+    };
+    const after = (days: number) => {
+      vi.setSystemTime(NOW + days * DAY);
+      vi.advanceTimersByTime(61_000);
+    };
+    const settledLongAgo = { settled: { at: NOW - 30 * DAY, why: 'you' } };
+    beforeEach(() => {
+      archived = [];
+    });
+
+    it('a chat settled for more than the days (14 by default) is archived', () => {
+      const { store, service } = archiveStore();
+      expect(store.getState().prefs.archiveSettledDays).toBe(14);
+      service.settle(CH);
+      after(13);
+      expect(archived).toEqual([]);
+      after(15);
+      expect(archived).toEqual(['w1']);
+    });
+
+    it('it is archived once, also while the archive runs', () => {
+      const { service } = archiveStore();
+      service.settle(CH);
+      after(15);
+      after(16);
+      expect(archived).toEqual(['w1']);
+    });
+
+    it('the days follow the setting', () => {
+      const { store, service } = archiveStore();
+      store.dispatch({ type: 'prefs', prefs: { archiveSettledDays: 2 } });
+      service.settle(CH);
+      service.settle('ws:w2');
+      after(3);
+      expect(archived.sort()).toEqual(['w1', 'w2']);
+    });
+
+    it('0 days means never', () => {
+      const { store, service } = archiveStore();
+      store.dispatch({ type: 'prefs', prefs: { archiveSettledDays: 0 } });
+      service.settle(CH);
+      after(400);
+      expect(archived).toEqual([]);
+    });
+
+    it('a chat that is not settled stays', () => {
+      const { store } = archiveStore();
+      store.dispatch({ type: 'prefs', prefs: { settleIdleDays: 0 } });
+      after(30);
+      expect(archived).toEqual([]);
+    });
+
+    it('a chat un-settled before the days stays', () => {
+      const { service } = archiveStore();
+      service.settle(CH);
+      after(10);
+      service.unsettle(CH);
+      after(30);
+      expect(archived).not.toContain('w1');
+    });
+
+    it('nothing is archived while the categories are off', () => {
+      writeFileSync(file, JSON.stringify({ chats: { [CH]: settledLongAgo } }));
+      serve(makeStore(false));
+      after(1);
+      expect(archived).toEqual([]);
+    });
+
+    it('a friend’s chat and a plan’s row are never archived', () => {
+      writeFileSync(file, JSON.stringify({ chats: { 'ws:f1': { ...settledLongAgo, shared: true }, 'plan:p': settledLongAgo } }));
+      const base = makeStore().getState();
+      const plan = { id: 'p', projectId: 'p1', home: 'ws:w1', status: 'done', body: normalizeBody({ title: 'P', goal: 'g', milestones: [] }), draftRev: 1, autonomy: 'gated', maxParallel: 3, paused: false, testsAt: 'end', runs: {}, activity: [], createdAt: 0, updatedAt: 0 } as Plan;
+      serve(new Store({ ...base, shared: [{ id: 'f1' }] as unknown as DomainState['shared'], plans: { ...base.plans, plans: [plan] } }));
+      after(1);
+      expect(archived).toEqual([]);
+    });
+
+    it('a chat you restore is not archived again: it is back in the Inbox', () => {
+      const store = makeStore();
+      let tell: (event: WorktreeEvent) => void = () => undefined;
+      const service = new TriageService({ store, file, notify: () => undefined, history: () => [], now: () => Date.now(), archive: (id) => (archived.push(id), Promise.resolve(true)), onWorktree: (l) => ((tell = l), () => undefined) });
+      services.push(service);
+      service.settle(CH);
+      after(15);
+      expect(archived).toEqual(['w1']);
+      tell({ kind: 'restored', id: 'w1' });
+      expect(category(store)).toBe('active');
+      service.stop();
+      serve(store);
+      after(16);
+      expect(archived).toEqual(['w1']);
+    });
+
+    it('a chat whose turn runs waits for the turn to end', () => {
+      const { store } = archiveStore();
+      run(store, 'started');
+      // A snoozed chat settled by you keeps settled while its turn runs.
+      store.dispatch({ type: 'triage_set', channel: CH, record: { settled: { at: NOW, why: 'you' } } });
+      after(15);
+      expect(archived).toEqual([]);
+      run(store, 'done');
+      store.dispatch({ type: 'triage_set', channel: CH, record: { settled: { at: NOW, why: 'you' } } });
+      vi.advanceTimersByTime(61_000);
+      expect(archived).toEqual(['w1']);
     });
   });
 

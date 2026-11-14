@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { readJson, writeJson } from '../../net/mesh/files.js';
+import { writeJson } from '../../net/mesh/files.js';
+import { BoardFile } from './board-file.js';
 import { AgentRef } from '../../protocol.js';
 import { agentName } from '../../shared/agent-label.js';
 import type { Store } from '../store.js';
-import { unexplained } from './criteria.js';
+import { type Criterion, unexplained } from './criteria.js';
 import { LABEL_COLORS, LABEL_ICONS, LABEL_NAME, type LabelColor, type LabelDef, type LabelIcon, MAX_CUSTOM_LABELS, cleanLabelName, inSet, labelsFor } from './labels.js';
 import { dropKeptFile, dropProofFolder, keepProofFile, keepProofFiles, letGoProofFile } from './proof-files.js';
 import { landProof } from './moved.js';
@@ -70,6 +71,8 @@ export interface BoardDeps {
   readonly now?: () => number;
   /** How long to wait before writing changes (several in a row are written once). */
   readonly saveDelayMs?: number;
+  /** Fold the journal into board.json past this many bytes (board-file.ts; tests make it small). */
+  readonly foldMinBytes?: number;
 }
 
 export interface NewIssue {
@@ -145,7 +148,7 @@ const SavedLabel = z.object({ name: z.string().regex(LABEL_NAME), icon: z.enum(L
 
 const SavedContext = z.object({ text: z.string().max(MAX_PROJECT_CONTEXT), by: z.string().max(80), at: z.number().int().min(0) });
 
-const BoardFile = z.object({
+const BoardShape = z.object({
   version: z.literal(1),
   // Renamed from autoTasks when it turned off by default (tasks come from plans now): the old key is ignored.
   worktreeTasks: z.boolean().default(false),
@@ -203,6 +206,9 @@ const assigneeId = (a: Assignee | undefined): string => (a ? `person:${a.id}` : 
 /** Whoever it's given to, a person: one given to someone's Claude (an older Mac, an older teammate) is theirs. */
 const personIn = (a: Assignee | null | undefined): Assignee | null | undefined => (a ? personOf(a as AnyAssignee) : a);
 const statusText = (from: string, to: string): string => `moved this from ${from} to ${to}`;
+/** "2 criteria are neither ticked nor explained (“A”; “B”)": the ones holding a task, named. */
+const openWords = (open: readonly Criterion[]): string => `${open.length === 1 ? 'a criterion is' : `${open.length} criteria are`} neither ticked nor explained (${open.map((c) => `“${c.text}”`).join('; ')})`;
+type IssueChange = Partial<{ -readonly [K in keyof Issue]: Issue[K] }>;
 /** How far along a status is, for a parent following its sub-tasks (Canceled isn't on the way). */
 const STAGE: Readonly<Record<IssueStatus, number>> = { backlog: 0, todo: 1, in_progress: 2, in_review: 3, in_plan: 3, done: 4, canceled: -1 };
 
@@ -263,14 +269,18 @@ export class Board {
   private cascading = 0;
   /** A merge is moving tasks to Done (see shipping): only their sub-tasks under way go with them. */
   private merging = 0;
-  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  /** board.json and its journal: a change writes only the tasks it touched (board-file.ts, BLG-942). */
+  private readonly file: BoardFile | undefined;
   /** board.json couldn't be read nor moved aside: changes stay in memory rather than overwrite it. */
   private readOnly = false;
   private readonly now: () => number;
 
   constructor(private readonly deps: BoardDeps) {
     this.now = deps.now ?? Date.now;
+    this.file = deps.dir ? new BoardFile(deps.dir, () => ({ worktreeTasks: this.autoTasks, projects: this.projects, issues: this.issues }), deps.saveDelayMs ?? 300, deps.foldMinBytes) : undefined;
     this.load();
+    // What was read is what's on disk: only what changes from here is written.
+    this.file?.baseline();
     // Proof saved before files were kept (still in a worktree): kept now, while it's there.
     if (deps.dir) {
       const home = deps.dir;
@@ -389,6 +399,7 @@ export class Board {
       next.rank = this.lastRank(patch.status);
       // It moved on (a person's choice, or every criterion settled): no longer held for its checks.
       if (issue.needsChecks) next.needsChecks = undefined;
+      if (issue.mergedHeld) next.mergedHeld = undefined;
       // Moved back out of the work: the worktree that carried it no longer ships it (nor does its branch).
       if (issue.carriedBy && (patch.status === 'backlog' || patch.status === 'todo' || patch.status === 'canceled')) {
         next.carriedBy = undefined;
@@ -596,9 +607,20 @@ export class Board {
     return issue.needsChecks ? issue : this.change(issue, { needsChecks: true }, [], false);
   }
 
-  /** Every criterion ticked or explained now: no longer held, and a pull request that waited moves it to In Review. */
+  /**
+   * Every criterion ticked or explained now: no longer held; a pull request that waited moves it to
+   * In Review, and work that already merged (see landed) moves it to Done.
+   */
   private checksSettled(issue: Issue): Issue {
     if (!issue.needsChecks || unexplained(issue.brief.acceptance).length) return issue;
+    if (issue.mergedHeld && isOpen(issue.status)) {
+      const beluga: Actor = { kind: 'beluga' };
+      return this.shipping(() =>
+        this.change(issue, { needsChecks: undefined, mergedHeld: undefined, status: 'done', rank: this.lastRank('done'), worktreeGone: undefined }, [
+          this.entry(beluga, 'status', `every criterion is ticked or explained and its work is merged: ${statusText(STATUS_INFO[issue.status].label, STATUS_INFO.done.label)}`),
+        ]),
+      );
+    }
     const pr = issue.pr;
     const waiting = pr?.state === 'OPEN' && !pr.draft && pr.review !== 'CHANGES_REQUESTED' && (issue.status === 'backlog' || issue.status === 'todo' || issue.status === 'in_progress');
     if (!waiting) return this.change(issue, { needsChecks: undefined }, [], false);
@@ -828,7 +850,13 @@ export class Board {
       if (!before || before.number !== pr.number) notes.push(this.entry(beluga, 'pr', `opened pull request #${pr.number}`));
       if (pr.state === 'MERGED' && before?.state !== 'MERGED') {
         notes.push(this.entry(beluga, 'pr', `pull request #${pr.number} was merged`));
-        if (issue.status !== 'canceled' && shipsWith(issue, workspaceId)) status = 'done';
+        // Already held by an earlier merge (its worktree into main): it stays held, no second line.
+        if (isOpen(issue.status) && shipsWith(issue, workspaceId) && !issue.mergedHeld) {
+          // Done, or In Review held while a criterion is neither ticked nor explained (BLG-952).
+          const landed = this.landed(issue);
+          this.shipping(() => this.change(issue, { pr, ...landed.patch }, [...notes, ...landed.notes]));
+          continue;
+        }
       } else if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') {
         notes.push(this.entry(beluga, 'pr', `pull request #${pr.number} was closed without merging`));
       } else if (pr.state === 'OPEN') {
@@ -843,7 +871,7 @@ export class Board {
       const open = status === 'in_review' ? unexplained(issue.brief.acceptance) : [];
       if (open.length) {
         status = undefined;
-        notes.push(this.entry(beluga, 'pr', `kept this out of In Review: ${open.length === 1 ? 'a criterion is' : `${open.length} criteria are`} neither ticked nor explained (${open.map((c) => `“${c.text}”`).join('; ')})`));
+        notes.push(this.entry(beluga, 'pr', `kept this out of In Review: ${openWords(open)}`));
       }
       if (status && status !== issue.status) notes.push(this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`));
       const moved = status && status !== issue.status;
@@ -860,37 +888,53 @@ export class Board {
       if (!followsWorktree(issue, workspaceId) || isArchived(issue) || issue.status === 'canceled') continue;
       if (issue.pr && issue.pr.number > number) continue;
       const beluga: Actor = { kind: 'beluga' };
-      const reopen = issue.status === 'done';
-      this.change(issue, { pr: undefined, ...(reopen ? { status: 'in_progress' as const, rank: this.lastRank('in_progress') } : {}) }, [
+      // Done, or held In Review by that merge (see landed): worked on again, and the next merge ships it.
+      const reopen = issue.status === 'done' || (issue.mergedHeld === true && issue.status === 'in_review');
+      this.change(issue, { pr: undefined, mergedHeld: undefined, ...(reopen ? { status: 'in_progress' as const, rank: this.lastRank('in_progress') } : {}) }, [
         this.entry(beluga, 'pr', `work continues in its worktree after pull request #${number} merged; the next change gets a new pull request`),
-        ...(reopen ? [this.entry(beluga, 'status', statusText(STATUS_INFO.done.label, STATUS_INFO.in_progress.label))] : []),
+        ...(reopen ? [this.entry(beluga, 'status', statusText(STATUS_INFO[issue.status].label, STATUS_INFO.in_progress.label))] : []),
       ]);
     }
   }
 
   /**
    * Its branch's pull request, found merged after its worktree stopped being watched (archived or
-   * gone, see BoardWork.sweepShipped): Done, like a merge seen live.
+   * gone, see BoardWork.sweepShipped): Done, like a merge seen live (or held, see landed).
    */
   branchShipped(ref: string, pr: IssuePr): Issue {
     const issue = this.need(ref);
-    if (pr.state !== 'MERGED' || !isOpen(issue.status) || isArchived(issue)) return issue;
-    const beluga: Actor = { kind: 'beluga' };
-    return this.shipping(() =>
-      this.change(issue, { pr, status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [
-        this.entry(beluga, 'pr', `pull request #${pr.number} was merged`),
-        this.entry(beluga, 'status', statusText(STATUS_INFO[issue.status].label, STATUS_INFO.done.label)),
-      ]),
-    );
+    if (pr.state !== 'MERGED' || !isOpen(issue.status) || isArchived(issue) || issue.mergedHeld) return issue;
+    const landed = this.landed(issue);
+    return this.shipping(() => this.change(issue, { pr, ...landed.patch, worktreeGone: undefined }, [this.entry({ kind: 'beluga' }, 'pr', `pull request #${pr.number} was merged`), ...landed.notes]));
   }
 
   /** The worktree was merged into the project's main folder here. */
   worktreeMerged(workspaceId: string): void {
     for (const issue of this.issues) {
-      if (!shipsWith(issue, workspaceId) || issue.status === 'done' || issue.status === 'canceled') continue;
-      const beluga: Actor = { kind: 'beluga' };
-      this.shipping(() => this.change(issue, { status: 'done' }, [this.entry(beluga, 'worktree', 'its worktree was merged into main'), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]));
+      if (!shipsWith(issue, workspaceId) || !isOpen(issue.status) || issue.mergedHeld) continue;
+      const landed = this.landed(issue);
+      this.shipping(() => this.change(issue, landed.patch, [this.entry({ kind: 'beluga' }, 'worktree', 'its worktree was merged into main'), ...landed.notes]));
     }
+  }
+
+  /**
+   * Its work merged (BLG-952): Done when every criterion is ticked or explained, or it has none; else
+   * In Review, held, with a line naming the open ones, until they're settled (see checksSettled) or
+   * it's marked Done by hand.
+   */
+  private landed(issue: Issue): { readonly patch: IssueChange; readonly notes: readonly Activity[] } {
+    const beluga: Actor = { kind: 'beluga' };
+    const from = STATUS_INFO[issue.status].label;
+    const open = unexplained(issue.brief.acceptance);
+    if (!open.length) {
+      return { patch: { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, mergedHeld: undefined }, notes: [this.entry(beluga, 'status', statusText(from, STATUS_INFO.done.label))] };
+    }
+    const move = issue.status !== 'in_review';
+    const why = `kept this out of Done: ${openWords(open)}`;
+    return {
+      patch: { needsChecks: true, mergedHeld: true, ...(move ? { status: 'in_review' as const, rank: this.lastRank('in_review') } : {}) },
+      notes: [this.entry(beluga, 'status', move ? `${why}: ${statusText(from, STATUS_INFO.in_review.label)}` : why)],
+    };
   }
 
   /**
@@ -1151,10 +1195,13 @@ export class Board {
 
   /** Write anything waiting now (on the way out). */
   flush(): void {
-    if (!this.saveTimer) return;
-    clearTimeout(this.saveTimer);
-    this.saveTimer = undefined;
-    this.write();
+    // A board.json it couldn't read nor move aside is never written over.
+    if (this.readOnly) return;
+    try {
+      this.file?.flush();
+    } catch {
+      // A full disk or a permission problem: the next change tries again.
+    }
   }
 
   // ------------------------------------------------------------------ inside
@@ -1256,7 +1303,7 @@ export class Board {
     if (!step) return;
     // Its own work shipped (a merge made it Done): sub-tasks still open are later work, they don't reopen it.
     if (parent.status === 'done' && step.to !== 'done' && (this.merging || parent.pr?.state === 'MERGED')) return;
-    this.change(parent, { status: step.to, rank: this.lastRank(step.to), needsChecks: undefined, ...(step.to === 'done' ? { worktreeGone: undefined } : {}) }, [
+    this.change(parent, { status: step.to, rank: this.lastRank(step.to), needsChecks: undefined, mergedHeld: undefined, ...(step.to === 'done' ? { worktreeGone: undefined } : {}) }, [
       this.entry({ kind: 'beluga' }, 'status', `${step.why}: ${statusText(STATUS_INFO[parent.status].label, STATUS_INFO[step.to].label)}`),
     ]);
   }
@@ -1272,7 +1319,10 @@ export class Board {
     this.cascading++;
     try {
       for (const kid of this.issues.filter((i) => i.parent === parent.id && isOpen(i.status) && goes(i))) {
-        this.change(kid, { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [this.entry(beluga, 'status', `done with its parent ${parent.key}: ${statusText(STATUS_INFO[kid.status].label, STATUS_INFO.done.label)}`)]);
+        // Shipped by its parent's merge with a criterion open: held In Review like its own merge (see landed).
+        const held = this.merging > 0 && unexplained(kid.brief.acceptance).length > 0 ? this.landed(kid) : undefined;
+        if (held) this.change(kid, { ...held.patch, worktreeGone: undefined }, held.notes);
+        else this.change(kid, { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, mergedHeld: undefined, worktreeGone: undefined }, [this.entry(beluga, 'status', `done with its parent ${parent.key}: ${statusText(STATUS_INFO[kid.status].label, STATUS_INFO.done.label)}`)]);
       }
     } finally {
       this.cascading--;
@@ -1311,11 +1361,13 @@ export class Board {
   }
 
   private load(): void {
-    if (!this.deps.dir) return;
+    if (!this.deps.dir || !this.file) return;
     const file = path.join(this.deps.dir, 'board.json');
-    if (!existsSync(file)) return;
-    const raw = renamedActors(readJson(file));
-    const parsed = BoardFile.safeParse(raw);
+    const saved = this.file.read();
+    if (!saved) return;
+    // Renamed only when it has old names: walking all of a big board for nothing took ~50 ms on every start (BLG-942).
+    const raw = saved.oldNames ? renamedActors(saved.raw) : saved.raw;
+    const parsed = BoardShape.safeParse(raw);
     if (!parsed.success) {
       // Never written over: kept aside (a newer Beluga's board, or a damaged file), and this one starts fresh.
       this.setAside(file, 'unreadable');
@@ -1344,7 +1396,10 @@ export class Board {
 
   private setAside(file: string, why: string): void {
     try {
-      renameSync(file, `${file}.${why}-${this.now()}`);
+      const suffix = `${why}-${this.now()}`;
+      if (existsSync(file)) renameSync(file, `${file}.${suffix}`);
+      // Its journal goes with it: it can't be read without it.
+      this.file?.setAside(suffix);
     } catch {
       // Can't move it: don't write over it either.
       this.readOnly = true;
@@ -1352,21 +1407,7 @@ export class Board {
   }
 
   private save(): void {
-    if (!this.deps.dir || this.readOnly || this.saveTimer) return;
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = undefined;
-      this.write();
-    }, this.deps.saveDelayMs ?? 300);
-    this.saveTimer.unref?.();
-  }
-
-  private write(): void {
-    if (!this.deps.dir) return;
-    try {
-      writeJson(path.join(this.deps.dir, 'board.json'), { version: 1, worktreeTasks: this.autoTasks, projects: this.projects, issues: this.issues });
-    } catch {
-      // A full disk or a permission problem: the next change tries again.
-    }
+    if (!this.readOnly) this.file?.changed();
   }
 }
 

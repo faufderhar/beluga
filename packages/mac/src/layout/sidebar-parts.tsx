@@ -1,7 +1,8 @@
-import { type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode, forwardRef } from 'react';
+import { type CSSProperties, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode, forwardRef } from 'react';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { type RowColor, colorVars } from '../lib/row-colors.js';
 import s from './Sidebar.module.css';
 
 /** The sidebar's building blocks: a foldable section and a row (used by Sidebar and the friends' sections). */
@@ -36,13 +37,15 @@ export type RowProps = Omit<HTMLAttributes<HTMLDivElement>, 'onClick'> & {
   tone?: string;
   indent?: number;
   className?: string;
+  /** A colour you gave it (lib/row-colors.ts): a soft stripe at its edge and its icon in that colour. Unset: plain, as ever. */
+  color?: RowColor | undefined;
 };
 
 /**
  * A sidebar row. It passes its ref and other props through, so a right-click menu (or a
  * tooltip) wrapped around it can attach.
  */
-export const Row = forwardRef<HTMLDivElement, RowProps>(function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 0, className, onDoubleClick, style, onKeyDown, ...rest }, ref) {
+export const Row = forwardRef<HTMLDivElement, RowProps>(function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 0, className, onDoubleClick, style, onKeyDown, color, ...rest }, ref) {
   return (
     <div
       ref={ref}
@@ -50,7 +53,8 @@ export const Row = forwardRef<HTMLDivElement, RowProps>(function Row({ icon, lab
       tabIndex={0}
       {...rest}
       className={cx(s.row, selected && s.selected, className)}
-      style={{ paddingLeft: 8 + indent * 14, ...style }}
+      data-row-color={color}
+      style={{ paddingLeft: 8 + indent * 14, ...(color ? (colorVars(color) as CSSProperties) : {}), ...style }}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
@@ -63,6 +67,7 @@ export const Row = forwardRef<HTMLDivElement, RowProps>(function Row({ icon, lab
       }}
       title={detail}
     >
+      {color ? <span className={s.colorStripe} aria-hidden="true" /> : null}
       {icon ? <span className={cx(s.rowIcon, tone)}>{icon}</span> : null}
       <span className={s.rowLabel}>{label}</span>
       {trailing ? <span className={s.trailing}>{trailing}</span> : null}

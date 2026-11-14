@@ -24,6 +24,8 @@ export type NativeSheet =
   | { readonly kind: 'confirm_option'; readonly menu: MenuKind; readonly index: number; readonly id: string }
   /** "Are you sure?" for something that isn't a menu option (from the palette). */
   | { readonly kind: 'confirm'; readonly title: string; readonly message: string; readonly confirm: string; readonly cancel?: string; readonly destructive?: boolean; readonly run: () => void }
+  /** At Send, in a chat another person owns, when the words name chats of yours: give their agent a copy, or not (BLG-152). */
+  | { readonly kind: 'share_copy'; readonly titles: readonly string[]; readonly person: string; readonly share: () => void; readonly without: () => void }
   /** What a workspace action that starts Claude or changes git will do, before it does (see work-confirm.ts). */
   | { readonly kind: 'work'; readonly wsId: string; readonly action: AskedWork }
   /** A project's worktrees made outside Beluga that can go, ticked, before removing them. */
@@ -45,8 +47,10 @@ export type NativeSheet =
   | { readonly kind: 'task_sync'; readonly projectId: string }
   /** About This Project: what Claude reads when it writes a task there, shared with teammates (BLG-298). */
   | { readonly kind: 'project_context'; readonly projectId: string }
-  /** Environment…: a project's variables beside its main folder's .env (BLG-369). */
-  | { readonly kind: 'project_env'; readonly projectId: string }
+  /** Environment…: a project's settings on its Environment tab, its variables beside its main folder's .env (BLG-369, BLG-926); `tab` another of its tabs. */
+  | { readonly kind: 'project_env'; readonly projectId: string; readonly tab?: 'general' | 'environment' | 'worktrees' }
+  /** A worktree's own variables, over its project's (BLG-924). */
+  | { readonly kind: 'worktree_env'; readonly workspaceId: string }
   /** A new plan with Claude: what it's for, the project (unset: pick one), how far it runs on its own. */
   | { readonly kind: 'new_plan'; readonly projectId?: string }
   /** A new sentinel (docs/sentinel.md §3): from a recipe, or built yourself; `projectId` 'mac' is Your Mac. */

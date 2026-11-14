@@ -21,6 +21,9 @@ const safe = (part: string): string => part.replace(/[^\w-]/g, '').slice(0, 80);
 /** The ref a workspace's message keeps its snapshot under. */
 export const promptRef = (wsId: string, promptId: string): string => `${PROMPTS}/${safe(wsId)}/${safe(promptId)}`;
 
+/** Where a fork's copy of the uncommitted work is kept while the fork is made (gone once it is). */
+export const forkRef = (wsId: string): string => `refs/beluga/fork/${safe(wsId)}`;
+
 /** Keep how the worktree in `dir` is now under `ref`. Resolves the snapshot's commit. */
 export async function snapshot(dir: string, ref: string, message = 'Beluga: before a message'): Promise<string> {
   const head = (await git(dir, ['rev-parse', '--verify', 'HEAD'])).trim();

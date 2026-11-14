@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRunInput, FollowUp } from '../src/agent/types.js';
-import { endpointEnv, onEndpoint, usageMeter } from '../src/agent/runtime/local.js';
+import { endpointEnv, missedWords, onEndpoint, usageMeter } from '../src/agent/runtime/local.js';
+import { cleanSettings, endpointClaudeHome, prepareEndpointHome } from '../src/agent/runtime/endpoint-home.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { EnvVars } from '../src/core/env-vars.js';
@@ -133,7 +134,97 @@ describe('local endpoints: a run', () => {
   it('points Claude Code at the endpoint, every model alias at its model, and keeps your Claude login off it', () => {
     const env = endpointEnv(target);
     expect(env).toMatchObject({ ANTHROPIC_BASE_URL: OLLAMA_URL, ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', ANTHROPIC_SMALL_FAST_MODEL: 'qwen3-coder', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'qwen3-coder', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' });
+    // Nothing only Anthropic's API takes: no tool search, no inline tools (DeepSeek answers 422).
+    expect(env).toMatchObject({ ENABLE_TOOL_SEARCH: 'false', CLAUDE_CODE_INLINE_TOOLS: 'false' });
     expect(endpointEnv({ ...target, key: 'sk-1' }).ANTHROPIC_AUTH_TOKEN).toBe('sk-1');
+    // Claude Code runs in its own folder there, where it finds no Claude sign-in to send instead of the key.
+    expect(endpointEnv(target, '/tmp/endpoint-claude').CLAUDE_CONFIG_DIR).toBe('/tmp/endpoint-claude');
+    expect(endpointEnv(target).CLAUDE_CONFIG_DIR).toMatch(/claude-endpoint$/);
+  });
+
+  it('its Claude Code folder is yours, linked, without your sign-in; conversations land in yours', () => {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'endpoint-home-')));
+    const mine = path.join(root, 'claude');
+    const into = path.join(root, 'endpoint');
+    mkdirSync(path.join(mine, 'projects'), { recursive: true });
+    mkdirSync(path.join(mine, 'skills', 'review'), { recursive: true });
+    writeFileSync(path.join(mine, 'settings.json'), '{"hooks":{}}');
+    writeFileSync(path.join(mine, '.credentials.json'), '{"claudeAiOauth":{"accessToken":"sk-ant-oat"}}');
+    writeFileSync(path.join(mine, '.claude.json'), '{"primaryApiKey":"sk-ant-api"}');
+    // A link to your .claude.json from before is taken out too.
+    mkdirSync(into, { recursive: true });
+    if (process.platform !== 'win32') symlinkSync(path.join(mine, '.claude.json'), path.join(into, '.claude.json'));
+    expect(endpointClaudeHome(mine, into)).toBe(into);
+    expect(readdirSync(into).sort()).toEqual(['projects', 'settings.json', 'skills']);
+    expect(lstatSync(path.join(into, 'projects')).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(into, 'settings.json'), 'utf8'))).toEqual({ hooks: {} });
+    // A conversation Claude Code writes there is in your own projects folder, where Beluga reads it.
+    writeFileSync(path.join(into, 'projects', 'run.jsonl'), '{}');
+    expect(existsSync(path.join(mine, 'projects', 'run.jsonl'))).toBe(true);
+    // Something gone from yours goes from it; a sign-in put there is taken out.
+    rmSync(path.join(mine, 'skills'), { recursive: true });
+    writeFileSync(path.join(into, '.credentials.json'), '{}');
+    endpointClaudeHome(mine, into);
+    expect(readdirSync(into).sort()).toEqual(['projects', 'settings.json']);
+    // The .claude.json Claude Code writes there is its own, and stays.
+    writeFileSync(path.join(into, '.claude.json'), '{"numStartups":1}');
+    endpointClaudeHome(mine, into);
+    expect(readFileSync(path.join(into, '.claude.json'), 'utf8')).toBe('{"numStartups":1}');
+    rmSync(path.join(into, '.claude.json'));
+    // Your settings come as a copy: a run that rewrites it there changes nothing of yours, and the next run brings yours back.
+    expect(lstatSync(path.join(into, 'settings.json')).isSymbolicLink()).toBe(false);
+    writeFileSync(path.join(into, 'settings.json'), '{"stale":true}');
+    expect(readFileSync(path.join(mine, 'settings.json'), 'utf8')).toBe('{"hooks":{}}');
+    endpointClaudeHome(mine, into);
+    expect(JSON.parse(readFileSync(path.join(into, 'settings.json'), 'utf8'))).toEqual({ hooks: {} });
+  });
+
+  it('its settings never carry a key helper or a key variable, and a link to yours from before becomes the cleaned copy', () => {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'endpoint-settings-')));
+    const mine = path.join(root, 'claude');
+    const into = path.join(root, 'endpoint');
+    mkdirSync(mine, { recursive: true });
+    mkdirSync(into, { recursive: true });
+    const yours = {
+      model: 'opus',
+      apiKeyHelper: '~/bin/anthropic-key',
+      awsAuthRefresh: 'aws sso login',
+      awsCredentialExport: '~/bin/aws-creds',
+      env: { ANTHROPIC_API_KEY: 'sk-ant-api', ANTHROPIC_AUTH_TOKEN: 'sk-ant-x', ANTHROPIC_BASE_URL: 'https://api.anthropic.com', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CONFIG_DIR: '/x', EDITOR: 'vim' },
+      hooks: { Stop: [] },
+    };
+    writeFileSync(path.join(mine, 'settings.json'), JSON.stringify(yours));
+    if (process.platform !== 'win32') symlinkSync(path.join(mine, 'settings.json'), path.join(into, 'settings.json'));
+    expect(prepareEndpointHome(mine, into)).toEqual({ dir: into, missed: [] });
+    expect(lstatSync(path.join(into, 'settings.json')).isSymbolicLink()).toBe(false);
+    expect(JSON.parse(readFileSync(path.join(into, 'settings.json'), 'utf8'))).toEqual({ model: 'opus', env: { EDITOR: 'vim' }, hooks: { Stop: [] } });
+    // Yours stays as you wrote it.
+    expect(JSON.parse(readFileSync(path.join(mine, 'settings.json'), 'utf8'))).toEqual(yours);
+    expect(cleanSettings({ env: 'odd', apiKeyHelper: 'x' })).toEqual({ env: 'odd' });
+  });
+
+  it('what of yours could not come along is named, and the rest still comes', () => {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'endpoint-missed-')));
+    const mine = path.join(root, 'claude');
+    const into = path.join(root, 'endpoint');
+    mkdirSync(path.join(mine, 'agents'), { recursive: true });
+    writeFileSync(path.join(mine, 'settings.json'), '{ not json');
+    const home = prepareEndpointHome(mine, into);
+    expect(home.missed).toEqual(['settings.json']);
+    expect(lstatSync(path.join(into, 'agents')).isSymbolicLink()).toBe(true);
+    // A folder that can't be made at all says so too.
+    writeFileSync(path.join(root, 'a-file'), '');
+    expect(prepareEndpointHome(mine, path.join(root, 'a-file', 'endpoint')).missed).toEqual(['your Claude Code folder']);
+    // The run says it, in words.
+    const said: Array<[string, string]> = [];
+    const input = { prompt: 'hi', onEvent: (kind: string, text: string) => said.push([kind, text]) } as unknown as AgentRunInput;
+    const run = onEndpoint(input, target, () => undefined, usageMeter(), home);
+    expect(run.env).toMatchObject({ CLAUDE_CONFIG_DIR: into });
+    expect(said).toEqual([['progress', missedWords(['settings.json'])]]);
+    expect(missedWords(['settings.json'])).toContain('settings.json');
+    // Nothing missed, nothing said.
+    onEndpoint(input, target, () => undefined, usageMeter(), { dir: into, missed: [] });
+    expect(said).toHaveLength(1);
   });
 
   it('runs on the model’s own name, its env over yours, no effort, and maps a model picked mid-run', () => {
@@ -141,7 +232,7 @@ describe('local endpoints: a run', () => {
     let send: ((f: FollowUp) => boolean) | undefined;
     const input = { prompt: 'hi', model: 'ollama/qwen3-coder', effort: 'high', env: { ANTHROPIC_BASE_URL: 'https://api.anthropic.com', MINE: '1' }, onFollowUps: (s: typeof send) => (send = s) } as unknown as AgentRunInput;
     const resolve = (v: string | undefined) => (v === 'ollama/llama3.3' ? { ...target, model: 'llama3.3' } : v === 'proxy/big' ? { label: 'P', baseUrl: 'https://p', model: 'big' } : undefined);
-    const run = onEndpoint(input, target, resolve);
+    const run = onEndpoint(input, target, resolve, usageMeter(), { dir: '/tmp/endpoint-claude', missed: [] });
     expect(run.model).toBe('qwen3-coder');
     expect(run.effort).toBeUndefined();
     expect(run.env).toMatchObject({ MINE: '1', ANTHROPIC_BASE_URL: OLLAMA_URL });

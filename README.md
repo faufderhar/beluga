@@ -371,7 +371,9 @@ Your agent is Claude Code, signed in with your own subscription. It can also run
 
 The engine (projects, agents, terminals, friends) runs in the background on your computer, and the app is the window onto it. Claude runs through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview).
 
-More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [external agents](docs/external-agents.md) · [peer-to-peer connections](docs/p2p.md) · [updates](docs/updates.md) · [every action and where it is](docs/parity.md) · [earnings](docs/earnings.md)
+Beluga's releases ask whether you'd share usage statistics: Off, Limited (picked for you) or On. A build from source never asks and never sends. [What each level sends](docs/telemetry.md); change it in Settings › General › Usage statistics.
+
+More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [external agents](docs/external-agents.md) · [peer-to-peer connections](docs/p2p.md) · [updates](docs/updates.md) · [every action and where it is](docs/parity.md) · [earnings](docs/earnings.md) · [usage statistics](docs/telemetry.md)
 
 ## Development
 

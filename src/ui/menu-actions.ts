@@ -102,8 +102,11 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
       return;
     case 'confirm-archive-env':
     case 'confirm-delete-env':
+    case 'confirm-archive-env-all':
+    case 'confirm-delete-env-all':
       if (confirmId) {
-        void api.workspaces.applyEnvBack(confirmId).then(() => void (option.id === 'confirm-archive-env' ? archive(confirmId, true) : remove(confirmId)));
+        // -all: keys removed in the worktree go from the main folder's file too.
+        void api.workspaces.applyEnvBack(confirmId, option.id.endsWith('-all')).then(() => void (option.id.startsWith('confirm-archive') ? archive(confirmId, true) : remove(confirmId)));
       }
       return;
     case 'set-name':

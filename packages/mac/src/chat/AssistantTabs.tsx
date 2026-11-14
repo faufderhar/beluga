@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { ASSISTANT_TITLE, type AssistantChat, assistantChatTitle } from '@beluga/shared/assistant.js';
 import { Icon } from '../components/Icon.js';
+import { ActionsContext } from '../components/SpecMenu.js';
+import { chatLinkItems } from '../lib/chat-links.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -51,7 +53,8 @@ function ChatTab({ chat, open, only, onOpen, onDelete }: { chat: AssistantChat; 
   const signal = useApp((st) => signalOf(st, chat.channel), sameDeep);
   // The only chat, still empty: nothing to delete.
   const deletable = !only || said;
-  return (
+  const { client } = useBeluga();
+  const tab = (
     <div className={cx(s.tab, open && s.tabOn)}>
       <Tip label={signal.tip || title}>
         <button type="button" role="tab" aria-selected={open} className={s.tabMain} onClick={onOpen}>
@@ -63,6 +66,7 @@ function ChatTab({ chat, open, only, onOpen, onDelete }: { chat: AssistantChat; 
       {deletable ? <IconButton icon="x" label={only ? 'Delete this chat and start over' : 'Delete this chat'} className={s.close} onClick={() => onDelete(title, only)} /> : null}
     </div>
   );
+  return <ActionsContext items={() => chatLinkItems(client.store.getState(), client, chat.channel)}>{tab}</ActionsContext>;
 }
 
 function confirmDelete(title: string, last: boolean, run: () => void): void {

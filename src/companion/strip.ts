@@ -232,6 +232,19 @@ export function stepWords(step: string): StepWords {
   return w(words, words, 'tool');
 }
 
+/**
+ * A step as the phone says it, from its record's summary: a step whose tool has an MCP App
+ * (Settings › Experimental › MCP Apps) is drawn on the Mac only, so the phone says where
+ * ("Get time app, on your Mac"); any other step reads as stepWords says.
+ */
+export function summaryWords(step: { readonly title: string; readonly hasApp?: boolean }): StepWords {
+  if (!step.hasApp) return stepWords(step.title);
+  const tool = step.title.trim().split(' ')[0] ?? '';
+  const name = tool.replace(/^mcp__.+?__/, '').replace(/[_-]+/g, ' ').trim() || 'MCP';
+  const words = clip(`${name.charAt(0).toUpperCase()}${name.slice(1)} app, on your Mac`, 300);
+  return w(words, words, 'tool');
+}
+
 /** A step of Claude's in words, as it did it ("Edited store.ts"). */
 export const humanizeStep = (step: string): string => stepWords(step).did;
 

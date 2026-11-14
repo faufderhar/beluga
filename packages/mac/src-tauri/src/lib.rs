@@ -395,16 +395,20 @@ pub fn run() {
                     let _ = links.emit("deep-link", url.to_string());
                 }
             });
-            // On Windows and Linux a link that starts Beluga comes as an argument, read before the
-            // handler above was there: keep it for the window too. An AppImage registers itself.
+            // An AppImage registers itself.
             #[cfg(not(target_os = "macos"))]
-            {
-                if std::env::var_os("APPIMAGE").is_some() {
-                    let _ = app.deep_link().register_all();
-                }
-                if let Ok(Some(urls)) = app.deep_link().get_current() {
-                    let state = app.state::<AppState>();
-                    daemon::locked(&state.pending_links).extend(urls.iter().map(|u| u.to_string()));
+            if std::env::var_os("APPIMAGE").is_some() {
+                let _ = app.deep_link().register_all();
+            }
+            // A link that starts Beluga came before the handler above was there (on Windows and Linux
+            // as an argument, on macOS as an event during launch): keep it for the window too, once.
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                let state = app.state::<AppState>();
+                let mut pending = daemon::locked(&state.pending_links);
+                for url in urls.iter().map(|u| u.to_string()) {
+                    if !pending.contains(&url) {
+                        pending.push(url);
+                    }
                 }
             }
             // Start Beluga's daemon right away, so the window has something to show.

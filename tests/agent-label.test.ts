@@ -32,6 +32,10 @@ describe('agentLabel (BLG-435)', () => {
     expect(modelName('claude-sonnet-4-5')).toBe('Sonnet 4.5');
     expect(modelName('claude-opus-4-1-20250805')).toBe('Opus 4.1');
     expect(modelName('qwen3')).toBe('Qwen3');
+    // BLG-945: DeepSeek and Kimi, from their own provider or through a router.
+    expect(modelName('deepseek/deepseek-chat')).toBe('DeepSeek chat');
+    expect(modelName('openrouter/deepseek/deepseek-r1:free')).toBe('DeepSeek R1:free');
+    expect(modelName('moonshotai/kimi-k2-0905-preview')).toBe('Kimi K2 preview 0905');
   });
 });
 

@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { isOwnImageFile } from '../core/attachments.js';
 import { isDotenvPath, isReceivedTaskFile, isSecretPath, realOf } from '../core/shares.js';
 import { expandHome } from '../core/home-path.js';
 import { isReadOnlyCommand } from './read-only.js';
@@ -40,7 +41,8 @@ const ALWAYS_OK = new Set([
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: your own runs, and a friend's you trust (BLG-701: only its repo's board, and a
   // Trusted friend's changes ask you, see boardAsks); each change is in the task's activity.
-  ...['task_define', 'task_get', 'task_list', 'task_create', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
+  // task_start refuses a friend's run (core/board/work.ts): it starts a worktree on this Mac.
+  ...['task_define', 'task_get', 'task_list', 'task_create', 'task_start', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
   // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
   // and a change to what one can do pauses it. sentinel_remove and sentinel_delete_runs aren't here: deleting asks you.
   // sentinel_test and sentinel_try_source only read: a database read-only, a file, an address without your
@@ -50,6 +52,9 @@ const ALWAYS_OK = new Set([
   // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
   // dashboard_remove isn't here: deleting a dashboard asks you.
   ...['sentinel_measure', 'dashboard_list', 'dashboard_create', 'dashboard_update', 'dashboard_add_tile', 'dashboard_update_tile', 'dashboard_move_tile', 'dashboard_remove_tile', 'metric_list', 'metric_read'].map((n) => `mcp__beluga_dashboard__${n}`),
+  // Other chats (core/chat-links): only your own runs have them. core/chat-links/access.ts decides each read and send,
+  // and guard.ts limits sends. A message approves nothing in the chat that reads it.
+  ...['list_chats', 'read_chat', 'send_to_chat', 'wait_for_chat'].map((n) => `mcp__beluga_chats__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_review', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // Child threads (core/threads): only your own runs have them, with the flag on. They start and follow your own chats, under limits; no tool archives or deletes one.
@@ -63,6 +68,8 @@ const ALWAYS_OK = new Set([
   // Your phone (BLG-150): looking at it never asks (like the Mac's screenshot). Acting on it falls
   // to 'ask', then the owner-approval gate honours the phone's own setting (Off · Ask · Use · Full).
   ...['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications', 'phone_macro_list'].map((n) => `mcp__beluga_phone__${n}`),
+  // Your MCP servers: only your own runs have these. A sign-in only opens its page in your browser: you finish it there.
+  ...['mcp_servers', 'mcp_sign_in'].map((n) => `mcp__beluga_mcp__${n}`),
 ]);
 
 /** The board tools that only look. */
@@ -132,7 +139,16 @@ export interface PolicyContext {
   readonly dotenv?: boolean;
   /** A friend's run with the board (BLG-701): its changes ('writes') or every board tool ('all') ask you first. */
   readonly boardAsks?: 'writes' | 'all';
+  /**
+   * Your own run: you asked, on this computer (never a friend's, a guest's or an external agent's).
+   * It may Read an image you attached (an answer to its question links one: core/attachments.ts
+   * withImagePaths), though Beluga's own folder stays secret otherwise.
+   */
+  readonly yourRun?: boolean;
 }
+
+/** `yourRun` for a run's policy: only you asked (a friend's run has no canUseSecret; an external agent's is asOwner). */
+export const isYourRun = (input: { readonly canUseSecret?: unknown; readonly guest?: boolean; readonly asOwner?: boolean }): boolean => Boolean(input.canUseSecret) && !input.guest && !input.asOwner;
 
 /**
  * `target` is `root` or inside it. Windows paths match without regard to letter case, as Windows
@@ -178,6 +194,13 @@ export function writesCode(toolName: string, input: Record<string, unknown>, cwd
 const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'LS']);
 /** How many entries a directory search is walked before it stops (node_modules and .git are skipped). */
 const MAX_SEARCH_SCAN = 20_000;
+/**
+ * One tool call judges its folder up to four times (the hook and canUseTool, each narrowing then
+ * deciding): a walk is kept this long, so a folder is walked once per call, not four times.
+ */
+const SEARCH_SCAN_TTL_MS = 2_000;
+/** Folders kept at once: a few searches in flight, never a growing map. */
+const SEARCH_SCAN_KEEP = 16;
 /**
  * Names a broad directory search must leave out, the same files Codex denies (codex/sandbox.ts).
  * One ripgrep glob: a basename anywhere, or a directory and everything in it.
@@ -271,12 +294,49 @@ function hitKind(abs: string, link: boolean): SearchHit['kind'] | undefined {
   return linked ?? named;
 }
 
+interface SearchScan {
+  readonly hits: readonly SearchHit[];
+  /** Stopped at {@link MAX_SEARCH_SCAN}: there may be credential files it didn't get to. */
+  readonly truncated: boolean;
+}
+
+const scans = new Map<string, { readonly at: number; readonly scan: SearchScan | undefined }>();
+let scanLimit = MAX_SEARCH_SCAN;
+
+/** Tests: a walk cut off after `n` entries (not 20,000 files on disk). Returns the undo. */
+export function limitSearchScanForTest(n: number): () => void {
+  const before = scanLimit;
+  scanLimit = n;
+  scans.clear();
+  return () => {
+    scanLimit = before;
+    scans.clear();
+  };
+}
+
+/**
+ * {@link walkSearch}, kept for {@link SEARCH_SCAN_TTL_MS} per folder (the newest
+ * {@link SEARCH_SCAN_KEEP} folders). `now` is passed in by tests.
+ */
+export function scanSearch(root: string, now: number = Date.now()): SearchScan | undefined {
+  const kept = scans.get(root);
+  if (kept && now >= kept.at && now - kept.at < SEARCH_SCAN_TTL_MS) return kept.scan;
+  const scan = walkSearch(root);
+  scans.delete(root);
+  scans.set(root, { at: now, scan });
+  for (const [key, entry] of scans) {
+    if (scans.size <= SEARCH_SCAN_KEEP && now - entry.at < SEARCH_SCAN_TTL_MS) break;
+    scans.delete(key);
+  }
+  return scan;
+}
+
 /**
  * Credential files under a directory a search would walk. Stops after {@link MAX_SEARCH_SCAN}
  * entries (a whole checkout still searches; named secrets are excluded either way). Symlink
  * directories are not descended: ripgrep doesn't follow them unless asked.
  */
-function scanSearch(root: string): { hits: SearchHit[]; truncated: boolean } | undefined {
+function walkSearch(root: string): SearchScan | undefined {
   try {
     if (!statSync(root).isDirectory()) return undefined;
   } catch {
@@ -299,7 +359,7 @@ function scanSearch(root: string): { hits: SearchHit[]; truncated: boolean } | u
     }
     for (const ent of entries) {
       if (ent.name === 'node_modules' || ent.name === '.git') continue;
-      if (++n > MAX_SEARCH_SCAN) return { hits, truncated: true };
+      if (++n > scanLimit) return { hits, truncated: true };
       const abs = path.join(dir, ent.name);
       const rel = path.relative(root, abs).split(path.sep).join('/');
       const kind = hitKind(abs, ent.isSymbolicLink());
@@ -376,8 +436,34 @@ function searchSelects(toolName: string, input: Record<string, unknown>, rel: st
   return globSelects(spec, rel);
 }
 
+/**
+ * A glob that could pick a credential file somewhere in the tree: an exclusion that doesn't leave
+ * them out, or a pattern whose file-name part fits one (`src/**` does, `src/**\/*.ts` doesn't).
+ */
+function specMaySelectSecret(spec: string): boolean {
+  if (SEARCH_SECRET_SAMPLES.some((name) => globSelects(spec, name))) return true;
+  if (spec.startsWith('!')) return false;
+  return braceExpand(spec).some((alt) => {
+    const name = alt.split(/[\\/]/).pop() || alt;
+    return SEARCH_SECRET_SAMPLES.some((sample) => globMatches(name, sample));
+  });
+}
+
+/** The search could open a credential file: no glob of its own, or one that could pick one. */
+const searchIsBroad = (toolName: string, input: Record<string, unknown>): boolean => {
+  const spec = searchSpec(toolName, input);
+  return !spec || specMaySelectSecret(spec);
+};
+
+interface OpenedSecrets {
+  readonly hard: boolean;
+  readonly dotenv: boolean;
+  /** The walk stopped before the end and the search's own glob could still pick a credential file. */
+  readonly unsure: boolean;
+}
+
 /** Credential files this directory search would actually open. */
-function openedSecrets(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): { hard: boolean; dotenv: boolean } | undefined {
+function openedSecrets(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): OpenedSecrets | undefined {
   if (!SEARCH_TOOLS.has(toolName)) return undefined;
   const field = READ_TOOLS[toolName];
   if (!field) return undefined;
@@ -390,12 +476,20 @@ function openedSecrets(toolName: string, input: Record<string, unknown>, ctx: Po
     if (hit.kind === 'hard') hard = true;
     else dotenv = true;
   }
-  return hard || dotenv ? { hard, dotenv } : undefined;
+  // No glob of its own: confineSearch narrows it (that glob leaves every named secret out).
+  const unsure = scan.truncated && searchSpec(toolName, input) !== undefined && searchIsBroad(toolName, input);
+  return hard || dotenv || unsure ? { hard, dotenv, unsure } : undefined;
 }
 
-/** A relative path that cannot be put inside one `{a,b}` glob. */
-const UNSAFE_GLOB_CHAR = new Set(['*', '?', '[', ']', '{', '}', ',', '!', '\\', '\n']);
-const unsafeGlob = (rel: string): boolean => [...rel].some((c) => UNSAFE_GLOB_CHAR.has(c));
+/** Glob patterns that already list the whole tree, so the exclusion glob can stand in for them. */
+const WHOLE_TREE_PATTERNS = new Set(['**', '**/*']);
+
+/**
+ * A relative path that cannot be put inside one `{a,b}` glob: glob syntax, or white space (a glob
+ * may be split on it, so "my secret.pem" would become two names that leave nothing out).
+ */
+const UNSAFE_GLOB_CHAR = /[\s*?[\]{},!\\]/;
+const unsafeGlob = (rel: string): boolean => UNSAFE_GLOB_CHAR.test(rel);
 
 /**
  * One negated ripgrep glob that leaves every credential file out and still returns the rest.
@@ -420,8 +514,11 @@ export function confineSearch(toolName: string, input: Record<string, unknown>, 
   const scan = scanSearch(resolveTarget(ctx.cwd, input[field]));
   if (!scan) return undefined;
   const opened = scan.hits.filter((hit) => searchSelects(toolName, input, hit.rel));
-  const broad = !searchSpec(toolName, input) || SEARCH_SECRET_SAMPLES.some((name) => searchSelects(toolName, input, name));
-  if (!opened.length && !(scan.truncated && broad)) return undefined;
+  if (!opened.length && !(scan.truncated && searchIsBroad(toolName, input))) return undefined;
+  // The exclusion takes the place of Grep's glob or Glob's pattern: a caller's own one would be lost
+  // and the search widened, so that search isn't narrowed (decideTool then turns it down, or asks
+  // when the walk stopped before finding one).
+  if (toolName === 'Grep' ? typeof input.glob === 'string' && input.glob.trim() !== '' : !WHOLE_TREE_PATTERNS.has(String(input.pattern ?? '').trim())) return undefined;
   const glob = exclusionGlob(opened.map((hit) => hit.rel));
   if (!glob) return undefined;
   if (toolName === 'Grep') return input.glob === glob ? undefined : { ...input, glob };
@@ -447,7 +544,7 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
 }
 
 /** A file tool on a .env file, a shell command whose only secret is one, or a directory search that would open one and nothing harder. */
-function touchesDotenv(toolName: string, input: Record<string, unknown>, ctx: PolicyContext, opened: { hard: boolean; dotenv: boolean } | undefined): boolean {
+function touchesDotenv(toolName: string, input: Record<string, unknown>, ctx: PolicyContext, opened: OpenedSecrets | undefined): boolean {
   if (toolName === 'Bash') return typeof input.command === 'string' && mentionsOnlyDotenv(input.command);
   const field = READ_TOOLS[toolName] ?? WRITE_TOOLS[toolName];
   if (field !== undefined && isDotenvPath(resolveTarget(ctx.cwd, input[field]))) return true;
@@ -466,7 +563,7 @@ const namesOf = (toolName: string, input: Record<string, unknown>): string[] =>
     .flatMap((g) => [g, ...g.split(/[{},]/).map((part) => part.split(/[\\/]/).at(-1)?.replace(/[*?[\]!]/g, '') ?? '')])
     .filter(Boolean);
 
-function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext, opened: { hard: boolean; dotenv: boolean } | undefined): Decision {
+function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext, opened: OpenedSecrets | undefined): Decision {
   // Your own Claude's .env: judged as any file there, then it asks you (decideTool).
   const dotenv = ctx.dotenv === true && touchesDotenv(toolName, input, ctx, opened);
   if (ctx.askOnly && changesMain(toolName, input, ctx)) return 'deny';
@@ -490,6 +587,8 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
+    // An image you attached, read by your own run: one file right in the attachments folder, where it really is.
+    if (toolName === 'Read' && ctx.yourRun && isOwnImageFile(target)) return 'allow';
     // A secret a friend approved sending you (BLG-209) is your user's file now: your own Claude may read it, once you say so.
     if (ctx.dotenv && isReceivedTaskFile(target) && !namesOf(toolName, input).some(isSecretPath)) return 'ask';
     const real = realOf(target);
@@ -497,6 +596,8 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
     if ([target, real, ...namesOf(toolName, input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
     // A directory Grep, Glob or LS opens credential files it finds, not only the path it was given.
     if (opened?.hard || (opened?.dotenv && !ctx.dotenv)) return 'deny';
+    // A folder too big to walk to the end, searched with a glob that could still pick a key: someone decides.
+    if (opened?.unsure) return 'ask';
     if (ctx.roots.some((r) => within(r, target))) return 'allow';
     // Outside the shared folders the owner decides (or it just runs, with full trust).
     return ctx.scope === 'full' ? 'allow' : 'ask';

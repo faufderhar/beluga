@@ -20,6 +20,7 @@ import {
   accessAllows,
   ordinal,
   presetFields,
+  frequentAgentNote,
   scheduleSentence,
   stepAvailable,
   stepRefusal,
@@ -41,7 +42,7 @@ import {
   AFTER_ON,
   CLAUDE_PRESETS,
   EVERY_CHOICES,
-  HOURS_CHOICES,
+  INTERVAL_CHOICES,
   LATER,
   STEP_ICON,
   TEMPLATE_HELP,
@@ -63,6 +64,9 @@ import {
   triggerChoices,
   triggerOfKind,
   withEvery,
+  everySegment,
+  intervalOf,
+  withInterval,
   agentFields,
   stepAgentChoice,
 } from './sentinel-model.js';
@@ -110,7 +114,7 @@ export function WhenCard({ item, save }: { item: Sentinel; save: Save }) {
             }}
           />
         </div>
-        {t.kind === 'schedule' ? <ScheduleControls t={t} save={save} /> : null}
+        {t.kind === 'schedule' ? <ScheduleControls t={t} item={item} save={save} /> : null}
         {t.kind === 'manual' ? <p className={s.hint}>It runs only when you press Run Now: here, on its row, or from your phone.</p> : null}
         {t.kind === 'after' ? <AfterControls t={t} item={item} items={items} save={save} /> : null}
         {t.kind !== 'schedule' && t.kind !== 'manual' && t.kind !== 'after' ? <EventControls item={item} save={save} /> : null}
@@ -140,17 +144,19 @@ function AfterControls({ t, item, items, save }: { t: AfterTrigger; item: Sentin
   );
 }
 
-function ScheduleControls({ t, save }: { t: ScheduleTrigger; save: Save }) {
+function ScheduleControls({ t, item, save }: { t: ScheduleTrigger; item: Sentinel; save: Save }) {
   const set = (next: ScheduleTrigger): void => save({ trigger: next });
+  const often = t.every === 'hours' || t.every === 'minutes';
+  const heavy = frequentAgentNote({ trigger: t, steps: item.steps, limits: item.limits });
   return (
     <>
       <div className={s.every}>
-        <Segmented label="How often" value={t.every} onChange={(every) => set(withEvery(t, every))} options={EVERY_CHOICES} />
+        <Segmented label="How often" value={everySegment(t)} onChange={(every) => (every === everySegment(t) ? undefined : set(withEvery(t, every)))} options={EVERY_CHOICES} />
       </div>
-      {t.every === 'hours' ? (
+      {often ? (
         <div className={s.controlRow}>
           <span className={s.controlLabel}>Every</span>
-          <Select label="Every how many hours" size="small" value={String(t.hours ?? 1)} options={HOURS_CHOICES.map((h) => ({ value: String(h), label: h === 1 ? 'hour' : `${h} hours` }))} onChange={(h) => set({ ...t, hours: Number(h) as ScheduleTrigger['hours'] & number })} />
+          <Select label="Every how long" size="small" value={intervalOf(t)} options={INTERVAL_CHOICES} onChange={(v) => set(withInterval(t, v))} />
         </div>
       ) : (
         <div className={s.controlRow}>
@@ -200,6 +206,7 @@ function ScheduleControls({ t, save }: { t: ScheduleTrigger; save: Save }) {
           onChange={(missed) => set({ ...t, missed })}
         />
       </div>
+      {heavy ? <p className={s.hint}>{heavy}</p> : null}
     </>
   );
 }

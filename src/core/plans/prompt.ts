@@ -128,7 +128,15 @@ export function taskTestsNote(plan: Pick<Plan, 'testsAt'>): string {
   ].join('\n');
 }
 
-/** What a milestone's check runs, by the plan's test timing (and whether it's the last milestone). */
+/**
+ * What a task's agent does when only the user can unblock it (a step on their server or an account,
+ * a secret, a choice): ask, with a card that waits for them (their phone too) and whose answer comes
+ * back in the same turn. A request written out and the turn ended reads as stopping: Beluga wakes it,
+ * then shows it as stopped with only Resume (a task that needed a .env on the user's server looped so).
+ */
+export const ASK_YOU =
+  'Only the user can do or decide it (a step on their server or an account, a secret, a choice): ask them with AskUserQuestion, with options to pick ("Done", "Done, but somewhere else: …", "Not now"). It shows them a card, on their phone too, and their answer comes back to you in this turn. Never end your turn with the request written out instead: that reads as stopping, and you are only woken again.';
+
 /**
  * Why plan checks got stuck: a check ran the e2e in the background and ended its turn waiting to be
  * woken (ScheduleWakeup). Nothing wakes a run whose turn ended, and what it started is stopped.
@@ -136,6 +144,7 @@ export function taskTestsNote(plan: Pick<Plan, 'testsAt'>): string {
 export const WAIT_IN_TURN =
   'Everything you start ends with your turn, and nothing wakes you afterwards (no ScheduleWakeup, no waiting for a notification): run each command to the end inside this turn. In the foreground (Bash timeout up to 600000 ms); a longer one in the background with a log, waited on in foreground steps of under 10 minutes until it is done.';
 
+/** What a milestone's check runs, by the plan's test timing (and whether it's the last milestone). */
 export function checkTestsNote(plan: Pick<Plan, 'testsAt'>, last: boolean): string {
   if (plan.testsAt === 'end' && !last) return 'This plan runs its test suites only at the end: don\'t run them for this check. Check by reading the code, the diffs, the tests the tasks wrote and their typecheck.';
   return [
@@ -495,6 +504,7 @@ export function workerNote(view: PlanView, taskId: string): string {
     'task_update with status in_review: that tells the plan this task is finished. One you can\'t make true here',
     'gets a short reason on its own line instead ("- [ ] … — deferred: suites run at the end of the plan", or',
     '"— not done: why"): task_update refuses in_review while one is neither. Ask the user only what you must.',
+    ASK_YOU,
   ]
     .filter(Boolean)
     .join('\n');
@@ -539,8 +549,7 @@ function milestoneHow(plan: Plan, only: boolean): string[] {
     '  then task_update with status in_review. Then the next task, without stopping.',
     `- ${taskTestsNote(plan).split('\n').join(' ')}`,
     '- No pull requests, no merging: this branch is merged into the plan when the milestone passes.',
-    '- A task only the user can decide: say what you need in one line with task_note on it, go on with the tasks that don\'t',
-    '  need it, and end your turn when nothing else is left (Beluga asks them, and tells you when they answered).',
+    '- A task only the user can do or decide: do the tasks that don\'t need it first, then ask for it. ' + ASK_YOU,
     only ? '- The user starts each task of this milestone: do only the task(s) you were given, then end your turn.' : '- When your last task is In Review, end your turn with one line per task.',
   ];
 }

@@ -70,7 +70,7 @@ function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: bool
   const items: ActionItem[] = [
     ...(copy?.state === 'ready' && copy.projectId ? [{ label: 'Open Your Copy', icon: 'folder' as const, onSelect: () => actions.run({ type: 'view', view: { kind: 'project', id: copy.projectId! } }) }] : []),
     ...(copy?.state === 'failed' ? [{ label: `Copy to This ${computerTitle()} Again`, icon: 'download' as const, onSelect: copyAgain }] : []),
-    { label: 'Leave Project', icon: 'x', danger: true, onSelect: leave },
+    { label: p.chats ? 'Leave These Chats' : 'Leave Project', icon: 'x', danger: true, onSelect: leave },
   ];
   const detail = room
     ? 'in your room'

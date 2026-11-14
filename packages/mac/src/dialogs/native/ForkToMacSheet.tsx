@@ -132,7 +132,8 @@ export function ForkToMacButton({ owner, wsId }: { owner: string; wsId: string }
   const mine = useApp((st) => (fork?.wsId ? findWorkspace(st.projects, fork.wsId) : undefined));
   const ownerName = useApp((st) => st.network.friends.find((f) => f.peerId === owner)?.name ?? 'their');
   const online = useApp((st) => Boolean(st.network.friends.find((f) => f.peerId === owner)?.online));
-  if (!ws || ws.via !== 'mesh' || ws.role !== 'contribute') return null;
+  // A friend's plain chat has no project to fork.
+  if (!ws || ws.via !== 'mesh' || ws.role !== 'contribute' || ws.chat) return null;
   if (fork?.state === 'ready' && mine && !mine.archived) {
     return (
       <Tip label={`Your fork, on ${mine.branch ?? 'its own branch'}`}>

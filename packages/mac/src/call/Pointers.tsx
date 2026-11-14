@@ -1,8 +1,8 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import type { CallPersonView } from '@beluga/shared/calls.js';
-import { Avatar, personColor } from '../components/ui.js';
 import { type Glide, aim, glideAlpha, step } from './glide.js';
-import { POINTER_PATH } from './ink.js';
+import { PointerMark, paintTag } from './PointerMark.js';
+import { type PointerTag, newTag, tagClicked, tagMoved } from './pointer-tag.js';
 import { useCallEngine } from './use-call.js';
 import c from './call.module.css';
 
@@ -15,8 +15,9 @@ interface Box {
 
 /**
  * Everyone else's pointer over a shared screen (BLG-733), for those who chose to show it (Show My
- * Pointer, off until they turn it on): an arrow in their colour, their picture and name beside it,
- * gliding where they point. Pointers come many times a second and each one
+ * Pointer, off until they turn it on): an arrow in their colour with their face beside it, gliding
+ * where they point; their name opens while they click or move and folds away as they rest
+ * (BLG-912). Pointers come many times a second and each one
  * follows its last spot on a spring (call/glide.ts), so it moves smoothly however the network
  * delivers. Positions are written straight to the page on each frame, not through React: a
  * pointer moving never draws the stage again. Yours isn't here: it's your own mouse.
@@ -25,6 +26,7 @@ export function Pointers({ people, me, box }: { people: readonly CallPersonView[
   const engine = useCallEngine();
   const [who, setWho] = useState<readonly string[]>([]);
   const glides = useRef(new Map<string, Glide>());
+  const tags = useRef(new Map<string, PointerTag>());
   const nodes = useRef(new Map<string, HTMLDivElement>());
   const boxRef = useRef(box);
   boxRef.current = box;
@@ -48,9 +50,14 @@ export function Pointers({ people, me, box }: { people: readonly CallPersonView[
         if (alpha <= 0) gone.push(by);
         const el = nodes.current.get(by);
         if (el) place(el, next, alpha);
+        const tag = tags.current.get(by);
+        if (el && tag) paintTag(el, tag, t);
       }
       if (gone.length) {
-        for (const by of gone) glides.current.delete(by);
+        for (const by of gone) {
+          glides.current.delete(by);
+          tags.current.delete(by);
+        }
         setWho((w) => w.filter((x) => !gone.includes(x)));
       }
       raf = glides.current.size ? requestAnimationFrame(frame) : 0;
@@ -61,14 +68,25 @@ export function Pointers({ people, me, box }: { people: readonly CallPersonView[
       raf = requestAnimationFrame(frame);
     };
     const off = engine.onStage((m) => {
-      if (m.k !== 'laser' || m.by === me) return;
+      if (m.by === me) return;
+      // A click opens the name of a pointer that's showing (it never brings one that isn't).
+      if (m.k === 'ping') {
+        const tag = tags.current.get(m.by);
+        if (tag) tags.current.set(m.by, tagClicked(tag, performance.now()));
+        return;
+      }
+      if (m.k !== 'laser') return;
       if (m.x < 0) {
         glides.current.delete(m.by);
+        tags.current.delete(m.by);
         setWho((w) => w.filter((x) => x !== m.by));
         return;
       }
+      const now = performance.now();
       const was = glides.current.get(m.by);
-      glides.current.set(m.by, aim(was, m.x, m.y, performance.now()));
+      glides.current.set(m.by, aim(was, m.x, m.y, now));
+      const tag = tags.current.get(m.by);
+      tags.current.set(m.by, tag ? tagMoved(tag, m.x, m.y, now) : newTag(m.x, m.y, now));
       if (!was) setWho((w) => (w.includes(m.by) ? w : [...w, m.by]));
       run();
     });
@@ -99,25 +117,6 @@ export function Pointers({ people, me, box }: { people: readonly CallPersonView[
           />
         );
       })}
-    </div>
-  );
-}
-
-/**
- * One person's pointer: an arrow in their colour, their picture and name beside it. The same mark
- * on every screen: the others see yours gliding, and you see it right under your own mouse.
- */
-export function PointerMark({ by, name, style, nodeRef }: { by: string; name: string; style?: CSSProperties; nodeRef?: (el: HTMLDivElement | null) => void }) {
-  const color = personColor(by);
-  return (
-    <div className={c.pointer} style={style} ref={nodeRef}>
-      <svg className={c.pointerArrow} viewBox="0 0 16 21" width={16} height={21}>
-        <path d={POINTER_PATH} fill={color} stroke="#ffffff" strokeWidth={1.5} strokeLinejoin="round" />
-      </svg>
-      <span className={c.pointerTag} style={{ background: color }}>
-        <Avatar name={name} id={by} size={16} />
-        <span>{name}</span>
-      </span>
     </div>
   );
 }

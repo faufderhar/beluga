@@ -3,7 +3,8 @@ import type { AppState } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { baseName, sepOf } from '@beluga/shared/os-path.js';
-import type { PathRef } from '@beluga/shared/render/path-refs.js';
+import { relativeCandidates, scratchCandidates, type PathRef } from '@beluga/shared/render/path-refs.js';
+import { SCRATCH_DIR } from '@beluga/shared/scratch-dir.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { useActions } from '../lib/actions.js';
@@ -18,11 +19,15 @@ import { useRevealFileLabel, useRevealLabel } from '../lib/remote-open.js';
 /** The worktree a relative path is in: the one on screen. */
 const worktreeOf = (state: AppState): string | undefined => (state.view.kind === 'workspace' ? state.view.id : undefined);
 
-/** Where a path is on this Mac: a relative one in the worktree on screen, "~" left for the daemon to expand. */
-function fullPath(state: AppState, ref: PathRef): string | undefined {
-  if (!ref.relative) return ref.path;
+/**
+ * Where a path may be on this Mac, in order: a relative one in the worktree on screen (from its root,
+ * then from its .beluga folder), "~" left for the daemon to expand.
+ */
+function fullPaths(state: AppState, ref: PathRef): readonly string[] {
+  if (!ref.relative) return [ref.path];
   const ws = worktreeOf(state);
-  return ws ? localPathOf(state, { owner: state.selfId, share: shareNameOf(ws), path: ref.path.replace(/^\.\//, '').replace(/\/+$/, '') }) : undefined;
+  if (!ws) return [];
+  return relativeCandidates(ref.path).flatMap((path) => localPathOf(state, { owner: state.selfId, share: shareNameOf(ws), path }) ?? []);
 }
 
 /** A file's place in the worktree on screen, when it's in it. */
@@ -32,12 +37,39 @@ function inWorktree(state: AppState, file: string): { ws: string; path: string }
   return ws && root && file.startsWith(root + sepOf(root)) ? { ws, path: file.slice(root.length + 1) } : undefined;
 }
 
+type Found = { path: string; kind: 'file' | 'folder' };
+
+/** How many checkouts in the scratch folder a link looks through (statFiles takes 20 at a time). */
+const MAX_SCRATCH_FOLDERS = 40;
+const STAT_BATCH = 20;
+
+/** The first of these paths that is there, in order. */
+async function firstThere(client: SocketClient, candidates: readonly string[]): Promise<Found | undefined> {
+  for (let i = 0; i < candidates.length; i += STAT_BATCH) {
+    const infos = await client.api.local.statFiles(candidates.slice(i, i + STAT_BATCH));
+    const info = infos.find((x) => x.kind !== 'missing');
+    if (info && info.kind !== 'missing') return { path: info.path, kind: info.kind };
+  }
+  return undefined;
+}
+
+/** A relative path named from a checkout the agent made in the scratch folder (BLG-956). */
+async function inScratchCheckouts(client: SocketClient, ref: PathRef): Promise<Found | undefined> {
+  const state = client.store.getState();
+  const ws = worktreeOf(state);
+  if (!ref.relative || !ws) return undefined;
+  const scratch = localPathOf(state, { owner: state.selfId, share: shareNameOf(ws), path: SCRATCH_DIR });
+  if (!scratch) return undefined;
+  const folders = (await client.api.local.listDirs(scratch)).map((e) => e.name).slice(0, MAX_SCRATCH_FOLDERS);
+  const candidates = scratchCandidates(ref.path, folders).flatMap((path) => localPathOf(state, { owner: state.selfId, share: shareNameOf(ws), path }) ?? []);
+  return firstThere(client, candidates);
+}
+
 /** What the path is on this Mac now (a file, a folder, or nothing), with "~" expanded. */
-async function lookUp(client: SocketClient, ref: PathRef): Promise<{ path: string; kind: 'file' | 'folder' } | undefined> {
-  const at = fullPath(client.store.getState(), ref);
-  if (!at) return undefined;
-  const [info] = await client.api.local.statFiles([at]);
-  return info && info.kind !== 'missing' ? { path: info.path, kind: info.kind } : undefined;
+async function lookUp(client: SocketClient, ref: PathRef): Promise<Found | undefined> {
+  const candidates = fullPaths(client.store.getState(), ref);
+  if (!candidates.length) return undefined;
+  return (await firstThere(client, candidates)) ?? (await inScratchCheckouts(client, ref));
 }
 
 /**
@@ -51,7 +83,9 @@ export function PathLink({ pathRef: ref, children }: { pathRef: PathRef; childre
   // On a computer's page: Download for a file, Copy Path for a folder (BLG-852).
   const revealFile = useRevealFileLabel();
   const revealFolder = useRevealLabel();
-  const missing = (): void => client.store.dispatch({ type: 'toast', text: `Can’t find ${ref.path} on ${thisComputer()}`, level: 'warn' });
+  // A relative path is only looked for in the worktree on screen, so say so, not "on this Mac" (BLG-956).
+  const missing = (): void =>
+    client.store.dispatch({ type: 'toast', text: ref.relative ? `Can’t find ${ref.path} in this worktree` : `Can’t find ${ref.path} on ${thisComputer()}`, level: 'warn' });
   const open = async (): Promise<void> => {
     const found = await lookUp(client, ref);
     if (!found) return missing();

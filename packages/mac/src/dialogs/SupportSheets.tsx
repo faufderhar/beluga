@@ -33,7 +33,7 @@ export function SupportSheets() {
 }
 
 /** True once nothing else has been up for a couple of seconds (latched: the ask's own sheet doesn't undo it). */
-function useCalmMoment(waiting: boolean): boolean {
+export function useCalmMoment(waiting: boolean): boolean {
   const [calm, setCalm] = useState(false);
   const quiet = useRef(0);
   // Ticks only while you're looking at the window (lib/window-active.ts).

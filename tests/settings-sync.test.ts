@@ -14,6 +14,11 @@ afterEach(() => {
 });
 
 let clock = 1_700_000_000_000;
+/** How far the clock moves each time a device reads it (0: everything in the same millisecond). */
+let tick = 10;
+afterEach(() => {
+  tick = 10;
+});
 
 /** One device of yours: its prefs (as the store holds them), its variables, its log. */
 function device(id: string, name: string, role: SyncPeer['role'], start: Partial<Prefs> = {}, vars: Record<string, string> = {}) {
@@ -51,7 +56,7 @@ function device(id: string, name: string, role: SyncPeer['role'], start: Partial
         },
         watch: (l) => (envListeners.add(l), () => void envListeners.delete(l)),
       },
-      now: () => (clock += 10),
+      now: () => (clock += tick),
       log: (line) => lines.push(line),
     });
   let sync = make();
@@ -240,6 +245,20 @@ describe('offline, and conflicts', () => {
     expect(said).toMatchObject({ key: 'theme', label: 'Theme', kept: { name: 'build-box', value: 'mono' }, lost: { name: 'MacBook', value: 'light' } });
     mac.sync.clearConflicts();
     expect(mac.sync.view().conflicts).toEqual([]);
+  });
+
+  it('a change made in the same millisecond as the last sync still counts as made after it (BLG-721)', () => {
+    // A busy machine: the computer takes the Mac's frame and you change the same setting there
+    // within one millisecond (what failed tests/machines-settings-sync.test.ts on CI).
+    tick = 0;
+    const mac = device('aaaa000000000001', 'MacBook', 'app');
+    const box = device('bbbb000000000002', 'build-box', 'computer');
+    exchange(mac, box);
+    box.set({ theme: 'contrast' });
+    mac.set({ theme: 'light' });
+    exchange(mac, box);
+    expect(box.prefs.theme).toBe(mac.prefs.theme);
+    expect(mac.sync.view().conflicts.map((c) => c.key)).toEqual(['theme']);
   });
 });
 

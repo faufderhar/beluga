@@ -131,3 +131,14 @@
 .row:has(.steering) .acts {
   opacity: 1;
 }
+
+/* A message from an agent in another chat: its source, where your own row says nothing. */
+.fromChat {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  opacity: 0.8;
+}

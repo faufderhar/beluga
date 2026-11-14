@@ -237,6 +237,12 @@ export const PHONE: Record<Method, Side> = {
   'env.testDatabase': 'mac',
   'env.importDotenv': 'mac',
   'env.newKeysBack': 'mac',
+  'env.worktree': 'mac',
+  'env.setWorktree': 'mac',
+  'env.carryWorktree': 'mac',
+  'env.overview': 'mac',
+  'env.addToExample': 'mac',
+  'env.exampleSync': 'mac',
   'env.endpoints': 'mac',
   'env.saveEndpoint': 'mac',
   'env.removeEndpoint': 'mac',
@@ -327,6 +333,12 @@ export const PHONE: Record<Method, Side> = {
 
   // ---- supporting Beluga: the star ask is the Mac's (it opens GitHub there)
   'support.answer': 'mac',
+  // ---- usage statistics: the level is the phone's too (Settings); the ask and the onboarding are the Mac's
+  'telemetry.choose': 'phone',
+  'telemetry.answer': 'mac',
+  // A project's Settings sheet is the Mac's.
+  'telemetry.exclude': 'mac',
+  'telemetry.mark': 'mac',
   // ---- your stats: the Usage tab's charts and what the composer saw (the phone keeps its plan meters)
   'stats.get': 'mac',
   'stats.leaderboard': 'mac',
@@ -348,6 +360,10 @@ export const PHONE: Record<Method, Side> = {
 
   // ---- Your Mac's chats (BLG-102): since 1.14 the phone lists them, starts one and deletes one
   // (it's chatting). Which tab is open is the Mac's: the phone opens any chat without moving it.
+  // What a chat's address is now: its chip's title and where it opens.
+  'chats.resolve': 'phone',
+  // A copy of your chat for another person's agent: only from the Mac's composer, after Share copy (BLG-152).
+  'chats.snapshot': 'mac',
   'assistant.newChat': 'phone',
   'assistant.openChat': 'mac',
   'assistant.deleteChat': 'phone',
@@ -525,6 +541,12 @@ export const PHONE: Record<Method, Side> = {
   // A live preview builds and runs code on the Mac for its own window's frame; the phone shows a plain card.
   'preview.open': 'mac',
   'preview.snapshot': 'mac',
+  // An MCP App runs a server's page in the Mac window's frame; the phone shows the step's one line.
+  'apps.get': 'mac',
+  'apps.call': 'mac',
+  'apps.read': 'mac',
+  'apps.message': 'mac',
+  'apps.context': 'mac',
   'files.searchContent': 'mac',
   'files.searchNames': 'mac',
   'files.save': 'mac',

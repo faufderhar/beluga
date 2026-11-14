@@ -622,7 +622,7 @@ test('the header says who the plan waits for; the run mode says what changes; th
   await move('Idempotent webhook retries', 'Refunds and launch');
   // Claude checked: now (and only now) it's yours to pass. Once the demo has run a while, KLD-37's
   // watchdog may have found a demo task that stopped again: resuming it outranks passing (progress.ts nextStep).
-  await expect(head).toContainText(/You: (pass “Safe payments” — The agent checked all 3 criteria|resume BOB-\d+: its agent stopped again)/, { timeout: 20_000 });
+  await expect(head).toContainText(/You: (pass “Safe payments” — The agent checked all 3 criteria|resume BOB-\d+(: its agent stopped again| once you’ve done what it asks))/, { timeout: 20_000 });
   await head.getByRole('button', { name: /Show what happened$/ }).click();
   await expect(feed).toContainText('the agent is checking its pass criteria');
   await expect(feed).toContainText('checked “Safe payments”', { timeout: 20_000 });

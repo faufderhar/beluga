@@ -121,6 +121,11 @@ export class CodexMcp {
     return this.signIns.get(name)?.done ?? Promise.resolve(undefined);
   }
 
+  /** A sign-in started with signIn is waiting for the browser now. */
+  signingIn(name: string): boolean {
+    return this.signIns.has(name);
+  }
+
   /** Turn one of your servers on or off in the config.toml it's set in (yours, or its project's). */
   async setEnabled(cwd: string, name: string, enabled: boolean): Promise<McpTurned> {
     if (!SAFE_NAME.test(name)) return { error: `Codex can’t change ${name} from here. Edit ~/.codex/config.toml instead.` };

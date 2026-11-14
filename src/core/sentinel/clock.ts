@@ -1,4 +1,4 @@
-import type { ScheduleTrigger, Trigger } from './model.js';
+import { type ScheduleTrigger, type Trigger, scheduleMinutes } from './model.js';
 
 /**
  * When a schedule runs (docs/sentinel.md §4, "Clock"): pure, in the Mac's local time (or `tz`,
@@ -12,6 +12,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const MAX_DAYS = 400;
 /** A slot this late is a missed one (the Mac slept, Beluga was closed); the tick runs every 30 s. */
 export const LATE_MS = 5 * 60 * 1000;
+/** How far a day's wall clock can move against the real one (the biggest daylight-saving change is an hour). */
+const SHIFT_MIN = 60;
 
 interface Wall {
   readonly y: number;
@@ -94,8 +96,18 @@ function slotsOn(t: ScheduleTrigger, y: number, m: number, d: number): Array<rea
       for (let x = 0; x < 24; x++) if ((((x - h) % n) + n) % n === 0) out.push([x, min]);
       return out;
     }
+    case 'minutes': {
+      // On the clock, whatever `at` says: every 15 is :00, :15, :30 and :45 of every hour.
+      const n = scheduleMinutes(t);
+      const out: Array<readonly [number, number]> = [];
+      for (let x = 0; x < 24; x++) for (let k = 0; k < 60; k += n) out.push([x, k]);
+      return out;
+    }
   }
 }
+
+/** Minutes since midnight on the wall clock. */
+const wallMinutes = (w: Wall): number => w.h * 60 + w.min;
 
 /**
  * The next time a schedule runs after `after` (its last slot that ran, or when it was turned on);
@@ -105,9 +117,12 @@ export function nextRunAt(trigger: Trigger, after: number | undefined, now: numb
   if (trigger.kind !== 'schedule') return undefined;
   const from = after ?? now;
   const start = wallOf(from, tz);
+  // A schedule with hundreds of slots a day: on the first day, those well before `from` are passed over.
+  const earliest = wallMinutes(start) - SHIFT_MIN;
   for (let i = 0; i < MAX_DAYS; i++) {
     const day = addDays(start.y, start.m, start.d, i);
     for (const [h, min] of slotsOn(trigger, day.y, day.m, day.d)) {
+      if (i === 0 && h * 60 + min < earliest) continue;
       const t = atWall(day.y, day.m, day.d, h, min, tz);
       if (t > from) return t;
     }
@@ -119,10 +134,12 @@ export function nextRunAt(trigger: Trigger, after: number | undefined, now: numb
 export function lastSlotAt(trigger: Trigger, now: number, tz?: string): number | undefined {
   if (trigger.kind !== 'schedule') return undefined;
   const start = wallOf(now, tz);
+  const latest = wallMinutes(start) + SHIFT_MIN;
   for (let i = 0; i < MAX_DAYS; i++) {
     const day = addDays(start.y, start.m, start.d, -i);
     const slots = slotsOn(trigger, day.y, day.m, day.d);
     for (let k = slots.length - 1; k >= 0; k--) {
+      if (i === 0 && slots[k]![0] * 60 + slots[k]![1] > latest) continue;
       const t = atWall(day.y, day.m, day.d, slots[k]![0], slots[k]![1], tz);
       if (t <= now) return t;
     }
@@ -149,15 +166,27 @@ export function dueNow(trigger: Trigger, last: number | undefined, now: number, 
   if (next === undefined) return { kind: 'wait' };
   if (next > now) return { kind: 'wait', at: next };
   const slot = lastSlotAt(trigger, now, opts.tz) ?? next;
-  const late = now - slot > (opts.lateMs ?? LATE_MS);
+  const late = now - slot > (opts.lateMs ?? lateMsOf(trigger));
   const missed = countSlots(trigger, next, slot, opts.tz);
   if (late && trigger.missed === 'skip') return { kind: 'skip', slot, missed };
   return { kind: 'run', slot, late, missed };
 }
 
+const COUNT_MAX = 1000;
+
+/** Never less than two ticks (30 s each): a slot the clock simply reached on its next look isn't a missed one. */
+const LATE_FLOOR_MS = 60_000;
+
+/** When a slot counts as missed: LATE_MS, or half the gap for a schedule every few minutes (never under LATE_FLOOR_MS). */
+function lateMsOf(t: ScheduleTrigger): number {
+  return t.every === 'minutes' ? Math.min(LATE_MS, Math.max(LATE_FLOOR_MS, (scheduleMinutes(t) * 60_000) / 2)) : LATE_MS;
+}
+
 /** How many slots from `first` to `last`, both counted (capped: it's only said in words). */
 function countSlots(trigger: Trigger, first: number, last: number, tz?: string): number {
+  // Every few minutes: counted, not walked (a week asleep is two thousand slots).
+  if (trigger.kind === 'schedule' && trigger.every === 'minutes') return Math.min(COUNT_MAX, Math.floor((last - first) / (scheduleMinutes(trigger) * 60_000)) + 1);
   let n = 0;
-  for (let t: number | undefined = first; t !== undefined && t <= last && n < 1000; t = nextRunAt(trigger, t, t, tz)) n++;
+  for (let t: number | undefined = first; t !== undefined && t <= last && n < COUNT_MAX; t = nextRunAt(trigger, t, t, tz)) n++;
   return n;
 }

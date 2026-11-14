@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EmojiSchema } from '../shared/reactions.js';
-import { BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, NotifySettings, RUN_ON, SETTLE_IDLE_DAYS_MAX, THEMES, ThreadLimitsSchema, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { ARCHIVE_SETTLED_DAYS_MAX, BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, NotifySettings, RUN_ON, SETTLE_IDLE_DAYS_MAX, THEMES, ThreadLimitsSchema, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
 import { CHAT_LIMIT_MAX } from '../shared/chat-limit.js';
@@ -14,6 +14,7 @@ import { STRIPE_API } from './stripe-api.js';
 import { REVENUECAT_API } from './revenuecat-api.js';
 import { TRIAGE_API } from './triage-api.js';
 import { SUPPORT_API } from './support-api.js';
+import { TELEMETRY_API } from './telemetry-api.js';
 import { STATS_API } from './stats-api.js';
 import { WEB_API } from './web-api.js';
 import { DIAGNOSTICS_API } from './diagnostics-api.js';
@@ -32,15 +33,18 @@ import { TEAM_API } from './team-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
 import { PREVIEW_API } from './preview-api.js';
+import { MCP_APPS_API } from './mcp-apps-api.js';
 import { FILES_EDIT_API } from './files-api.js';
 import { COMPANION_API } from './companion-api.js';
 import { MACHINE_API } from './machine-api.js';
 import { ASSISTANT_API } from './assistant-api.js';
+import { CHATS_API } from './chats-api.js';
 import { VOICE_API } from './voice-api.js';
 import { CALLS_API } from './calls-api.js';
 import { TERMINAL_IMPORT_API } from './terminal-import-api.js';
 import { AGENT_TERM_API } from './agent-term-api.js';
 import { HANDOFF_MODES } from '../shared/agent-handoff.js';
+import { FETCH_EVERY_MAX, FETCH_EVERY_MIN } from '../shared/background-fetch.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -55,6 +59,8 @@ const id = z.string().min(1).max(200);
 const channel = z.string().min(1).max(200);
 const path = z.string().max(4096);
 const bool = z.boolean();
+/** A worktree id a screen chose (wt- and 12 of a UUID's characters, as the core makes them). */
+export const WorktreeId = z.string().regex(/^wt-[0-9a-f-]{12}$/);
 const opt = <T extends z.ZodType>(t: T) => t.optional();
 function args(): { args: z.ZodTuple<[], null> };
 function args<T extends [z.ZodType, ...z.ZodType[]]>(...items: T): { args: z.ZodTuple<T, null> };
@@ -65,7 +71,7 @@ function args(...items: z.ZodType[]): { args: z.ZodTuple } {
 export const Location = z.object({ owner: id, share: z.string().min(1).max(200), path });
 
 /** A project (all its worktrees, now and later) or one worktree, shared with a friend over the network. */
-const FriendShare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id), role: WsRole }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
+const FriendShare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id), role: WsRole, whole: opt(bool) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
 const FriendUnshare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
 
 /** Your flags for one agent's command line, refused when Beluga sets one of them itself (shared/agent-args.ts). */
@@ -115,7 +121,11 @@ export const PrefsPatch = z
     chatCategories: bool,
     settleOnMerge: bool,
     settleIdleDays: z.number().int().min(0).max(SETTLE_IDLE_DAYS_MAX),
+    archiveSettledDays: z.number().int().min(0).max(ARCHIVE_SETTLED_DAYS_MAX),
     pushToPr: bool,
+    // Minutes between background fetches; 0: never on its own (#479).
+    fetchEvery: z.union([z.literal(0), z.number().int().min(FETCH_EVERY_MIN).max(FETCH_EVERY_MAX)]),
+    prOnReview: bool,
     scratchFolder: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
@@ -298,7 +308,8 @@ export const API = {
   'workspaces.startChat': args(id, str, opt(path.nullable()), opt(z.object({ terminal: opt(bool), plan: opt(bool) }))),
   // → the new worktree's id. `plan`: its Claude plans first. `tasks`: Plan with Tasks, its conversation is a
   // draft plan's home, written from the first message. `quiet`: started from the phone, the Mac's window stays put.
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), tasks: opt(bool), quiet: opt(bool), agent: opt(AgentRef), terminal: opt(bool) }))),
+  // `id`: the id it gets, chosen by the screen that shows it as being made already (BLG-942; taken only when free).
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), tasks: opt(bool), quiet: opt(bool), agent: opt(AgentRef), terminal: opt(bool), id: opt(WorktreeId) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
@@ -333,7 +344,7 @@ export const API = {
   'workspaces.commit': args(id, opt(z.string().max(2000))),
   'workspaces.merge': args(id),
   'workspaces.prepareRemoval': args(id),
-  'workspaces.applyEnvBack': args(id),
+  'workspaces.applyEnvBack': args(id, opt(bool)),
   // A worktree's env changes stay there: not asked about again until they change (BLG-369).
   'workspaces.keepEnvHere': args(id),
   // Save a worktree's env changes as the project's own variables in Beluga (every worktree gets them; the main .env is left alone).
@@ -400,7 +411,7 @@ export const API = {
   'workbench.createPr': args(id, opt(str)),
   // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
   // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
-  'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool), https: opt(bool), original: opt(bool) }).strict())),
+  'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool), https: opt(bool), original: opt(bool), own: opt(bool) }).strict())),
   // Merge into its base with no PR (BLG-265): commit what's left, land the branch on origin/<base> and push it there → { ok, message, trouble? }.
   'workbench.mergeToBase': args(id, opt(z.object({ https: opt(bool) }).strict())),
   // A fix from a GitHub trouble card (BLG-213), then Create PR again ('pr', 'pr_draft'), Merge into its base ('merge_base') or nothing ('none') → { ok, message, trouble? }.
@@ -463,6 +474,17 @@ export const API = {
   'env.importDotenv': args(id),
   // Keys a worktree adds go into the project's main .env on their own (on by default).
   'env.newKeysBack': args(id, bool),
+  // A worktree's own variables, over its project's (BLG-924) → them, with what it gets from below and its .env.example.
+  'env.worktree': args(id),
+  'env.setWorktree': args(id, EnvRows),
+  // Before a worktree goes: its own variables into the project's (same name: the worktree's wins) → how many.
+  'env.carryWorktree': args(id),
+  // A project's environment in names and counts (its page, the phone): never a value.
+  'env.overview': args(id),
+  // List in the main folder's .env.example what's set and it doesn't list (placeholders, never values) → the names added.
+  'env.addToExample': args(id),
+  // Keys a worktree adds to or removes from its .env reach its .env.example (on by default, BLG-925).
+  'env.exampleSync': args(id, bool),
   // Local and bring-your-own endpoints (BLG-449): → each with its URL and models, never its key (hasKey).
   'env.endpoints': args(),
   // Add (no id) or change one; key unset keeps it, '' removes it → its id.
@@ -526,6 +548,8 @@ export const API = {
   ...REVENUECAT_API,
   // ---- supporting Beluga: the star and coffee asks merges bring (support-api.ts)
   ...SUPPORT_API,
+  // ---- usage statistics: your level (Off, Limited, On), the ask after an update, what's sent (telemetry-api.ts)
+  ...TELEMETRY_API,
   // ---- your stats in the Usage tab: counted by the daemon, pastes and dictation from the Mac (stats-api.ts)
   ...STATS_API,
   // ---- problem reports: the daemon's black box in one redacted file (diagnostics-api.ts)
@@ -554,6 +578,8 @@ export const API = {
   ...GIT_API,
   ...VIEWS_API,
   ...PREVIEW_API,
+  // ---- MCP Apps: a UI tool's app in the chat (mcp-apps-api.ts)
+  ...MCP_APPS_API,
   // ---- your workspace's files: searching their contents, editing, formatting (files-api.ts)
   ...FILES_EDIT_API,
   // ---- your phone: pairing it, removing it, what it asks for (companion-api.ts)
@@ -562,6 +588,8 @@ export const API = {
   ...MACHINE_API,
   // ---- Your Mac's chats, as tabs on the Mac (assistant-api.ts)
   ...ASSISTANT_API,
+  // ---- a chat's address: what it is now (chats-api.ts)
+  ...CHATS_API,
   // ---- speaking instead of typing: the Mac writes it down (voice-api.ts)
   ...VOICE_API,
   // ---- calls in a conversation with friends: voice, screen sharing (calls-api.ts)

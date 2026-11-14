@@ -430,6 +430,10 @@ export const GATED_TOOLS = [
   'env_test_database',
   'env_import_dotenv',
   'env_new_keys_back',
+  'env_carry_worktree',
+  'env_overview',
+  'env_add_to_example',
+  'env_example_sync',
   'env_endpoints',
   'env_remove_endpoint',
   'env_check_endpoints',
@@ -907,6 +911,10 @@ export const TOOL_ACCESS: ToolAccess<ExternalTool> = {
   env_test_database: 'gated',
   env_import_dotenv: 'gated',
   env_new_keys_back: 'gated',
+  env_carry_worktree: 'gated',
+  env_overview: 'gated',
+  env_add_to_example: 'gated',
+  env_example_sync: 'gated',
   env_endpoints: 'gated',
   env_remove_endpoint: 'gated',
   env_check_endpoints: 'gated',
@@ -1002,6 +1010,8 @@ export const NOT_EXPOSED: Readonly<Record<string, 'chat_only' | 'checker_only'>>
   show: 'chat_only',
   show_block: 'chat_only',
   task_define: 'chat_only',
+  // Starting a task from your own agent's conversation: an external agent starts one through board.start, under its grant.
+  task_start: 'chat_only',
   sentinel_stop: 'chat_only',
   sentinel_measure: 'chat_only',
   read_earlier: 'chat_only',
@@ -1010,6 +1020,14 @@ export const NOT_EXPOSED: Readonly<Record<string, 'chat_only' | 'checker_only'>>
   thread_message: 'chat_only',
   thread_status: 'chat_only',
   thread_stop: 'chat_only',
+  // The chat tools act on your own chats (chat links). External agents are refused them.
+  list_chats: 'chat_only',
+  read_chat: 'chat_only',
+  send_to_chat: 'chat_only',
+  wait_for_chat: 'chat_only',
+  // Your own MCP servers, and a sign-in to one opened in your browser (BLG-353): for your own agent's runs only.
+  mcp_servers: 'chat_only',
+  mcp_sign_in: 'chat_only',
   // A milestone's checker records its verdict. An outside agent never passes its own work.
   plan_gate: 'checker_only',
   // A draft's reviewer records what it found (BLG-772): a fresh agent, not the one that wrote it.

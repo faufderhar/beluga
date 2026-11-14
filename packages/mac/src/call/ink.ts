@@ -1,4 +1,5 @@
 import { type Box, INK_FADE_MS, type StageMessage } from '../../../../src/shared/calls.js';
+import { POINTER_FADE_MS, POINTER_IDLE_MS } from './glide.js';
 
 /**
  * What's drawn on a shared screen (BLG-706): everyone's pointers, the boxes they marked, clicks
@@ -66,8 +67,8 @@ export const WRITE_GAP_MS = 2_500;
 export const SKETCH_HOLD_MS = 3_500;
 export const SKETCH_FADE_MS = 1_200;
 
-/** A laser nobody moved for this long goes. */
-const LASER_MS = 2_500;
+/** A laser nobody moved for this long goes: as long as a gliding pointer takes to fade (call/glide.ts). */
+const LASER_MS = POINTER_IDLE_MS + POINTER_FADE_MS;
 /** A stroke that stopped growing this long ago without being finished (its Mac left) fades anyway. */
 const STALE_MS = 8_000;
 /** The most numbers a stroke carries (x, y pairs): the sender stops adding there (parseStage's limit). */

@@ -1258,7 +1258,7 @@
   width: min(340px, calc(100% - 36px));
 }
 
-/* ---- everyone's pointers over a shared screen (BLG-733): an arrow in their colour, their picture and name */
+/* ---- everyone's pointers over a shared screen (BLG-733): an arrow in their colour, their face beside it */
 
 .pointers {
   position: absolute;
@@ -1267,39 +1267,7 @@
   overflow: hidden;
   pointer-events: none;
 }
-.pointer {
-  position: absolute;
-  left: 0;
-  top: 0;
-  will-change: transform;
-  transition: opacity 160ms linear;
-}
-.pointerArrow {
-  position: absolute;
-  left: -1px;
-  top: -1px;
-  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.28));
-}
-.pointerTag {
-  position: absolute;
-  left: 13px;
-  top: 17px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px 2px 2px;
-  border-radius: 11px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-  white-space: nowrap;
-  color: #1d1f24;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-}
-.pointerTag > :first-child {
-  box-shadow: 0 0 0 1.5px #ffffff;
-  border-radius: 50%;
-}
+/* One mark (arrow, face, name) is call/PointerMark.tsx, with its own styles. */
 /* Showing your pointer: the mark everyone sees takes the place of the arrow under your mouse. */
 .stageOwnPointer,
 .stageOwnPointer video,

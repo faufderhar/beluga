@@ -139,3 +139,48 @@ test('the plan chat takes a dropped image, and shows a message’s screenshots a
   await chat.getByRole('button', { name: /Remove image/ }).click({ force: true });
   await expect(tray).toBeHidden();
 });
+
+test('a dropped image waits in the box at once, even while Beluga is too busy to save it yet (BLG-942)', async ({ page }) => {
+  // Beluga's answer to "keep this image" is held back, as a busy daemon would.
+  const held: Array<() => void> = [];
+  await page.routeWebSocket(/.*/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => {
+      const frame = typeof message === 'string' && message.startsWith('{') ? (JSON.parse(message) as { t?: string; method?: string }) : undefined;
+      if (frame?.t === 'call' && frame.method === 'attachments.add') held.push(() => server.send(message));
+      else server.send(message);
+    });
+  });
+  await page.goto('/');
+  await openWork(page, 'Plans');
+  if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
+    await page.getByRole('button', { name: /^Project: / }).click();
+    await page.getByRole('menuitem', { name: /bob-api/ }).click();
+  }
+  await page.locator('main').getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  const chat = page.getByRole('complementary', { name: 'Conversation' });
+  const box = chat.getByRole('textbox', { name: 'Message your agent about the plan' });
+  await box.fill('this one:');
+  await chat.locator('form').evaluate((form, b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }));
+    form.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+    form.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+  }, PNG.toString('base64'));
+
+  // Before Beluga has answered: its thumbnail and its "[…]" are already there, marked as still saving.
+  await expect.poll(() => held.length).toBe(1);
+  const tray = chat.getByRole('group', { name: 'Images to send' });
+  await expect(tray.locator('img')).toHaveCount(1);
+  await expect(box).toHaveValue(/^this one: \[(?:image \d+|\d+ [^\]\n]+)\] $/);
+  await expect(tray.getByRole('button', { name: /^Open image/ })).toHaveAttribute('aria-busy', 'true');
+
+  // Saved: the same thumbnail, now Beluga's, and the words as they were.
+  for (const go of held.splice(0)) go();
+  await expect(tray.getByRole('button', { name: /^Open image/ })).toHaveAttribute('aria-busy', 'false');
+  await expect(tray.locator('img')).toHaveCount(1);
+  await expect(box).toHaveValue(/^this one: \[(?:image \d+|\d+ [^\]\n]+)\] $/);
+  await chat.getByRole('button', { name: /Remove image/ }).click({ force: true });
+  await expect(tray).toBeHidden();
+});

@@ -111,6 +111,8 @@ export interface CompanionHostOptions {
   readonly documents?: DocumentBytes;
   /** Outputs on disk per conversation (sub-agents', the scratch folder's), newest first. */
   readonly outputs?: (channel: string) => readonly ConvOutput[];
+  /** MCP Apps: a Claude card's step lines whose tool has an app (views.ts ViewContext.appSteps). */
+  readonly appSteps?: (channel: string, itemId: string) => ReadonlySet<string>;
   /** A phone looks at these conversations: keep their outputs fresh. */
   readonly watching?: (channels: readonly string[], linked: boolean) => void;
   readonly pusher?: Pusher;
@@ -541,7 +543,7 @@ export class CompanionHost {
     this.voice = opts.voice ?? sharedVoice();
     this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}), ...(opts.documents ? { documents: opts.documents } : {}) });
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
-    this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
+    this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), ...(opts.appSteps ? { appSteps: opts.appSteps } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
     this.control = new PhoneControl({
       sys: opts.system ?? realSystem,
       devices: opts.devices,

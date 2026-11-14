@@ -1,4 +1,5 @@
 import type { FsEntry } from '../../../../src/protocol.js';
+import { chatMentionsIn } from '../../../../src/shared/chat-ref.js';
 import { friendMention } from '../../../../src/ui/suggest.js';
 import { type TaskMention, taskByKey } from '../../../../src/shared/task-refs.js';
 
@@ -9,13 +10,13 @@ import { type TaskMention, taskByKey } from '../../../../src/shared/task-refs.js
  */
 
 /** 'image' only marks "[image N]" in the message box (an image waiting to be sent), 'worktree' a pasted "worktree:wt-…" (BLG-878). */
-export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'image' | 'worktree';
+export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'chat' | 'image' | 'worktree';
 
 export interface MentionRef {
   readonly kind: MentionKind;
   /** What the pill says (without the @). */
   readonly label: string;
-  /** The friend's peer id, the project's or the workspace's id, the task's key. */
+  /** The friend's peer id, the project's or the workspace's id, the task's key, the chat's ref. */
   readonly id?: string;
   /** A folder or file, relative to the worktree it was written in. */
   readonly path?: string;
@@ -81,6 +82,19 @@ export type MentionPiece = { readonly text: string } | { readonly raw: string; r
 
 /** A line of text cut into plain text and the mentions it makes (only those that name something). */
 export function splitMentions(text: string, world: MentionWorld): MentionPiece[] {
+  if (!text.includes('(chat: ')) return splitWords(text, world);
+  const out: MentionPiece[] = [];
+  let last = 0;
+  for (const c of chatMentionsIn(text)) {
+    out.push(...splitWords(text.slice(last, c.start), world));
+    out.push({ raw: c.raw, ref: { kind: 'chat', label: c.title, id: c.ref } });
+    last = c.end;
+  }
+  out.push(...splitWords(text.slice(last), world));
+  return out;
+}
+
+function splitWords(text: string, world: MentionWorld): MentionPiece[] {
   const out: MentionPiece[] = [];
   let last = 0;
   for (const m of text.matchAll(MENTION)) {
@@ -95,6 +109,11 @@ export function splitMentions(text: string, world: MentionWorld): MentionPiece[]
   }
   if (last < text.length) out.push({ text: text.slice(last) });
   return out;
+}
+
+/** The chats the words name, as refs, each once, in order. */
+export function chatsIn(text: string, world: MentionWorld): string[] {
+  return [...new Set(chatMentionsIn(text).map((c) => c.ref))];
 }
 
 /** The tasks the words name ("@BLG-24"), each once, in order. */

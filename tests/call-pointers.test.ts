@@ -2,9 +2,47 @@ import { describe, expect, it } from 'vitest';
 import { GLIDE_S, POINTER_IDLE_MS, aim, glideAlpha, settled, step } from '../packages/mac/src/call/glide.js';
 import { NO_INK, SKETCH_FADE_MS, SKETCH_HOLD_MS, applyInk, boxPoints, hasInk, holdSketch, releaseSketch, sketchBox, tidyInk } from '../packages/mac/src/call/ink.js';
 import { BLANKS_TO_TRUST, MISSES_TO_CLEAN, NEW_PROBE, PROBE_COLORS, type ProbeState, isProbe, judge, probeColor } from '../packages/mac/src/call/leak-probe.js';
+import { TAG_IDLE_MS, TAG_STILL_MOVE, TAG_WAKE_MOVE, newTag, tagClicked, tagMoved, tagOpen } from '../packages/mac/src/call/pointer-tag.js';
 import { parseStage } from '../src/shared/calls.js';
 
 const stroke = (by: string, id: string) => ({ k: 'ink' as const, by, id, color: '#a3c9f7', pts: [0.2, 0.2, 0.4, 0.4], done: true });
+
+describe('a pointer’s face and name (BLG-912)', () => {
+  it('opens as it appears, stays open while it moves, folds into the face once it rests', () => {
+    let t = newTag(0.5, 0.5, 0);
+    expect(tagOpen(t, 0)).toBe(true);
+    t = tagMoved(t, 0.6, 0.5, 1_000);
+    expect(tagOpen(t, 1_000 + TAG_IDLE_MS - 1)).toBe(true);
+    expect(tagOpen(t, 1_000 + TAG_IDLE_MS)).toBe(false);
+  });
+
+  it('the same spot sent again isn’t a move: a pointer resting still folds', () => {
+    const t = newTag(0.5, 0.5, 0);
+    expect(tagMoved(t, 0.5, 0.5, 500)).toBe(t);
+    expect(tagMoved(t, 0.5 + TAG_STILL_MOVE / 2, 0.5, 900)).toBe(t);
+    expect(tagOpen(tagMoved(t, 0.5, 0.5, TAG_IDLE_MS - 10), TAG_IDLE_MS)).toBe(false);
+  });
+
+  it('folded, a hand resting on the mouse doesn’t open it; a real move does', () => {
+    const folded = newTag(0.5, 0.5, 0);
+    const later = TAG_IDLE_MS + 100;
+    const jitter = tagMoved(folded, 0.5 + TAG_WAKE_MOVE / 2, 0.5, later);
+    expect(jitter).toBe(folded);
+    expect(tagOpen(jitter, later)).toBe(false);
+    const moved = tagMoved(folded, 0.5 + TAG_WAKE_MOVE * 2, 0.5, later);
+    expect(tagOpen(moved, later)).toBe(true);
+  });
+
+  it('a click opens it and pops, and an older click never shortens a newer move', () => {
+    const folded = newTag(0.2, 0.2, 0);
+    const later = TAG_IDLE_MS * 2;
+    const clicked = tagClicked(folded, later);
+    expect(tagOpen(clicked, later + 10)).toBe(true);
+    expect(clicked.clickAt).toBe(later);
+    const moved = tagMoved(clicked, 0.4, 0.4, later + 500);
+    expect(tagClicked(moved, later + 100).at).toBe(later + 500);
+  });
+});
 
 describe('pointers glide on the others’ screens (BLG-733)', () => {
   it('appears where it is first seen, then follows smoothly without overshooting', () => {

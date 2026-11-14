@@ -58,6 +58,11 @@ export function routedBackend(fallback: AgentBackend, fallbackRuntime: RuntimeId
     }
     return made.get(id);
   };
+  /** MCP Apps go through Claude Code (the only runtime that records apps). */
+  const claudeOnly = <T>(method: 'mcpReadUiResource' | 'mcpAppTools' | 'mcpAppCall' | 'mcpAppRead', use: (claude: AgentBackend) => Promise<T>): Promise<T> => {
+    const claude = pick('claude');
+    return claude?.[method] ? use(claude) : Promise.reject(new Error('Claude Code isn’t running here.'));
+  };
   return Object.assign(Object.create(fallback) as AgentBackend, {
     run: (input: AgentRunInput) => {
       const id = input.place?.agent?.runtime ?? fallbackRuntime;
@@ -89,6 +94,12 @@ export function routedBackend(fallback: AgentBackend, fallbackRuntime: RuntimeId
     mcpServers: async (projects: readonly string[], runtime?: RuntimeId) => (await pick(runtime ?? fallbackRuntime)?.mcpServers?.(projects)) ?? [],
     mcpSignIn: async (projects: readonly string[], name: string, runtime?: RuntimeId) => (await pick(runtime ?? fallbackRuntime)?.mcpSignIn?.(projects, name)) ?? { error: `${(runtime && RUNTIME_LABELS[runtime]) ?? 'Your agent'} isn’t running here.` },
     mcpSignedIn: (name: string, runtime?: RuntimeId) => pick(runtime ?? fallbackRuntime)?.mcpSignedIn?.(name) ?? Promise.resolve(undefined),
+    // MCP Apps: through Claude Code.
+    mcpReadUiResource: (projects: readonly string[], server: string, uri: string) => claudeOnly('mcpReadUiResource', (c) => c.mcpReadUiResource!(projects, server, uri)),
+    mcpAppTools: (projects: readonly string[], server: string) => claudeOnly('mcpAppTools', (c) => c.mcpAppTools!(projects, server)),
+    mcpAppCall: (projects: readonly string[], server: string, tool: string, args: Readonly<Record<string, unknown>>) => claudeOnly('mcpAppCall', (c) => c.mcpAppCall!(projects, server, tool, args)),
+    mcpAppRead: (projects: readonly string[], server: string, uri: string) => claudeOnly('mcpAppRead', (c) => c.mcpAppRead!(projects, server, uri)),
+    mcpSigningIn: (name: string, runtime?: RuntimeId) => pick(runtime ?? fallbackRuntime)?.mcpSigningIn?.(name) ?? false,
     mcpSetEnabled: async (projects: readonly string[], name: string, enabled: boolean, runtime?: RuntimeId) =>
       (await pick(runtime ?? fallbackRuntime)?.mcpSetEnabled?.(projects, name, enabled)) ?? { error: 'This agent’s servers are turned on and off in its own settings.' },
   });

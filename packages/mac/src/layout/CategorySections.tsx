@@ -9,7 +9,7 @@ import { useClock } from '../lib/window-active.js';
 import { CATEGORY_ORDER, CATEGORY_TITLES, type CategoryEntry, SETTLED_PAGE, categoriesOf, statusWords, visibleRows } from './attention-model.js';
 import { type EntryList, EntryRow, openEntry, useEntryList } from './EntryRow.js';
 import { RowTriageTools, triageItems } from './row-triage-actions.js';
-import { workspaceItems } from './workspace-row.js';
+import { useWorkspaceRowActions } from './workspace-row.js';
 import { ChatsMenu } from './ChatsMenu.js';
 import { SignalMark } from './signal-marks.js';
 import { WorkspaceThreads } from './SubAgents.js';
@@ -66,6 +66,8 @@ export function CategorySections() {
 function CategoryRow({ e, at, list, now }: { e: CategoryEntry; at: number; list: EntryList<CategoryEntry>; now: number }) {
   const actions = useActions();
   const { client } = useBeluga();
+  // A workspace's row does here what it does in a project's list.
+  const workspace = useWorkspaceRowActions(e.kind === 'workspace' ? e.ws : undefined);
   const words = statusWords(e.status, now);
   const loud = e.status.kind === 'need' || e.status.kind === 'back' || e.status.kind === 'stopped';
   const row = (
@@ -74,6 +76,7 @@ function CategoryRow({ e, at, list, now }: { e: CategoryEntry; at: number; list:
       at={at}
       list={list}
       data-category={e.category}
+      workspace={workspace}
       nameBold={e.bold ? m.unreadName : undefined}
       trailing={
         <>
@@ -93,7 +96,7 @@ function CategoryRow({ e, at, list, now }: { e: CategoryEntry; at: number; list:
     />
   );
   // A DM, a group, a sentinel's chat: nothing to do from here.
-  const menu = e.key ? <ActionsContext items={() => menuOf(e, actions.run, client)}>{row}</ActionsContext> : row;
+  const menu = workspace ? <ActionsContext items={workspace.items}>{row}</ActionsContext> : e.key ? <ActionsContext items={() => entryItems(e, actions.run, client)}>{row}</ActionsContext> : row;
   // With threads on, the child threads it started sit under it, as in the project list (none put off till later).
   return e.kind === 'workspace' ? (
     <>
@@ -105,9 +108,7 @@ function CategoryRow({ e, at, list, now }: { e: CategoryEntry; at: number; list:
   );
 }
 
-/** A category row's right-click menu: the workspace row's own, or Open with the category's items. */
-function menuOf(e: CategoryEntry, run: ReturnType<typeof useActions>['run'], client: ReturnType<typeof useBeluga>['client']): ActionItem[] {
-  const state = client.store.getState();
-  if (e.kind === 'workspace') return workspaceItems(state, e.ws, run, client);
-  return [{ label: 'Open', icon: 'chevronRight', onSelect: () => openEntry(e, run, client) }, ...triageItems(state, e.channel, run, client)];
+/** The right-click menu of a row that isn't a workspace (a plan): Open with the category's items. */
+function entryItems(e: CategoryEntry, run: ReturnType<typeof useActions>['run'], client: ReturnType<typeof useBeluga>['client']): ActionItem[] {
+  return [{ label: 'Open', icon: 'chevronRight', onSelect: () => openEntry(e, run, client) }, ...triageItems(client.store.getState(), e.channel, run, client)];
 }

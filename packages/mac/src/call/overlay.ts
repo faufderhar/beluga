@@ -1,4 +1,5 @@
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
+import { avatarNow } from '../lib/avatars.js';
 import { inApp } from '../lib/boot.js';
 import { callChat } from './call-chat.js';
 import { type ChatPop, PopClock, popsNow } from './chat-pops.js';
@@ -33,6 +34,17 @@ export interface OverlayState {
   readonly pops: ReadonlyArray<ChatPop & { readonly age: number }>;
   /** While checking whether the overlay is in the capture: the colour of the probe in its corner. */
   readonly probe?: string;
+  /**
+   * Whose pointer is whose: the others' names and pictures, for the marks beside their arrows
+   * (BLG-912). Sent only when they change (and as the overlay shows): the overlay keeps them.
+   */
+  readonly faces?: Readonly<Record<string, OverlayFace>>;
+}
+
+export interface OverlayFace {
+  readonly name: string;
+  /** Their profile picture, as a data URL; none: their initial. */
+  readonly picture?: string;
 }
 
 /** How long a probe colour stays up before the capture is read (the overlay draws it, then a frame is captured). */
@@ -40,6 +52,8 @@ const PROBE_SETTLE_MS = 600;
 
 /** How often the overlay is brought up to date while something moves (a pointer, a stroke). */
 const SEND_MS = 33;
+/** The faces go along at least this often (see `faces` in OverlayState). */
+const FACES_EVERY_MS = 3_000;
 /** Sharing one window: how often its place is checked again, in case it moved. */
 const FOLLOW_MS = 400;
 
@@ -90,6 +104,18 @@ export function startOverlay(engine: CallEngine, client: SocketClient, conversat
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('set_call_overlay', { state, width, height, surface: surface ?? null, label: label ?? null }).catch(() => undefined);
   };
+  /** The faces the overlay was last given ('' once it's hidden: it gets them again as it shows). */
+  let facesKey = '';
+  let facesAt = 0;
+  const faces = (): Record<string, OverlayFace> => {
+    const out: Record<string, OverlayFace> = {};
+    for (const p of engine.people()) {
+      if (p.me) continue;
+      const picture = avatarNow(client, p.peerId, () => (dirty = true));
+      out[p.peerId] = picture ? { name: p.name, picture } : { name: p.name };
+    }
+    return out;
+  };
   let followedAt = 0;
   const stop = repeat(() => {
     const now = performance.now();
@@ -100,6 +126,7 @@ export function startOverlay(engine: CallEngine, client: SocketClient, conversat
       say(false);
       if (shown) {
         shown = false;
+        facesKey = '';
         void send(null);
       }
       return;
@@ -141,6 +168,12 @@ export function startOverlay(engine: CallEngine, client: SocketClient, conversat
     dirty = false;
     shown = true;
     const checking = wholeScreen && probe.verdict === 'unknown';
+    const who = checking ? undefined : faces();
+    const faceKey = who ? Object.entries(who).map(([id, f]) => `${id}:${f.name}:${f.picture?.length ?? 0}`).join('|') : facesKey;
+    // Again now and then too: an overlay window that opened after they went still needs them.
+    const newFaces = who && (faceKey !== facesKey || now - facesAt > FACES_EVERY_MS) ? who : undefined;
+    facesKey = faceKey;
+    if (newFaces) facesAt = now;
     // One window's ink and frame go too: the shell drops them if it can't find the window.
     const state: OverlayState = {
       now,
@@ -148,6 +181,7 @@ export function startOverlay(engine: CallEngine, client: SocketClient, conversat
       ...(!checking ? { ink } : {}),
       ...(checking ? { probe: probeColor(probe) } : {}),
       pops: checking ? [] : pops.map((p) => ({ ...p, age: wall - p.at })),
+      ...(newFaces ? { faces: newFaces } : {}),
     };
     void send(state, settings.width ?? 0, settings.height ?? 0, wholeScreen ? 'monitor' : 'window', shareTrack.label);
   }, SEND_MS);

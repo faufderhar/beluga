@@ -258,7 +258,7 @@ function WorkspaceDetails({ id }: { id: string }) {
         </Panel>
       ) : null}
       <ProjectTeam projectId={ws.projectId} />
-      <Panel title="Working here" action={<Button size="small" variant="quiet" icon="plus" aria-label="Share this worktree" onClick={() => actions.run({ type: 'ws', id: ws.id, action: 'share' })} />}>
+      <Panel title="Working here" action={<Button size="small" variant="quiet" icon="plus" aria-label={ws.kind === 'chat' ? 'Share this chat' : 'Share this worktree'} onClick={() => actions.run({ type: 'ws', id: ws.id, action: 'share' })} />}>
         {members.length ? (
           members.map(([peerId, role]) => {
             const name = state.peers.find((p) => p.peerId === peerId)?.name ?? state.friends.find((f) => f.peerId === peerId)?.name ?? 'someone';

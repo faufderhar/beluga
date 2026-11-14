@@ -11,6 +11,7 @@ import { createOpenCodeRuntime } from '../agent/runtime/opencode/index.js';
 import { ScriptedOpenCode } from '../agent/runtime/opencode/scripted.js';
 import { createGrokRuntime } from '../agent/runtime/grok/index.js';
 import { ScriptedGrok } from '../agent/runtime/grok/scripted.js';
+import { DEMO_PROVIDER_MODELS, demoDescription } from '../agent/runtime/opencode/demo-models.js';
 import { createCopilotRuntime } from '../agent/runtime/copilot/index.js';
 import { ScriptedCopilot } from '../agent/runtime/copilot/scripted.js';
 import { AUTO_MODEL } from '../agent/runtime/copilot/status.js';
@@ -36,6 +37,7 @@ import { launchFriendShares } from '../core/friend-share/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchRevenueCat } from '../core/revenuecat-launch.js';
 import { launchSupport } from '../core/merge-counter.js';
+import { launchTelemetry } from '../telemetry/launch.js';
 import { launchStats } from '../core/stats/counter.js';
 import { launchLeaderboard } from '../core/leaderboard/launch.js';
 import { claudeHome, launchClaudeCode } from '../core/claude-code/launch.js';
@@ -83,10 +85,12 @@ interface Room {
 
 const roomInvite = (room: Room): string | undefined => (room.reach ? encodeInvite({ ...room.reach, secret: room.secret }) : undefined);
 
-/** The demo's OpenCode: ready, with the scripted one's models. */
+/** The demo's OpenCode: ready, with the scripted one's models, and DeepSeek's, Kimi's and OpenRouter's (BLG-945). */
 function demoOpenCode(): AgentRuntime {
   const scripted = new ScriptedOpenCode({ stepMs: 600 });
-  const models = scripted.models.map((m) => ({ value: m.value, label: m.name.split('/').at(-1) ?? m.name, description: m.value.split('/')[0] ?? '', ...(m.efforts.length ? { efforts: m.efforts } : {}) }));
+  scripted.models = [...scripted.models, ...DEMO_PROVIDER_MODELS.map((m) => ({ value: m.value, name: m.name, efforts: [...m.efforts] }))];
+  const context = new Map(DEMO_PROVIDER_MODELS.map((m) => [m.value, m.context]));
+  const models = scripted.models.map((m) => ({ value: m.value, label: m.name.split('/').at(-1) ?? m.name, description: demoDescription({ value: m.value, ...(context.has(m.value) ? { context: context.get(m.value) } : {}) }), ...(m.efforts.length ? { efforts: m.efforts } : {}) }));
   return createOpenCodeRuntime({ connect: scripted.connect, resolve: async () => undefined, status: async () => ({ state: 'ready', models }) });
 }
 
@@ -250,7 +254,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
 }
 
 /** What only a screen (or the process showing it) can do for the core. */
-export type CoreHooks = Pick<SessionOptions, 'copy' | 'desktopNotify' | 'zoom' | 'raise' | 'open' | 'shutdown'>;
+export type CoreHooks = Pick<SessionOptions, 'copy' | 'desktopNotify' | 'zoom' | 'raise' | 'open' | 'openPage' | 'shutdown'>;
 
 export interface Core {
   readonly config: Config;
@@ -392,6 +396,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopEarnings = (): void => undefined;
   let stopRevenueCat = (): void => undefined;
   let stopSupport = (): void => undefined;
+  let stopTelemetry = async (): Promise<void> => undefined;
   let stopStats = (): void => undefined;
   let stopLeaderboard = (): void => undefined;
   let stopClaudeCode = (): void => undefined;
@@ -419,6 +424,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopRevenueCat = launchRevenueCat({ session, store, demo: Boolean(demo) });
     // Merged work made in Beluga, counted once per branch: the first and fifth merge ask for a star and a coffee.
     if (opts.network) stopSupport = launchSupport({ session, store, demo: Boolean(demo), asks: belugaEnv('DEMO_ASKS') });
+    // Usage statistics, when you chose to share them: only Beluga's own releases can send (src/telemetry).
+    if (opts.network) stopTelemetry = launchTelemetry({ session, store, demo: Boolean(demo), asks: belugaEnv('DEMO_ASKS') });
     // Your stats for the Usage tab: prompts, agent time, worktrees, pull requests, by project and agent.
     // BELUGA_DEMO_STATS=sparse: someone with only Claude, a plan without a 5-hour limit, no GitHub CLI, never dictating.
     if (opts.network) stopStats = launchStats({ session, store, demo: Boolean(demo), sparse: belugaEnv('DEMO_STATS') === 'sparse' });
@@ -514,6 +521,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopEarnings();
     stopRevenueCat();
     stopSupport();
+    await stopTelemetry();
     stopLeaderboard();
     stopStats();
     stopClaudeCode();

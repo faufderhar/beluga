@@ -6,6 +6,7 @@ import { useActions } from '../lib/actions.js';
 import { useBeluga } from '../lib/beluga.js';
 import { Icon, type IconName } from './Icon.js';
 import { guiHint } from '../lib/gui-copy.js';
+import { ContextRoot } from './ContextRoot.js';
 import s from './SpecMenu.module.css';
 
 /**
@@ -78,14 +79,14 @@ export function SpecDropdown({ menu, children, align = 'start', extra, hide }: {
 export function SpecContext({ menu, children, extra, hide }: { menu: MenuKind | undefined; children: ReactNode; extra?: readonly ActionItem[]; hide?: (id: string) => boolean }) {
   if (!menu) return <>{children}</>;
   return (
-    <Context.Root modal={false}>
+    <ContextRoot>
       <Context.Trigger asChild>{children}</Context.Trigger>
       <Context.Portal>
         <Context.Content className={s.menu} onClick={stayInMenu} onCloseAutoFocus={keepFocus} collisionPadding={8}>
           <Items menu={menu} Item={Context.Item as unknown as typeof Dropdown.Item} Separator={Context.Separator as unknown as typeof Dropdown.Separator} kit={CONTEXT_SUB} {...(extra ? { extra } : {})} {...(hide ? { hide } : {})} />
         </Context.Content>
       </Context.Portal>
-    </Context.Root>
+    </ContextRoot>
   );
 }
 
@@ -173,14 +174,14 @@ function ActionRows({ items, Item, Separator, kit = DROPDOWN_SUB }: { items: rea
  */
 export function ActionsContext({ items, children }: { items: readonly ActionItem[] | (() => readonly ActionItem[]); children: ReactNode }) {
   return (
-    <Context.Root modal={false}>
+    <ContextRoot>
       <Context.Trigger asChild>{children}</Context.Trigger>
       <Context.Portal>
         <Context.Content className={s.menu} onClick={stayInMenu} onCloseAutoFocus={keepFocus} collisionPadding={8}>
           <LazyRows items={items} />
         </Context.Content>
       </Context.Portal>
-    </Context.Root>
+    </ContextRoot>
   );
 }
 

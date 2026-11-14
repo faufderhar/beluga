@@ -42,6 +42,12 @@ export class ScriptedCodex {
   readonly threads = new Set<string>();
   /** Answers for server requests Codex sends (approvals), by item. */
   readonly approvals: unknown[] = [];
+  /** A tool call Codex makes (approved by the server's setting, or by your answer to its question) reaches the server here. */
+  mcpCall?: (server: string, tool: string, args: Record<string, unknown>) => Promise<unknown>;
+  /** MCP tool calls Codex refused without asking anyone (`server/tool`): approval policy `never`, or no such server on the thread. */
+  readonly refused: string[] = [];
+  /** Each thread as it was last opened or turned: its config overrides and approval policy (MCP calls follow them). */
+  private readonly threadSettings = new Map<string, { config: Record<string, unknown>; approvalPolicy?: unknown }>();
   /** Set: a command step asks for approval before running (the prompt's words start with "ask"). */
   connections = 0;
   /** Signed in (account/read says who), or not. */
@@ -55,7 +61,7 @@ export class ScriptedCodex {
    * each answers mcpServerStatus/list (shapes recorded from codex-cli 0.166): a web one waiting
    * for a sign-in, a working one with its tools, one that won't start. A plugin's has no config entry.
    */
-  mcpServers: Record<string, { url?: string; command?: string; enabled: boolean }> = {
+  mcpServers: Record<string, { url?: string; command?: string; enabled: boolean; default_tools_approval_mode?: string }> = {
     figma: { url: 'https://figma.example/mcp', enabled: true },
     github: { command: 'github-mcp', enabled: true },
     sentry: { command: '/nonexistent/sentry-mcp', enabled: true },
@@ -168,7 +174,18 @@ export class ScriptedCodex {
         notify('item/started', { threadId, turnId, item });
         this.approvals.push(await ask('item/fileChange/requestApproval', { threadId, turnId, itemId: item.id, reason: 'outside the workspace' }));
       }
-      // Asks also when the request asked, under a note after it (a plan's turn ends with its note).
+      // Calls also when the request asked, under a note after it (a plan's turn ends with its note).
+      // `mcp T` (or `mcp S/T`): calls tool T of server S (`beluga` unless named), one that doesn't say it only reads;
+      // a turn told to `call mcp__S__T` calls it too (a plan's task_define). `question`: a server's own question to the user.
+      const planned = /^Request from [^\n]*:\n(mcp \S+)/m.exec(text)?.[1];
+      const told = /\bcall mcp__([\w-]+?)__([\w-]+)/.exec(words);
+      if (words.startsWith('mcp ') || planned || told) {
+        const named = (planned ?? words).slice(4);
+        const [server, tool] = told ? [told[1]!, told[2]!] : named.includes('/') ? (named.split('/', 2) as [string, string]) : ['beluga', named];
+        await this.callTool(threadId, turnId, server, tool, ask);
+      } else if (words.startsWith('question')) {
+        this.approvals.push(await ask('mcpServer/elicitation/request', { threadId, turnId, serverName: 'beluga', mode: 'form', _meta: null, message: 'What is your name?', requestedSchema: { type: 'object', properties: { name: { type: 'string' } } } }));
+      }
       if (words.startsWith('ask') || /^Request from [^\n]*:\nask/m.test(text)) {
         const verdict = (await ask('item/commandExecution/requestApproval', { threadId, turnId, itemId: cmd, command: `echo ${words}`, cwd: process.cwd() })) as { decision?: string } | undefined;
         this.approvals.push(verdict);
@@ -203,13 +220,17 @@ export class ScriptedCodex {
           if (this.unelevatedWindows && deniesReads(params)) throw new Error(UNELEVATED_WINDOWS);
           const id = randomUUID();
           this.threads.add(id);
+          this.threadSettings.set(id, { config: (params.config ?? {}) as Record<string, unknown>, approvalPolicy: params.approvalPolicy });
           return { thread: { id }, model: 'gpt-fake' };
         }
         case 'thread/resume':
           if (!this.threads.has(String(params.threadId))) throw new Error('no rollout found');
           if (this.unelevatedWindows && deniesReads(params)) throw new Error(UNELEVATED_WINDOWS);
+          this.threadSettings.set(String(params.threadId), { config: (params.config ?? {}) as Record<string, unknown>, approvalPolicy: params.approvalPolicy });
           return { thread: { id: params.threadId }, model: 'gpt-fake' };
         case 'turn/start': {
+          const settings = this.threadSettings.get(String(params.threadId));
+          if (settings && params.approvalPolicy !== undefined) settings.approvalPolicy = params.approvalPolicy;
           const id = randomUUID();
           const input = params.input as Array<{ type: string; text?: string }>;
           setImmediate(() => void turn(String(params.threadId), id, input.find((i) => i.type === 'text')?.text ?? ''));
@@ -302,6 +323,37 @@ export class ScriptedCodex {
     await handshake(rpc);
     return conn;
   };
+
+  /**
+   * One MCP tool call the way codex-cli decides it (0.163+): a server set to
+   * `default_tools_approval_mode = "approve"` (in ~/.codex or the thread's config) runs it with no
+   * question, whatever the approval policy; otherwise, as the tool doesn't say it only reads, the
+   * approval policy `never` refuses it without asking, and any other asks first
+   * (`mcpServer/elicitation/request`). A server the thread doesn't have, or has turned off, refuses it.
+   */
+  private async callTool(threadId: string, turnId: string, server: string, tool: string, ask: (method: string, params: object) => Promise<unknown>): Promise<void> {
+    const settings = this.threadSettings.get(threadId) ?? { config: {} };
+    const mounted = settings.config[`mcp_servers.${server}`] as { default_tools_approval_mode?: unknown } | undefined;
+    const yours = this.mcpServers[server];
+    const on = Boolean(mounted) || (Boolean(yours?.enabled) && settings.config[`mcp_servers.${server}.enabled`] !== false);
+    const mode = mounted?.default_tools_approval_mode ?? settings.config[`mcp_servers.${server}.default_tools_approval_mode`] ?? yours?.default_tools_approval_mode;
+    const args = { peer: 'mia', command: 'uptime' };
+    if (!on || (mode !== 'approve' && settings.approvalPolicy === 'never')) return void this.refused.push(`${server}/${tool}`);
+    if (mode !== 'approve') {
+      const verdict = (await ask('mcpServer/elicitation/request', {
+        threadId,
+        turnId,
+        serverName: server,
+        mode: 'form',
+        _meta: { codex_approval_kind: 'mcp_tool_call', persist: ['session', 'always'], tool_description: 'A tool', tool_params: args, tool_params_display: [] },
+        message: `Allow the ${server} MCP server to run tool "${tool}"?`,
+        requestedSchema: { type: 'object', properties: {} },
+      })) as { action?: string } | undefined;
+      this.approvals.push(verdict);
+      if (verdict?.action !== 'accept') return;
+    }
+    await this.mcpCall?.(server, tool, args);
+  }
 
   /** mcpServerStatus/list's data: each configured server tried (a turned-off one isn't), and a plugin's. */
   private mcpStatuses(): unknown[] {

@@ -288,6 +288,36 @@ describe('WorkspaceController', () => {
     expect(toasts.at(-1)).toMatch(/^Couldn't create the worktree: There's no branch called origin\/no-such-branch/);
   });
 
+  it('shows a fork at once, with the conversation so far, and it carries the uncommitted work and Scratch', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'source'))!;
+    store.dispatch({ type: 'system', channel: `ws:${ws.id}`, text: 'said before the fork' });
+    writeFileSync(path.join(ws.path, 'wip.txt'), 'wip');
+    mkdirSync(path.join(ws.path, '.beluga', 'scratch'), { recursive: true });
+    writeFileSync(path.join(ws.path, '.beluga', 'scratch', 'shot.png'), 'png');
+
+    const forking = ctl.fork(ws.id, 'source v2');
+    // Before any git work: its row (a fork of the source) and its page, with the conversation already there.
+    const row = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'source-v2')!;
+    expect(row).toMatchObject({ pending: true, forkedFrom: ws.id });
+    expect(screen.getState().view).toEqual({ kind: 'workspace', id: row.id, tab: 'chat' });
+    expect(store.getState().log.some((l) => l.channel === `ws:${row.id}` && l.type === 'system' && l.text === 'said before the fork')).toBe(true);
+
+    const fork = (await forking)!;
+    expect(fork.id).toBe(row.id);
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === fork.id)?.pending).toBeUndefined();
+    expect(readFileSync(path.join(fork.path, 'wip.txt'), 'utf8')).toBe('wip');
+    expect(readFileSync(path.join(fork.path, '.beluga', 'scratch', 'shot.png'), 'utf8')).toBe('png');
+    const lines = store.getState().log.filter((l) => l.channel === `ws:${fork.id}` && l.type === 'system').map((l) => (l.type === 'system' ? l.text : ''));
+    expect(lines.filter((t) => t === 'said before the fork')).toHaveLength(1); // shown early, not twice once loaded
+    expect(lines.at(-1)).toMatch(/^Forked from “source” with its commits, uncommitted changes, Scratch and conversation/);
+
+    // It can't be made: the row and its page go again, and the toast says why.
+    const failing = ctl.fork('missing', 'ghost');
+    expect(await failing).toBeUndefined();
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.some((w) => w.name === 'ghost')).toBe(false);
+    expect(toasts.at(-1)).toMatch(/^Couldn't fork/);
+  });
+
   it('archives and deletes out of the sidebar at once; a failure puts it back and says so', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'away'))!;
     const live = () => store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id);

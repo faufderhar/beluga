@@ -317,9 +317,10 @@ export function envHashes(dir: string, files: readonly string[]): Record<string,
 /**
  * Bring a worktree's env changes back into the main folder: changed and added keys are
  * written into the main file (keeping its other keys and comments); other files are copied.
- * Removed keys are left alone, so nothing in the main folder is deleted by surprise.
+ * Removed keys are left alone, so nothing in the main folder is deleted by surprise, unless
+ * `removed` says to take them out too (you ticked it, archiving or deleting the worktree).
  */
-export function applyEnvChanges(worktree: string, main: string, changes: readonly EnvChange[]): void {
+export function applyEnvChanges(worktree: string, main: string, changes: readonly EnvChange[], opts: { readonly removed?: boolean } = {}): void {
   for (const c of changes) {
     const src = path.join(worktree, c.file);
     const dst = path.join(main, c.file);
@@ -330,7 +331,8 @@ export function applyEnvChanges(worktree: string, main: string, changes: readonl
     const mine = parseDotenv(readFileSync(src, 'utf8'));
     const lines = readFileSync(dst, 'utf8').split('\n');
     const keys = new Set([...c.added, ...c.changed]);
-    const updated = lines.map((line) => {
+    const gone = new Set(opts.removed ? c.removed : []);
+    const updated = lines.filter((line) => !gone.has(/^\s*(?:export\s+)?([A-Za-z_][\w.-]*)\s*=/.exec(line)?.[1] ?? '')).map((line) => {
       const m = /^\s*(?:export\s+)?([A-Za-z_][\w.-]*)\s*=/.exec(line);
       const key = m?.[1];
       if (key && keys.has(key)) {

@@ -1,12 +1,21 @@
+import type { CanUseTool, HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it, vi } from 'vitest';
+import { createClaudeBackend } from '../src/agent/runtime/claude/runner.js';
 import { contextEvent } from '../src/agent/runtime/codex/events.js';
-import { codexComplete } from '../src/agent/runtime/codex/complete.js';
+import { NOT_ALLOWED, codexComplete, sideCallGate } from '../src/agent/runtime/codex/complete.js';
 import { TOOL_TIMEOUT_SEC, clampEffort, createCodexBackend, mcpConfig, pickCodexModel, smallCodexModel } from '../src/agent/runtime/codex/runner.js';
 import type { Model } from '../src/agent/runtime/codex/protocol.js';
 import { runInstructions } from '../src/agent/run-instructions.js';
-import type { AgentRunInput, FollowUp, Steer } from '../src/agent/types.js';
+import type { ToolGate, ToolHost } from '../src/agent/tool-host.js';
+import type { AgentRunInput, BoardTools, FollowUp, Steer } from '../src/agent/types.js';
+import { FakeClaude } from './fake-claude.js';
 import { FakeCodex } from './fake-codex.js';
 import { room } from './runtime-conformance.js';
+
+// Claude Code behind a scripted Agent SDK `query` (fake-claude.ts), for the same runs on Claude.
+const fakeClaude = vi.hoisted(() => ({ query: undefined as unknown as (args: unknown) => unknown }));
+vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({ ...(await original<object>()), query: (args: unknown) => fakeClaude.query(args) }));
+vi.mock('../src/agent/claude-code.js', async (original) => ({ ...(await original<object>()), claudeCodeReady: async () => undefined }));
 
 /** BLG-504: a Codex conversation behaves like Claude's (plan mode, asking, tools, the meter, models, wording). */
 
@@ -89,7 +98,97 @@ describe('"My agent asks before commands" on Codex', () => {
   });
 });
 
+/** What Beluga answers when a run's agent calls one of its tools: allowed (undefined) or why not. */
+type Decision = string | undefined;
+const ARGS = { peer: 'mia', command: 'uptime' };
+
+/** The Codex run: its tool calls go through Codex (fake-codex.ts) to the tool server's gate, as the real stdio server's do. */
+async function codexDecides(tool: string, run: Partial<AgentRunInput>): Promise<Decision[]> {
+  const codex = new FakeCodex();
+  let gate: ToolGate = async () => 'not mounted';
+  let mounted: string[] = [];
+  const toolHost = { mount: async (suites: Record<string, unknown>, g: ToolGate) => ((gate = g), (mounted = Object.keys(suites)), { token: 't', servers: Object.fromEntries(mounted.map((n) => [n, { type: 'stdio', command: 'x', args: [], env: {} }])), close: () => undefined }) } as unknown as ToolHost;
+  const decisions: Decision[] = [];
+  codex.mcpCall = async (server, name, args) => void decisions.push(mounted.includes(server) ? await gate(`mcp__${server}__${name}`, args) : 'not Beluga’s');
+  await createCodexBackend({ cwd, autoEdit: true, additionalDirectories: [], bridge: room, connect: codex.connect, toolHost }).run(input(`mcp ${tool}`, run));
+  // A call Codex refused itself never reached Beluga: that's a difference too.
+  return [...decisions, ...codex.refused.map((t) => `refused by Codex: ${t}`)];
+}
+
+/** The Claude run: Claude Code asks its PreToolUse hook, then canUseTool, before an MCP tool runs. */
+async function claudeDecides(tool: string, run: Partial<AgentRunInput>): Promise<Decision[]> {
+  const claude = new FakeClaude();
+  fakeClaude.query = claude.query as (args: unknown) => unknown;
+  await createClaudeBackend({ cwd, autoEdit: true, additionalDirectories: [], bridge: room }).run(input('hello', run));
+  const options = claude.options[0]!;
+  const name = `mcp__${tool.replace('/', '__')}`;
+  const hook = options.hooks!.PreToolUse![0]!.hooks[0] as HookCallback;
+  const said = (await hook({ hook_event_name: 'PreToolUse', tool_name: name, tool_input: ARGS, tool_use_id: 't1', session_id: 's', transcript_path: '', cwd } as never, 't1', { signal: new AbortController().signal })) as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } };
+  if (said.hookSpecificOutput?.permissionDecision === 'deny') return [said.hookSpecificOutput.permissionDecisionReason];
+  if (said.hookSpecificOutput?.permissionDecision === 'allow') return [undefined];
+  const verdict = await (options.canUseTool as CanUseTool)(name, ARGS, { signal: new AbortController().signal, toolUseID: 't1' } as never);
+  return [verdict?.behavior === 'deny' ? verdict.message : undefined];
+}
+
+describe("Beluga's tools get the same answer on Codex as on Claude", () => {
+  /** A friend's limits (gateway's vetTool stands in): their run may not reach your other machines. */
+  const friendLimits = (name: string): string | undefined => (name === 'mcp__beluga__run_on_peer' ? 'Your friend’s task can’t run commands on your machines.' : undefined);
+  const kinds: Array<[string, Partial<AgentRunInput>]> = [
+    ['your own run', { scope: 'full' }],
+    ['a plan being made', { scope: 'full', plan: true }],
+    ["a friend's task", { scope: 'folder', viaAgent: true, vetTool: friendLimits, boardAsks: 'writes' }],
+    ["a full-trust friend's task", { scope: 'full', viaAgent: true, vetTool: friendLimits }],
+    ['an external agent below Full trust', { scope: 'folder', asOwner: true }],
+  ];
+  const tools = ['beluga_board/task_define', 'beluga_board/task_get', 'beluga/run_on_peer', 'beluga/send_chat'];
+
+  it.each(kinds.flatMap(([kind, run]) => tools.map((tool) => [kind, tool, run] as const)))('%s: %s', async (_kind, tool, run) => {
+    for (const answer of [true, false]) {
+      const asked = { codex: [] as string[], claude: [] as string[] };
+      const runFor = (who: 'codex' | 'claude'): Partial<AgentRunInput> => ({
+        ...run,
+        board: {} as BoardTools,
+        canUseTool: async (name) => (name.startsWith('mcp__') && asked[who].push(name), answer),
+      });
+      const codex = await codexDecides(tool, runFor('codex'));
+      const claude = await claudeDecides(tool, runFor('claude'));
+      expect(codex).toEqual(claude);
+      expect(asked.codex).toEqual(asked.claude);
+    }
+  });
+
+  it('a plan for a task: the task_define Codex is told to call reaches the gate and runs, as on Claude', async () => {
+    const codex = new FakeCodex();
+    const ran: Array<[string, Decision]> = [];
+    let gate: ToolGate = async () => 'not mounted';
+    const toolHost = { mount: async (suites: Record<string, unknown>, g: ToolGate) => ((gate = g), { token: 't', servers: Object.fromEntries(Object.keys(suites).map((n) => [n, { type: 'stdio', command: 'x', args: [], env: {} }])), close: () => undefined }) } as unknown as ToolHost;
+    codex.mcpCall = async (server, tool, args) => void ran.push([`mcp__${server}__${tool}`, await gate(`mcp__${server}__${tool}`, args)]);
+    let defined = false;
+    const askUser = vi.fn(async () => ({ kind: 'plan' as const, approve: true, feedback: '' }));
+    await createCodexBackend({ cwd, autoEdit: true, additionalDirectories: [], bridge: room, connect: codex.connect, toolHost }).run(
+      input('hello', { plan: true, askUser, board: {} as BoardTools, planTask: { needsDefinition: () => !defined, approved: () => void (defined = true) } }),
+    );
+    expect(codex.sent('thread/start')[0]!.approvalPolicy).toBe('never');
+    expect(ran).toEqual([['mcp__beluga_board__task_define', undefined]]);
+    expect(codex.refused).toEqual([]);
+    expect(await claudeDecides('beluga_board/task_define', { plan: true })).toEqual([undefined]);
+  });
+
+  it("a quick side call: its vetTool decides, else only the tools it allows run, as Claude Code's allowedTools", () => {
+    expect(sideCallGate({ allowedTools: ['mcp__beluga_chat__read_earlier'] }, 'mcp__beluga_chat__read_earlier', {})).toBeUndefined();
+    expect(sideCallGate({ allowedTools: ['mcp__beluga_chat__read_earlier'] }, 'mcp__beluga_chat__other', {})).toBe(NOT_ALLOWED);
+    expect(sideCallGate({}, 'mcp__beluga_chat__read_earlier', {})).toBe(NOT_ALLOWED);
+    expect(sideCallGate({ vetTool: () => ({ allow: true, reason: 'looks' }) }, 'mcp__beluga_chat__other', {})).toBeUndefined();
+    expect(sideCallGate({ allowedTools: ['t'], vetTool: () => ({ allow: false, reason: 'no' }) }, 't', {})).toBe('no');
+  });
+});
+
 describe("Beluga's tools on Codex", () => {
+  it.each(['beluga_plan', 'beluga_board'])("lets %s calls reach Beluga's own permission gate", (name) => {
+    const config = mcpConfig({ [name]: { type: 'stdio', command: 'node', args: [], env: {} } });
+    expect(config[`mcp_servers.${name}`]).toMatchObject({ default_tools_approval_mode: 'approve' });
+  });
+
   it('waits long enough for a tool that waits on you or a friend (tool_timeout_sec)', async () => {
     expect(TOOL_TIMEOUT_SEC).toBeGreaterThanOrEqual(900);
     expect(mcpConfig({ beluga: { type: 'stdio', command: 'node', args: [], env: {} } })['mcp_servers.beluga']).toMatchObject({ tool_timeout_sec: TOOL_TIMEOUT_SEC });

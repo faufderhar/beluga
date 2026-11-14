@@ -258,6 +258,9 @@ export class Machines {
     await Promise.all([this.states.flush(), this.files.flush()]);
     for (const set of this.links.values()) for (const s of set) s.close(1001, 'Beluga is shutting down');
     this.joining?.decide?.(false);
+    // An Add Over SSH still open: its `ssh … beluga pair --computer` ends with us, not when the pairing there expires.
+    this.ssh?.stop();
+    this.ssh = undefined;
     await this.pairing.cancel('Beluga on this computer is shutting down');
   }
 
@@ -555,6 +558,10 @@ export class Machines {
   async sshPairStart(host: string): Promise<ComputerOffer> {
     this.ssh?.stop();
     const pairing = await openSshPairing(host, { ssh: this.opts.ssh ?? 'ssh', ...(this.opts.sshFingerprintMs ? { fingerprintWaitMs: this.opts.sshFingerprintMs } : {}), step: (t) => this.opts.log?.(`machines: ${t}`) });
+    if (this.stopped) {
+      pairing.stop();
+      throw new Error('Beluga is shutting down');
+    }
     this.ssh = pairing;
     void pairing.ended.then(() => {
       if (this.ssh === pairing) this.ssh = undefined;

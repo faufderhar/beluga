@@ -83,6 +83,16 @@ function Approvals({ channel }: { channel?: string }) {
             Don’t allow
           </Button>
         </div>
+      ) : first.kind === 'chain' ? (
+        // Agents hit a limit on messages to each other: go on with a new budget, or stop the chain.
+        <div className={s.actions}>
+          <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
+            Continue
+          </Button>
+          <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
+            Stop
+          </Button>
+        </div>
       ) : first.once ? (
         // A friend's request for a secret: asked each time, so there's no Always.
         <div className={s.actions}>
@@ -113,10 +123,10 @@ function Approvals({ channel }: { channel?: string }) {
                 {a.detail ? <code className={s.otherDetail}>{a.detail}</code> : null}
               </span>
               <Button size="small" onClick={() => void api.host.answerApproval('yes', a.id)}>
-                Allow
+                {a.kind === 'chain' ? 'Continue' : 'Allow'}
               </Button>
               <Button size="small" variant="quiet" onClick={() => void api.host.answerApproval('no', a.id)}>
-                Deny
+                {a.kind === 'chain' ? 'Stop' : 'Deny'}
               </Button>
             </li>
           ))}

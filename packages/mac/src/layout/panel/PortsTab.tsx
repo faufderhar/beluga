@@ -8,6 +8,7 @@ import { sameDeep } from '../../lib/stable.js';
 import { openExternal } from '../../lib/system.js';
 import s from './ports.module.css';
 import { everyWhileShown } from '../../lib/window-active.js';
+import { oneAtATime } from '../../lib/one-at-a-time.js';
 
 /**
  * A worktree's servers (BLG-802), above its Background: each port its dev servers listen on, with
@@ -38,7 +39,7 @@ export function PortsTab({ wsId }: { wsId: string }) {
   // A worktree on this Mac: its own ports, looked at while the tab shows.
   useEffect(() => {
     let live = true;
-    const look = (): void => void client.call('workspaces.ports', wsId).then((p) => live && setHere(p as readonly WorktreePort[]), () => undefined);
+    const look = oneAtATime(() => client.call('workspaces.ports', wsId).then((p) => live && setHere(p as readonly WorktreePort[]), () => undefined));
     look();
     // Looked at while the window can be seen; at once again when it can.
     const stop = everyWhileShown(look, POLL_MS);

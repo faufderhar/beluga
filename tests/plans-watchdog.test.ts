@@ -4,9 +4,12 @@ import { BoardWork } from '../src/core/board/work.js';
 import type { BodyInput } from '../src/core/plans/edit.js';
 import { Plans } from '../src/core/plans/plans.js';
 import { planView, liveFrom } from '../src/core/plans/progress.js';
-import { COMMAND_LIMIT_MS, REPEAT_MS, STALL_MS, STEER_UNREAD_MS, assess, pulseOf, pulseWords, stepWords, waitingWords } from '../src/core/plans/watchdog.js';
+import { COMMAND_LIMIT_MS, REPEAT_MS, STALL_MS, STEER_UNREAD_MS, assess, pulseOf, pulseWords, saidLast, stepWords, waitingWords, waitsNote } from '../src/core/plans/watchdog.js';
+import { NOTE_MAX } from '../src/core/plans/model.js';
 import { progressCount } from '../src/shared/progress-count.js';
 import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
+import { needsYou } from '../src/companion/needs-you.js';
+import { headline, nextWords } from '../packages/mac/src/plans/plans-model.js';
 import { PlansWork } from '../src/core/plans/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
@@ -112,6 +115,9 @@ describe('a stalled task is woken once, then it asks you', () => {
     expect(prompt).toContain('tests next');
     expect(prompt).toContain('“401 without session”');
     expect(prompt).toContain('task_update with status in_review');
+    // Waiting on you is asked with a card, never written out with the turn ended (that only loops).
+    expect(prompt).toContain('AskUserQuestion');
+    expect(prompt).not.toContain('Beluga asks them');
     const plan = t.plans.need(t.plan.id);
     expect(plan.activity.at(-1)?.text).toMatch(new RegExp(`${t.issue().key} stopped, woke it at \\d\\d:\\d\\d`));
     // The wake's run hasn't started yet: never woken twice.
@@ -162,6 +168,18 @@ describe('a stalled task is woken once, then it asks you', () => {
     expect(v.next.kind).toBe('stalled');
     expect(pulseWords(t.task().pulse!, Date.now())).toMatchObject({ label: 'Needs you' });
     expect(t.plans.need(t.plan.id).activity.at(-1)?.text).toContain('stopped again: it ended its turn without handing off');
+    // What it said last is kept and shown: often what it waits on you for.
+    expect(t.task().watch?.said).toBe('Still partway.');
+    expect(t.plans.need(t.plan.id).activity.at(-1)?.text).toContain('It waits for you: do what it asks (or answer in its chat), then Resume it. It said: “Still partway.”');
+    expect(v.next.kind === 'stalled' && v.next.tasks[0]?.watch?.said).toBe('Still partway.');
+    // The Mac's button still says what it does (Resume); what it said is beside it, and in the plan's sentence.
+    expect(nextWords(v.next)).toEqual({ title: `Resume ${t.issue().key}`, detail: 'It says: “Still partway.”' });
+    expect(headline(v)).toEqual({ who: 'you', text: `Resume ${t.issue().key} once you’ve done what it asks: “Still partway.”` });
+    expect(needsYou(t.store.getState()).find((n) => n.id.includes(':stalled:'))).toMatchObject({
+      title: '“Auth on payment routes” needs you',
+      detail: 'It says: “Still partway.” Do what it asks, then Resume it.',
+      actions: [{ label: 'Resume', method: 'plans.resumeTask' }],
+    });
     // It stays yours: nothing wakes it behind your back.
     await t.later(REPEAT_MS);
     expect(t.wakes()).toHaveLength(1);
@@ -436,5 +454,24 @@ describe('a plan never stalls quietly: Beluga moves it along, a step further eac
     // A long command: busy, never rescued.
     for (let i = 0; i < 5; i++) await t.later(quiet);
     expect(t.plans.need(t.plan.id).activity.some((a) => a.text.includes(' went quiet: '))).toBe(false);
+  });
+});
+
+describe('what a task that waits for you said', () => {
+  it('is its words in one line, without code', () => {
+    expect(saidLast(undefined)).toBeUndefined();
+    expect(saidLast({ text: '  \n ' })).toBeUndefined();
+    const said = saidLast({ text: 'I need **one** thing:\n\n```sh\nexport DB_PASSWORD=hunter2\n```\nput it in `.env`, then tell me.' });
+    expect(said).toBe('I need one thing: (code) put it in .env, then tell me.');
+    expect(saidLast({ text: 'word '.repeat(200) })!.length).toBeLessThanOrEqual(300);
+  });
+
+  it('fits the feed with what to do kept, however long it is', () => {
+    const line = 'KLD-12 stopped again: it ended its turn without handing off. It waits for you';
+    expect(waitsNote(line, 'Put the .env on the server.')).toBe(`${line}: do what it asks (or answer in its chat), then Resume it. It said: “Put the .env on the server.”`);
+    const long = waitsNote(line, 'x'.repeat(300));
+    expect(long.length).toBeLessThanOrEqual(NOTE_MAX);
+    expect(long).toContain('then Resume it. It said: “xxx');
+    expect(long.endsWith('…”')).toBe(true);
   });
 });

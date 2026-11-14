@@ -3,6 +3,7 @@ import type { StepRecord, StepSummary, ToolFamily } from '@beluga/shared/steps.j
 import { toolFamily } from '@beluga/shared/steps.js';
 import { formatDuration } from '@beluga/shared/text.js';
 import { Icon, type IconName } from '../../components/Icon.js';
+import { InlineCode } from '../../components/views/Inline.js';
 import { Avatar, Dot, cx } from '../../components/ui.js';
 import { useApp } from '../../lib/beluga.js';
 import { useLive } from '../../lib/live-motion.js';
@@ -84,6 +85,19 @@ export function StepWords({ words }: { words: string }) {
   return picture ? <ImageReadWords picture={picture} current={false} /> : <>{words}</>;
 }
 
+/** A step's words, with `chat:<ref>` in them drawn as the chat's chip (a message sent to another chat). */
+function WithChatChip({ words, current }: { words: string; current: boolean }) {
+  const hit = /^(.*?)(chat:\S+)(.*)$/.exec(words);
+  if (!hit) return current ? <Shimmer>{words}</Shimmer> : <>{words}</>;
+  return (
+    <>
+      {current ? <Shimmer>{hit[1]!}</Shimmer> : hit[1]}
+      <InlineCode text={hit[2]!} fallback={hit[2]} />
+      {hit[3]}
+    </>
+  );
+}
+
 export interface StepRowProps {
   readonly step: StepSummary;
   readonly open: boolean;
@@ -126,7 +140,7 @@ export const StepRow = memo(function StepRow({ step: given, open, onToggle, load
       </span>
       <span className={cx(s.icon, thinking && s.iconThink, step.person && s.iconPerson)}>{step.person ? <Avatar name={step.person} id={personId} size={15} /> : <Icon name={iconOf(step)} size={12} />}</span>
       <span className={cx(s.title, thinking && s.titleThink)} title={step.label ?? step.title}>
-        {picture ? <ImageReadWords picture={picture} current={current} /> : current ? <Shimmer>{shown}</Shimmer> : shown}
+        {picture ? <ImageReadWords picture={picture} current={current} /> : <WithChatChip words={shown} current={current} />}
       </span>
       <span className={s.end}>
         {time ? <span className={s.time}>{time}</span> : null}

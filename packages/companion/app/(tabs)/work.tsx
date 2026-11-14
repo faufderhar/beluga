@@ -63,6 +63,7 @@ export default function Work() {
           <View key={c.topic} style={{ paddingLeft: depth * CHILD_INDENT }}>
             <Row
               first={i === 0}
+              {...(c.shared ? { shared: `Shared with ${c.shared === 1 ? 'one person' : `${c.shared} people`}` } : {})}
               Icon={st.Icon}
               tone={st.tone}
               label={c.title}

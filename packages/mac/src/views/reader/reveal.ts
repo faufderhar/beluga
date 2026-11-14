@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { Location } from '../../../../../src/core/store.js';
+import { scrollWithin } from '../../lib/scroll-within.js';
 
 /**
  * "Open this file at line 42" (a content search result): remembered until the file that shows
@@ -52,7 +53,7 @@ export function scrollToLine(root: HTMLElement, line: number, flash: string): bo
   const lines = code?.querySelector(':scope > [data-chunk]') ? code.querySelectorAll(':scope > [data-chunk] > *') : code?.children;
   const el = lines?.[Math.max(0, Math.min(lines.length - 1, line - 1))] as HTMLElement | undefined;
   if (!el) return false;
-  el.scrollIntoView({ block: 'center' });
+  scrollWithin(el, 'center');
   el.classList.remove(flash);
   void el.offsetWidth;
   el.classList.add(flash);

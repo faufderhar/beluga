@@ -174,8 +174,19 @@
   opacity: 0;
   transition: none;
 }
+/*
+ * Fading the rest while something is lit goes through --fade, not opacity itself: WebKit gives every
+ * card whose opacity is fading a layer of its own, and on a busy board hundreds at once stalled the
+ * window for seconds (BLG-931). A custom property just redraws them.
+ */
+@property --fade {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
 .canvas :global(.react-flow__node) {
-  transition: opacity var(--dur) var(--ease-out);
+  opacity: var(--fade);
+  transition: --fade var(--dur) var(--ease-out);
 }
 .canvas :global(.react-flow__node-group) {
   border: 0 !important;
@@ -253,7 +264,23 @@
 }
 /* While something is lit (data-lit), everything else fades: only what's lit is marked. */
 .canvas[data-lit='true'] :global(.react-flow__node:not(.react-flow__node-group)):not(.nodeHot) {
-  opacity: 0.3;
+  --fade: 0.3;
+}
+/* A busy graph zoomed out (data-detail, detail.ts): no soft shadows, no hairlines inside cards, nothing pulsing. */
+.canvas[data-detail='light'] {
+  --graph-shadow: 0 0 0 0 transparent;
+  --graph-shadow-hot: 0 0 0 0 transparent;
+}
+.canvas[data-detail='light'] .card.emphasis {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--accent) 75%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.canvas[data-detail='light'] .card * {
+  box-shadow: none;
+}
+.canvas[data-detail='light'] .statusMark {
+  animation: none;
 }
 /* New to a live graph: measured out of sight until the layout has a place for it. */
 .canvas :global(.react-flow__node).nodePending {

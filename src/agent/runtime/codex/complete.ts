@@ -7,6 +7,18 @@ import { sideCallConfinement } from './sandbox.js';
 
 let host: ToolHost | undefined;
 const MODEL_LIST_TIMEOUT_MS = 10_000;
+export const NOT_ALLOWED = 'This call isn’t allowed to use that tool.';
+
+/**
+ * Whether a side call's tool call runs (undefined) or not (why), as Claude Code answers it: the
+ * call's vetTool decides when it has one; without, only its allowedTools run, as nobody is there to
+ * ask. Codex approves every call to Beluga's servers (mcpConfig), so this is the only check.
+ */
+export function sideCallGate(req: Pick<CompletionRequest, 'vetTool' | 'allowedTools'>, name: string, input: Record<string, unknown>): string | undefined {
+  const verdict = req.vetTool?.(name, input);
+  if (verdict) return verdict.allow ? undefined : verdict.reason;
+  return req.allowedTools?.includes(name) ? undefined : NOT_ALLOWED;
+}
 
 /**
  * A side call on Codex (agent/side-calls.ts): one turn on an ephemeral thread (nothing saved),
@@ -17,12 +29,7 @@ const MODEL_LIST_TIMEOUT_MS = 10_000;
  */
 export async function codexComplete(req: CompletionRequest, deps: { readonly connect?: CodexConnect; readonly bin?: string; readonly toolHost?: ToolHost } = {}): Promise<string> {
   if (req.signal?.aborted) throw new Error('aborted');
-  const mounted = req.suites
-    ? await (deps.toolHost ?? (host ??= new ToolHost())).mount(req.suites, async (name, input) => {
-        const verdict = req.vetTool?.(name, input);
-        return verdict && !verdict.allow ? verdict.reason : undefined;
-      })
-    : undefined;
+  const mounted = req.suites ? await (deps.toolHost ?? (host ??= new ToolHost())).mount(req.suites, async (name, input) => sideCallGate(req, name, input)) : undefined;
   const conn = await (deps.connect ?? spawnAppServer)({ cwd: req.cwd, ...(deps.bin ? { bin: deps.bin } : {}) });
   const stop = (): void => void conn.proc.kill();
   req.signal?.addEventListener('abort', stop, { once: true });

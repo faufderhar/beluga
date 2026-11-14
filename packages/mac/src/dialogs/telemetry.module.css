@@ -1,0 +1,33 @@
+/* Usage statistics (TelemetrySheets.tsx): the ask after an update. Neutral, one accent. */
+.head {
+  position: relative;
+  height: 22px;
+}
+.close,
+.closeInline {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  transition: color var(--dur-fast);
+}
+.close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.close:hover,
+.closeInline:hover {
+  color: var(--text);
+}
+.small {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: pretty;
+}

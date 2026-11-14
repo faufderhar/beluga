@@ -2,6 +2,7 @@ import { CHART_KINDS, COLUMN_TYPES, VIEW_FENCE } from '../shared/view-spec.js';
 import { TASKS_FENCE } from '../shared/task-refs.js';
 import { CODE_FENCE } from '../shared/code-ref.js';
 import { PR_COMMENTS_FENCE } from '../shared/pr-comments-ref.js';
+import { type ChatRef, formatChatRef } from '../shared/chat-ref.js';
 
 /**
  * Teaching Claude what it can show (src/shared/view-spec.ts, docs/views.md): what's there, and
@@ -80,5 +81,16 @@ export function buildViewAppend(terminal = false): string {
     'Use them where they say more than the text would, sparingly.',
     `A board task: \`task:BLG-12\` is a chip with its live status that opens it; a fenced ${TASKS_FENCE} block${via} (one key`,
     'per line) is a list of task cards. Use them for tasks you opened, changed or mean, not for every key you say.',
+  ].join('\n');
+}
+
+/** Chat chips (core/agent-host.ts): this chat's own ref, as the token. Nothing for a chat with no address. */
+export function buildChatLinkAppend(here: ChatRef): string {
+  const ref = formatChatRef(here);
+  if (!ref) return '';
+  return [
+    '',
+    'A chat: `chat:<owner>/<channel>` is a chip that shows the current title of that chat and opens it.',
+    `This chat is \`chat:${ref}\`. Write a chip only for a chat whose ref you were given. Do not write its title next to the chip.`,
   ].join('\n');
 }

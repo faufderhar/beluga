@@ -32,6 +32,8 @@ export interface SharedWorkspace {
   readonly earlier?: boolean;
   /** The owner's agent that runs there (BLG-448): theirs, never yours. Unset: an older Mac's, Claude. */
   readonly agent?: AgentRef;
+  /** Over the network: a plain chat of the owner's (no project folder): only its conversation and Scratch. */
+  readonly chat?: true;
 }
 
 export interface RosterEntry {

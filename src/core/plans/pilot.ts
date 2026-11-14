@@ -1010,6 +1010,8 @@ export class PlanPilot {
 
   /** Autopilot's pass: a task still being worked on (see stillWorking) leaves it for the next look. */
   private autoPass(planId: string, milestoneId: string, by: Actor): void {
+    // Its merge failed (not a conflict): passing again only fails again, so it's yours to fix and Pass Again.
+    if (this.deps.plans.get(planId)?.runs[milestoneId]?.mergeFailed) return;
     try {
       this.pass(planId, milestoneId, by);
     } catch (err) {

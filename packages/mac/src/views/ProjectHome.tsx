@@ -15,9 +15,10 @@ import { EarningsPill } from "../components/EarningsPill.js";
 import { Icon } from "../components/Icon.js";
 import { ProjectIcon } from "../components/ProjectIcon.js";
 import { Select } from "../components/Select.js";
-import { Button, Dot, Empty, Segmented, Tip, cx } from "../components/ui.js";
+import { Button, Dot, Empty, IconButton, Segmented, Tip, cx } from "../components/ui.js";
 import { useActions } from "../lib/actions.js";
 import { toast, useApi, useApp, useBeluga } from "../lib/beluga.js";
+import { makeAhead } from "../lib/make-ahead.js";
 import { useMyAgentName } from "../lib/agent-words.js";
 import { RunsOnPicker } from "../chat/RunsOn.js";
 import { type WorkToStart, sendToComputer, useStartDeps } from "../machines/start-there.js";
@@ -61,7 +62,9 @@ import { isLive, sortRuns } from "@beluga/core/ci/model.js";
 import { IssueRow } from "../issues/parts.js";
 import { useIssueActions, useIssueList } from "../issues/use-issues.js";
 import { MainSyncBar } from "./project/MainSyncBar.js";
-import { EnvPill, ProjectEnvAsks } from "./project/EnvAsks.js";
+import { EnvPill } from "./project/EnvAsks.js";
+import { EnvSection } from "./project/EnvSection.js";
+import { Section } from "./project/HomeSection.js";
 import { outsideOf } from "../layout/outside-model.js";
 import { openSheet } from "../lib/sheets.js";
 import { TonePill } from "../plans/marks.js";
@@ -169,7 +172,6 @@ function Header({ model }: { model: HomeModel }) {
           ) : null}
         </div>
         <MainSyncBar project={project} line={mainLine} />
-        {project.root ? <ProjectEnvAsks projectId={project.id} /> : null}
         <div className={s.stats} role="group" aria-label="At a glance">
           <span className={s.stat}>
             <strong>{stats.active}</strong> active
@@ -195,6 +197,15 @@ function Header({ model }: { model: HomeModel }) {
           <GitHubRow projectId={project.id} />
         </div>
       </div>
+      {/* Its settings (General, Environment, Worktrees), in one sheet (BLG-926). */}
+      {project.root ? (
+        <IconButton
+          icon="gear"
+          label="Project Settings…"
+          className={s.settingsButton}
+          onClick={() => openSheet({ kind: "project_env", projectId: project.id, tab: "general" })}
+        />
+      ) : null}
     </header>
   );
 }
@@ -329,7 +340,7 @@ function HomeComposer({ project }: { project: Project }) {
         message = await api.attachments.expand(
           typed,
           `home:${project.id}`,
-          [...images],
+          [...(await att.saved(images))],
           [...shown],
         );
       } catch (err) {
@@ -365,9 +376,10 @@ function HomeComposer({ project }: { project: Project }) {
       return;
     }
     if (worktree) {
-      // The worktree is made in the background (it opens when ready): you can go on right away.
+      // The worktree is made in the background, its row and "Making…" page there at once (BLG-942): you can go on right away.
       setText("");
       setName("");
+      const ahead = makeAhead(client, project.id, named || message || "worktree", { ...(base ? { base } : {}), asked: message });
       void api.workspaces
         .startWorktree(project.id, message, {
           ...(base ? { base } : {}),
@@ -375,14 +387,16 @@ function HomeComposer({ project }: { project: Project }) {
           ...(agent ? { agent } : {}),
           // Seen as its terminal (Settings › Terminal): the terminal opens on this message (BLG-553).
           ...(message.trim() && sendsToTerminal(client.store.getState(), getPrefs(), "draft", agent?.runtime) ? { terminal: true } : {}),
+          ...(ahead ? { id: ahead.id } : {}),
         })
-        .catch((err: unknown) =>
+        .catch((err: unknown) => {
+          ahead?.drop();
           toast(
             client,
             `Couldn’t create the worktree: ${errorText(err)}`,
             "error",
-          ),
-        );
+          );
+        });
       return;
     }
     setBusy(true);
@@ -609,8 +623,11 @@ function Lists({ model }: { model: HomeModel }) {
   // A plan's own conversation is listed under Plans, not as a question.
   const planHomes = new Set(usePlans().plans.map((p) => p.home));
   const asks = model.asks.filter((w) => !planHomes.has(`ws:${w.id}`));
+  // What moves the work first (tasks, plans, worktrees, then GitHub's pull requests and issues); the
+  // project's environment and history after, as what you look up rather than act on.
   return (
     <div className={s.lists}>
+      <HomeTasks projectId={project.id} />
       <HomePlans projectId={project.id} />
       <Section
         title="Worktrees"
@@ -640,6 +657,8 @@ function Lists({ model }: { model: HomeModel }) {
           </p>
         )}
       </Section>
+      <HomePulls projectId={project.id} />
+      <HomeIssues projectId={project.id} />
       {asks.length ? (
         <Section
           title="Questions"
@@ -651,10 +670,8 @@ function Lists({ model }: { model: HomeModel }) {
           ))}
         </Section>
       ) : null}
-      <HomeTasks projectId={project.id} />
-      <HomePulls projectId={project.id} />
-      <HomeIssues projectId={project.id} />
       <HomeActions projectId={project.id} />
+      {project.root ? <EnvSection projectId={project.id} root={project.root} /> : null}
       <HomeHistory projectId={project.id} />
       {archived.length ? (
         <Section
@@ -943,39 +960,6 @@ function PlanRow({ plan }: { plan: Plan }) {
         <Icon name="chevronRight" size={11} className={s.rowChevron} />
       </button>
     </div>
-  );
-}
-
-function Section({
-  title,
-  count,
-  hint,
-  action,
-  arrive,
-  children,
-}: {
-  /** It came after the page opened: it settles in. */
-  arrive?: boolean;
-  title: string;
-  count: number;
-  hint?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className={cx(s.section, arrive && a.arrive)} aria-label={title}>
-      <div className={s.sectionHead}>
-        <h3 className={s.sectionTitle}>
-          {title} <span className={s.count}>{count}</span>
-        </h3>
-        {hint ? <span className={s.sectionHint}>{hint}</span> : null}
-        <span className={s.flex} />
-        {action}
-      </div>
-      <div className={s.rows} role="list">
-        {children}
-      </div>
-    </section>
   );
 }
 

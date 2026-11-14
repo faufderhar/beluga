@@ -48,6 +48,16 @@ describe('documents in the viewer', () => {
     await expect(s.sentinels.storagePath(s.sn.id, 'files', 'file', 'docs/a/build.zip')).rejects.toThrow(/Couldn’t save build.zip/);
   });
 
+  it('hands a PDF to the viewer as its bytes, which PDF.js draws (BLG-936)', async () => {
+    // The Mac's web view leaves a PDF in an iframe blank: the sheet draws the pages from these bytes.
+    const pdf = new TextEncoder().encode('%PDF-1.7\n%%EOF\n');
+    const s = withStorage({ 'docs/a/blob': { body: pdf, type: 'application/pdf' } });
+    const read = await s.sentinels.storageDocument(s.sn.id, 'files', 'file', 'docs/a/blob');
+    expect(read).toMatchObject({ mime: 'application/pdf', size: pdf.byteLength, base64: Buffer.from(pdf).toString('base64') });
+    expect(read.text).toBeUndefined();
+    expect(documentLook(read.mime)).toBe('pdf');
+  });
+
   it('streams a document to the phone from memory: fetched once for all its pieces, then gone (BLG-386)', async () => {
     const s = withStorage({ 'docs/a/report.md': { body: '# Report', type: 'text/markdown' } });
     const one = await s.sentinels.documentBytes(s.sn.id, 'files', 'file', 'docs/a/report.md');

@@ -574,3 +574,23 @@ test('the Sentinel chat: its own conversation about all of Sentinel; a delete as
   await expect(main(page).locator('[data-sentinel-chat]')).not.toHaveAttribute('data-sentinel-chat', 'main');
   await expect(main(page).getByRole('button', { name: /^Chat: / })).toBeVisible();
 });
+
+test('a schedule every few minutes: Through the day’s Every menu, on the clock, with a word about the plan', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Morning brief/ }).click();
+  const when = main(page).getByRole('region', { name: 'When' });
+  await when.getByRole('tab', { name: 'Through the day' }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('Every 3 hours');
+  await when.getByRole('combobox', { name: 'Every how long' }).click();
+  await expect(page.getByRole('option')).toHaveText([/^minute/, /^5 minutes/, /^10 minutes/, /^15 minutes/, /^30 minutes/, /^hour/, /^2 hours/, /^3 hours/, /^6 hours/, /^12 hours/]);
+  await page.getByRole('option', { name: /^15 minutes/ }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('Every 15 minutes');
+  await expect(when.getByRole('tab', { name: 'Through the day' })).toHaveAttribute('aria-selected', 'true');
+  // Morning brief asks its agent: 96 times a day is worth saying.
+  await expect(when).toContainText('Its agent step runs up to 96 times a day');
+  await shoot(page, 'every-15-minutes');
+  // Back as it was.
+  await when.getByRole('tab', { name: 'Every day' }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('Every day at 7:00');
+  await expect(when).not.toContainText('Its agent step runs up to');
+});

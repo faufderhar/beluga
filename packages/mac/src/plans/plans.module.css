@@ -1658,6 +1658,9 @@ textarea.goalBox {
 }
 .saidButton {
   align-self: flex-start;
+  /* A flex box, so a long sentence (what a stopped task said) ends in an ellipsis, not past the window. */
+  display: flex;
+  min-width: 0;
   max-width: 100%;
   margin: 2px 0 0 -4px;
   padding: 2px 8px 2px 4px;

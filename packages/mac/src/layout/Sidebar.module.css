@@ -118,6 +118,29 @@
   color: var(--accent);
 }
 /*
+ * A colour you gave a project or chat (lib/row-colors.ts): a soft stripe at the row's edge (a
+ * project and its chats line up as one rail) and its icon in the colour. Plain rows are untouched.
+ */
+.colorStripe {
+  position: absolute;
+  left: 1px;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: hsl(var(--row-hue) var(--row-sat) 62%);
+  pointer-events: none;
+}
+.row[data-row-color] .rowIcon {
+  color: hsl(var(--row-hue) var(--row-sat) 44%);
+}
+:global([data-theme='dark']) .colorStripe {
+  background: hsl(var(--row-hue) var(--row-sat) 58%);
+}
+:global([data-theme='dark']) .row[data-row-color] .rowIcon {
+  color: hsl(var(--row-hue) var(--row-sat) 72%);
+}
+/*
  * Chats picked with Shift-click: rows that touch read as one box, a dashed line between each
  * (chat-selection-view.tsx marks which sides of a row the box goes on past, in data-chat-join).
  * Its fill, outline, corners and lines ease in and out.
@@ -498,4 +521,21 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 15px;
+}
+
+/* A worktree shared with someone: a small green dot at its icon's corner, cut out of the sidebar so it reads at a glance. */
+.sharedIcon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+.sharedDot {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 1.5px var(--bg-sidebar);
 }

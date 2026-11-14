@@ -7,7 +7,7 @@ export type WorkMenuKind =
   /** The PR button: create one with Claude, or work with the one that exists. */
   | { readonly kind: 'pr'; readonly id: string }
   /** A project's setup and run commands. */
-  | { readonly kind: 'scripts'; readonly projectId: string }
+  | { readonly kind: 'scripts'; readonly projectId: string; readonly tab?: 'general' | 'environment' | 'worktrees' }
   /** Start from a template (fills the box), or manage them. */
   | { readonly kind: 'templates'; readonly manage?: boolean }
   /** Pick who takes over a workspace. */

@@ -1,19 +1,15 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { findWorkspace } from '@beluga/ui/workspace-models.js';
-import { Empty } from '../components/ui.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { groupChatOpen } from '../lib/group-chat.js';
 import { ViewBoundary, lazyView } from '../lib/lazy-view.js';
 import { useMaking } from '../lib/making.js';
+import { MakingWorktree } from './MakingWorktree.js';
 import { ChatView } from '../views/ChatView.js';
-import { ChatLog } from '../chat/ChatLog.js';
-import views from '../views/views.module.css';
 import { Toolbar } from './Toolbar.js';
 import { ProjectCenter, WorkspaceCenter } from './panel/FocusView.js';
 import { TerminalDrawer } from './panel/TerminalDrawer.js';
 import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
-import side from './Sidebar.module.css';
 import { SharedPlanPage } from '../team/SharedPlans.js';
 import { CallRoom } from '../call/CallRoom.js';
 import { StartingThere } from '../machines/StartingThere.js';
@@ -44,36 +40,6 @@ const SentinelPage = lazyView('sentinel/SentinelPage', () => import('../sentinel
 const SentinelRunPage = lazyView('sentinel/RunPage', () => import('../sentinel/RunPage.js').then((m) => m.RunPage));
 const SentinelHome = lazyView('sentinel/SentinelHome', () => import('../sentinel/SentinelHome.js').then((m) => m.SentinelHome));
 const PhoneView = lazyView('phone/PhoneView', () => import('../phone/PhoneView.js').then((m) => m.PhoneView));
-
-/**
- * A worktree being made: its page shows at once with what you asked (BLG-531), and becomes its
- * conversation when git is done.
- */
-function MakingWorktree() {
-  const ws = useApp((st) => (st.view.kind === 'workspace' ? findWorkspace(st.projects, st.view.id) : undefined));
-  const asked = useApp((st) => (ws ? st.log.some((l) => l.channel === `ws:${ws.id}`) : false));
-  if (!ws) return null;
-  const from = ws.base ?? 'the latest origin';
-  if (!asked) {
-    return (
-      <Empty
-        icon="branch"
-        mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
-        title={`Making ${ws.name}…`}
-        detail={`A new worktree from ${from}. Its conversation opens here in a moment; anything you asked your agent starts then.`}
-      />
-    );
-  }
-  return (
-    <div className={views.chat}>
-      <ChatLog key={ws.id} channel={`ws:${ws.id}`} />
-      <div className={s.makingLine} role="status">
-        <span className={side.making} aria-hidden="true" />
-        Making {ws.name} from {from}. Your agent starts as soon as its folder is ready.
-      </div>
-    </div>
-  );
-}
 
 /**
  * The room's group chat with its call around it (BLG-716), while someone else is in the room.

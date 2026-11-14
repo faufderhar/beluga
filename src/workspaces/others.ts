@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { belugaEnv } from '../core/beluga-env.js';
 import * as g from './git.js';
 
 /**
@@ -123,10 +124,22 @@ const run = (cmd: string, args: readonly string[]): Promise<void> =>
  * else nice): a worktree's node_modules can be hundreds of thousands of files, and deleting
  * them at full speed stalls the whole Mac. Read-only files (some package caches) are made
  * writable for a second try; whatever still can't go is left where it was set aside.
+ *
+ * BELUGA_DELETE_PRIORITY=normal deletes at normal priority instead: the tests set it, as with a
+ * whole suite keeping every core and the disk busy, macOS holds a background delete of even a
+ * few files back for tens of seconds, and a test waiting on it (deletesSettled) runs out of time.
  */
 function deleteInBackground(dir: string): void {
+  const low = belugaEnv('DELETE_PRIORITY') !== 'normal';
   const rmrf = (): Promise<void> =>
-    (process.platform === 'darwin' ? run('/usr/sbin/taskpolicy', ['-b', '/bin/rm', '-rf', dir]) : process.platform === 'win32' ? Promise.reject(new Error('no rm')) : run('nice', ['-n', '19', 'rm', '-rf', dir])).catch(() => rm(dir, { recursive: true, force: true, maxRetries: 3 }));
+    (process.platform === 'win32'
+      ? Promise.reject(new Error('no rm'))
+      : !low
+        ? run('rm', ['-rf', dir])
+        : process.platform === 'darwin'
+          ? run('/usr/sbin/taskpolicy', ['-b', '/bin/rm', '-rf', dir])
+          : run('nice', ['-n', '19', 'rm', '-rf', dir])
+    ).catch(() => rm(dir, { recursive: true, force: true, maxRetries: 3 }));
   const job: Promise<void> = rmrf()
     .catch(() => (process.platform === 'win32' ? run('attrib', ['-R', `${dir}\\*`, '/S', '/D']) : run('chmod', ['-R', 'u+w', dir])).then(rmrf))
     .catch(() => undefined)

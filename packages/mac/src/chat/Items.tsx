@@ -22,12 +22,14 @@ import { countRender } from '../lib/render-count.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
 import { agentBadge, agentName, useMyAgentName } from '../lib/agent-words.js';
-import type { AgentRef } from '@beluga/protocol.js';
+import type { AgentRef, ChatOrigin } from '@beluga/protocol.js';
+import { InlineCode } from '../components/views/Inline.js';
 import { agentMark } from '@beluga/shared/agent-marks.js';
 import { brandText } from '../lib/brand.js';
 import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
 import { AgentSteps, StepsFold, StepsToggle } from './steps/AgentSteps.js';
+import { McpApps } from './mcp-app/McpApps.js';
 import { useDisclosure } from './steps/step-memory.js';
 import { useFlightLanding } from './flight.js';
 import { type TurnPart, workingPhase } from './live-tail.js';
@@ -178,7 +180,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
   // Your own message in one of your conversations can be edited (BLG-385): rewound to, or forked from.
   const wsId = own && item.channel.startsWith('ws:') ? item.channel.slice(3) : undefined;
   const kind = useApp((st) => (wsId ? findWorkspace(st.projects, wsId)?.kind : undefined));
-  const editable = Boolean(wsId) && (kind === 'worktree' || kind === 'chat') && !steer && !item.via;
+  const editable = Boolean(wsId) && (kind === 'worktree' || kind === 'chat') && !steer && !item.via && !item.fromApp;
   const [editing, setEditing] = useState(false);
   // Emoji reactions (BLG-702): the button a hover shows, and the chips under the message.
   const reactions = useChatReactions(item, own);
@@ -192,6 +194,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
           {editing ? null : reactions.button}
           <div className={s.body}>
             {item.via ? <div className={s.sentBy} data-sent-by={item.via.id}>Sent by {item.via.name}</div> : null}
+            {item.fromApp ? <div className={s.sentBy} data-sent-by-app={item.fromApp}>Sent by the {item.fromApp} app</div> : null}
             {editing && wsId ? (
               <EditPrompt wsId={wsId} lineId={item.id} text={item.text} worktree={kind === 'worktree'} onClose={() => setEditing(false)} />
             ) : text ? (
@@ -363,6 +366,24 @@ function WorkingLine({ item, quiet }: { item: AgentItem; quiet: boolean }) {
  * Where a turn split by what was said during it began (see live-tail.ts): who, and the steps it
  * had finished by then; the rest (what it does now, its answer) is further down.
  */
+/** A message from an agent in another chat: a card with its source. It is never a bubble of yours. */
+function FromChatCard({ origin, text }: { origin: ChatOrigin; text: string }) {
+  return (
+    <div className={s.message}>
+      <div className={s.gutter} />
+      <div className={s.body}>
+        <div className={s.fromChat} data-from-chat={origin.ref}>
+          <div className={s.fromChatHead}>
+            <Icon name="chat" size={11} />
+            From <InlineCode text={`chat:${origin.ref}`} fallback={origin.title} /> · {origin.agent.label}, an agent
+          </div>
+          <Markdown text={text} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine: boolean }) {
   const prefs = usePrefs();
   const steps = useDisclosure(`${item.channel}/${item.id}`);
@@ -433,9 +454,16 @@ export const AgentCard = memo(function AgentCard({
 }) {
   countRender(`card:${item.id}`);
   const selfId = useApp((st) => st.selfId);
-  if (part?.side === 'head') return <TurnHead item={item} part={part} mine={item.owner === selfId} />;
   if (part?.side === 'live') return <LivePart item={item} working={working} />;
-  return <TurnCard item={item} tasks={tasks} latest={latest} part={part} selfId={selfId} working={working} subs={subs} />;
+  // A turn drawn in parts shows the message once, above its first part (a head with no step draws nothing).
+  const hasHead = item.steps.some((x) => !HIDDEN_STEPS.test(x));
+  const from = item.origin && (part?.side === 'head' || !part || !hasHead) ? <FromChatCard origin={item.origin} text={item.prompt ?? ''} /> : null;
+  return (
+    <>
+      {from}
+      {part?.side === 'head' ? <TurnHead item={item} part={part} mine={item.owner === selfId} /> : <TurnCard item={item} tasks={tasks} latest={latest} part={part} selfId={selfId} working={working} subs={subs} />}
+    </>
+  );
 });
 
 function TurnCard({
@@ -538,6 +566,8 @@ function TurnCard({
           <StepsFold folded={folded}>
             <AgentSteps item={item} running={running} part={part} subs={subs} />
           </StepsFold>
+          {/* MCP Apps (Settings › Experimental): a UI tool's page, kept in sight when the steps fold. */}
+          <McpApps item={item} running={running} />
           {/* What it asked other people's Claudes, before its answer (which comes last). */}
           {tasks?.map((t) => (
             <div key={t.id} className={s.turnTask}>

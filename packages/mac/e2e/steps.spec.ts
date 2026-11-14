@@ -229,3 +229,31 @@ test('while Claude works, a sent message flies into the queue above the box', as
   await expect(composer(page)).toHaveValue(/then list the riskiest parts/);
   await composer(page).fill('');
 });
+
+test('while Claude works, the newest thing it said stays in sight and the one before folds; its answer folds them all', async ({ page }) => {
+  test.setTimeout(90_000);
+  await openWorkspace(page, 'new-hero', 'landing');
+  const shot = (name: string) => (process.env.STEPS_SHOTS ? page.screenshot({ path: `${process.env.STEPS_SHOTS}/${name}.png` }) : Promise.resolve());
+  await send(page, 'Investigate GitHub issue #48');
+  const steps = lastSteps(page);
+  const now = steps.locator('[data-remark="now"]');
+  await expect(now).toContainText('decodes it a second time', { timeout: 20_000 });
+  await shot('01-working-said');
+  // The next thing it says pops in; the one before goes into the fold with the older steps.
+  await expect(steps.locator('[data-remark="now"]', { hasText: 'That’s the 500' })).toBeVisible({ timeout: 30_000 });
+  await expect(steps.getByText('decodes it a second time')).toHaveCount(0);
+  await expect(steps.getByText(/Looking for where the email/)).toHaveCount(0);
+  await shot('02-working-newer');
+  // The answer lands: the steps fold away, and with them all it said on the way.
+  const card = page.locator('[data-turn="done"]').last();
+  await expect(card).toContainText('Verdict: a real bug', { timeout: 45_000 });
+  await expect(card.locator('[data-remark]')).toHaveCount(0);
+  await shot('03-answered');
+  // Opened again, all of it is there, in the fold.
+  await card.hover();
+  await card.getByRole('button', { name: 'Show Steps' }).click();
+  await card.getByRole('button', { name: /^Show \d+ earlier steps/ }).click();
+  await expect(card.locator('[data-remark]')).toHaveCount(3);
+  await expect(card.locator('[data-remark="now"]')).toHaveCount(0);
+  await shot('04-opened');
+});

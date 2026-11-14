@@ -186,7 +186,7 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
         let w = window.clone();
         let _ = app.run_on_main_thread(move || {
             crate::popup::float_over_everything(&w);
-            never_activate(&w);
+            crate::popup::never_activate(&w);
             // Sharing your whole screen, the card stays yours: the others don't see it.
             crate::call_overlay::leave_out_of_captures(&w);
         });
@@ -201,31 +201,6 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
         }
     });
     Ok(true)
-}
-
-/// A click on the card leaves Beluga where it was. Without this, the click makes Beluga the
-/// active app, its window takes focus, the card hides (call/float.ts) and the button never gets
-/// the click. AppKit's own switch for this (what a non-activating panel uses), where it exists.
-#[cfg(target_os = "macos")]
-fn never_activate<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    use objc2::runtime::{AnyObject, Bool, Sel};
-    use objc2::{msg_send, sel};
-    let Ok(ptr) = window.ns_window() else {
-        return;
-    };
-    let ns = ptr.cast::<AnyObject>();
-    if ns.is_null() {
-        return;
-    }
-    let prevent: Sel = sel!(_setPreventsActivation:);
-    // SAFETY: `ns` is this window's live NSWindow, this runs on the main thread, and the private
-    // method is only called once the window says it has it.
-    unsafe {
-        let has: Bool = msg_send![ns, respondsToSelector: prevent];
-        if has.as_bool() {
-            let _: () = msg_send![ns, _setPreventsActivation: Bool::YES];
-        }
-    }
 }
 
 /// Show the card with this state, or hide it (`None`).

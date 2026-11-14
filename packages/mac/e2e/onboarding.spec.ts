@@ -78,6 +78,14 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await expect(welcome.getByRole('heading', { name: 'Your agent in your pocket.' })).toBeVisible();
   await expect(welcome.getByText('Android only for now')).toBeVisible();
   await expect(welcome.getByRole('button', { name: /Pair a Phone/ })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  // Usage statistics (BLG-922), the last setting: Limited picked, and Finish keeps it.
+  await expect(welcome.getByRole('heading', { name: 'Help make Beluga better.' })).toBeVisible();
+  await expect(welcome.getByRole('radio', { name: /Limited/ })).toBeChecked();
+  await welcome.getByRole('radio', { name: /^On/ }).check();
+  await expect(welcome.getByRole('radio', { name: /^On/ })).toBeChecked();
+  await welcome.getByRole('radio', { name: /Limited/ }).check();
   await welcome.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
 

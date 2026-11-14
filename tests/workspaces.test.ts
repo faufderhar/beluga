@@ -149,6 +149,46 @@ describe('worktree lifecycle', () => {
     expect(again.id).not.toBe(ws.id);
   });
 
+  it('forks the whole worktree: uncommitted changes and Scratch too, the source untouched', async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'whole');
+    commitIn(ws.path, 'kept.txt', 'v1', 'kept v1');
+    writeFileSync(path.join(ws.path, 'kept.txt'), 'v2 unsaved'); // changed, not staged
+    writeFileSync(path.join(ws.path, 'staged.txt'), 'staged');
+    sh(ws.path, 'add', 'staged.txt');
+    writeFileSync(path.join(ws.path, 'new.txt'), 'brand new'); // untracked
+    sh(ws.path, 'rm', '-q', 'README.md'); // deleted
+    mkdirSync(path.join(ws.path, '.beluga', 'scratch', 'shots'), { recursive: true });
+    writeFileSync(path.join(ws.path, '.beluga', 'scratch', 'shots', 'home.png'), 'png');
+    writeFileSync(path.join(ws.path, '.beluga', 'scratch', 'notes.md'), 'notes');
+    const before = sh(ws.path, 'status', '--porcelain');
+
+    const fork = await mgr.fork(ws.id, 'whole 2', { id: 'chosen-id' });
+    expect(fork.id).toBe('chosen-id');
+    expect(readFileSync(path.join(fork.path, 'kept.txt'), 'utf8')).toBe('v2 unsaved');
+    expect(readFileSync(path.join(fork.path, 'staged.txt'), 'utf8')).toBe('staged');
+    expect(readFileSync(path.join(fork.path, 'new.txt'), 'utf8')).toBe('brand new');
+    expect(existsSync(path.join(fork.path, 'README.md'))).toBe(false);
+    // Still uncommitted there: the fork's branch is where the source's is.
+    expect(sh(fork.path, 'rev-parse', 'HEAD')).toBe(sh(ws.path, 'rev-parse', 'HEAD'));
+    expect(sh(fork.path, 'status', '--porcelain')).not.toBe('');
+    expect(readFileSync(path.join(fork.path, '.beluga', 'scratch', 'shots', 'home.png'), 'utf8')).toBe('png');
+    expect(readFileSync(path.join(fork.path, '.beluga', 'scratch', 'notes.md'), 'utf8')).toBe('notes');
+    // Scratch stays out of git in the fork too.
+    expect(sh(fork.path, 'status', '--porcelain')).not.toContain('.beluga');
+    // The source is exactly as it was, and no ref of the copy is left behind.
+    expect(sh(ws.path, 'status', '--porcelain')).toBe(before);
+    expect(sh(repo, 'for-each-ref', 'refs/beluga/fork')).toBe('');
+  });
+
+  it('forks a clean worktree with nothing to carry', async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'tidy');
+    commitIn(ws.path, 'a.txt', 'a', 'a');
+    const fork = await mgr.fork(ws.id, 'tidy 2');
+    expect(readFileSync(path.join(fork.path, 'a.txt'), 'utf8')).toBe('a');
+    expect(sh(fork.path, 'status', '--porcelain')).toBe('');
+    expect(existsSync(path.join(fork.path, '.beluga', 'scratch'))).toBe(false);
+  });
+
   it('deleting an archived worktree for good deletes its archive too', async () => {
     const ws = await mgr.createWorktree(repos()[0]!.id, 'gone');
     writeFileSync(path.join(ws.path, 'wip.txt'), 'x');

@@ -13,6 +13,7 @@ import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 import { planOf } from '../src/core/plans/owner.js';
+import { needsYou } from '../src/companion/needs-you.js';
 import { PLAN_TOOL_NAMES, createPlanToolDefs, milestoneInput, toOps } from '../src/agent/plan-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 import { PlanBodySchema } from '../src/core/team/protocol.js';
@@ -25,11 +26,11 @@ const ws = (id: string, projectId: string, name: string, kind: Workspace['kind']
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined>; workers?: 'milestone' | 'task'; forYou?: PlansWorkDeps['forYou']; cancel?: PlansWorkDeps['cancel']; rescueMs?: number; now?: () => number } = {}) {
+function setup(opts: { sendOn?: PlansWorkDeps['sendOn']; combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined>; workers?: 'milestone' | 'task'; forYou?: PlansWorkDeps['forYou']; cancel?: PlansWorkDeps['cancel']; rescueMs?: number; now?: () => number } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
-  const asked: Array<{ prompt: string; channel: string; echo: boolean }> = [];
+  const asked: Array<{ prompt: string; channel: string; echo: boolean; chain?: { chainId: string; hop: number } }> = [];
   const made: Array<{ name: string; base?: string; quiet?: boolean }> = [];
   const archived: string[] = [];
   let n = 0;
@@ -66,7 +67,7 @@ function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titleP
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => `ask-${asked.push({ prompt, channel, echo })}`, intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}), ...(opts.rescueMs !== undefined ? { rescueMs: opts.rescueMs } : {}), ...(opts.now ? { now: opts.now } : {}) });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo, chain) => `ask-${asked.push({ prompt, channel, echo, ...(chain ? { chain } : {}) })}`, intend: (i) => void intents.push(i), delayMs: 0, ...(opts.sendOn ? { sendOn: opts.sendOn } : {}), ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}), ...(opts.rescueMs !== undefined ? { rescueMs: opts.rescueMs } : {}), ...(opts.now ? { now: opts.now } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
@@ -719,6 +720,40 @@ describe('review fixes', () => {
     expect(sent.echo).toBe(false);
     expect(sent.prompt).toContain('not the user');
   });
+
+  it('a message to a task’s Claude carries the chain of the plan’s run, one hop on', async () => {
+    const t = setup();
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(BODY);
+    t.work.approve(plan.id);
+    await tick(5);
+    t.work.forRun('ws:main', 'p-me', () => ({ chainId: 'c-7', hop: 3 }))!.tools!.message('auth', 'Use signed cookies');
+    expect(t.asked.at(-1)!.chain).toEqual({ chainId: 'c-7', hop: 4 });
+  });
+
+  it('a message to a task’s Claude that the chat-links guard refuses is not sent, and the plan’s agent reads why', async () => {
+    const t = setup({ sendOn: () => ({ refused: 'hop_limit: too many agents in a row passed this on. Stop sending and end your turn.' }) });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(BODY);
+    t.work.approve(plan.id);
+    await tick(5);
+    const before = t.asked.length;
+    const tools = t.work.forRun('ws:main', 'p-me', () => ({ chainId: 'c-7', hop: 4 }))!.tools!;
+    expect(() => tools.message('auth', 'Use signed cookies', 'steer')).toThrow(/^Not sent to [A-Z]+-\d+: hop_limit: too many agents in a row/);
+    expect(t.asked.length).toBe(before);
+  });
+
+  it('a message to a task’s Claude goes on in the chain the chat-links guard gives it', async () => {
+    const seen: unknown[] = [];
+    const t = setup({ sendOn: (chain) => (seen.push(chain), { chain: { chainId: chain.chainId, hop: 9 } }) });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(BODY);
+    t.work.approve(plan.id);
+    await tick(5);
+    t.work.forRun('ws:main', 'p-me', () => ({ chainId: 'c-7', hop: 3 }))!.tools!.message('auth', 'Use signed cookies');
+    expect(seen).toEqual([{ chainId: 'c-7', hop: 3 }]);
+    expect(t.asked.at(-1)!.chain).toEqual({ chainId: 'c-7', hop: 9 });
+  });
 });
 
 describe('milestones run side by side unless one builds on another', () => {
@@ -1190,6 +1225,73 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(run()?.mergeFailed).toBeUndefined();
     await t.settle();
     expect(run()?.passedAt).toBeDefined();
+  });
+
+  it('on autopilot a failed merge (not a conflict) waits for Pass Again instead of passing it over and over', async () => {
+    const t = await running('autopilot');
+    let tries = 0;
+    t.setConflict(() => {
+      tries++;
+      throw new Error('merge: beluga/kld-9 - not something we can merge');
+    });
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks']) t.board.update(t.issue(title).id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    t.board.update(t.issue('Receipts once').id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', 'ok');
+    await t.settle();
+    await tick(50);
+    const run = () => t.plans.need(t.plan.id).runs['safe'];
+    expect(tries).toBe(1);
+    expect(run()?.mergeFailed?.reason).toBe('merge: beluga/kld-9 - not something we can merge');
+    expect(t.plans.need(t.plan.id).merging?.['safe']).toBeUndefined();
+    t.setConflict(undefined);
+    t.work.pass(t.plan.id, 'safe');
+    await t.settle();
+    expect(run()?.passedAt).toBeDefined();
+  });
+
+  /** On Autopilot: the first milestone finished, checked and passed by Autopilot, and its merge failed. */
+  async function failedOnAutopilot() {
+    const t = await running('autopilot');
+    let tries = 0;
+    t.setConflict(() => {
+      tries++;
+      throw new Error('fatal: plan/payments is checked out with uncommitted changes');
+    });
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks']) t.board.update(t.issue(title).id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    t.board.update(t.issue('Receipts once').id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', 'ok');
+    await t.settle();
+    await tick(50);
+    return { ...t, tries: () => tries, run: () => t.plans.need(t.plan.id).runs['safe'] };
+  }
+
+  it('on autopilot a failed merge is yours to pass again: the plan says so, and Needs You (the phone too) asks', async () => {
+    const t = await failedOnAutopilot();
+    expect(t.run()?.mergeFailed).toBeDefined();
+    expect(t.view().next).toMatchObject({ kind: 'pass', milestone: { milestone: { id: 'safe' } } });
+    const card = needsYou(t.store.getState()).find((n) => n.id === `plan:${t.plan.id}:pass:safe`);
+    expect(card?.title).toBe('“Safe payments” couldn’t merge: pass it again?');
+    expect(card?.detail).toBe('fatal: plan/payments is checked out with uncommitted changes');
+    expect(card?.actions.map((a) => a.method)).toEqual(['plans.pass', 'plans.recheck']);
+  });
+
+  it('on autopilot a new round (Check Again) forgets the failed merge, and a passing check passes it again', async () => {
+    const t = await failedOnAutopilot();
+    expect(t.tries()).toBe(1);
+    t.setConflict(undefined);
+    t.work.recheck(t.plan.id, 'safe');
+    expect(t.run()?.mergeFailed).toBeUndefined();
+    expect(t.run()?.passedAt).toBeUndefined();
+    await tick(20);
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', 'ok again');
+    await t.settle();
+    await tick(50);
+    expect(t.run()?.passedAt).toBeDefined();
+    expect(t.log.merged.length).toBe(2);
   });
 
   it('Merge on GitHub pushes the branch first, asks GitHub again, and says GitHub’s no in plain words', async () => {

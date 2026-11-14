@@ -3,6 +3,7 @@ import type { ContentResults, LineMatch, NameResults } from '@beluga/core/worksp
 import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
 import { useBeluga } from '../../lib/beluga.js';
+import { scrollWithin } from '../../lib/scroll-within.js';
 import s from './panel.module.css';
 import k from './content-search.module.css';
 
@@ -140,7 +141,7 @@ export function ContentResultsList({ state, query, listRef, onOpen, onEscape }: 
   const picks = useMemo(() => files.flatMap((f) => (folded.has(f.path) ? [{ path: f.path, line: 0 }] : [{ path: f.path, line: 0 }, ...f.matches.map((m) => ({ path: f.path, line: m.line }))])), [files, folded]);
   const same = (a: Pick | undefined, b: Pick): boolean => a?.path === b.path && a.line === b.line;
   useEffect(() => {
-    listRef.current?.querySelector('[data-cursor="true"]')?.scrollIntoView({ block: 'nearest' });
+    scrollWithin(listRef.current?.querySelector('[data-cursor="true"]'));
   }, [cursor]);
 
   const fold = (p: string, to?: boolean): void => {

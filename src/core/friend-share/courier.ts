@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readJson, writeJson } from '../../net/mesh/files.js';
+import { JsonFile, readJson } from '../../net/mesh/files.js';
 import { type ShareMsg, parseShareFrame } from './protocol.js';
 
 /**
@@ -56,6 +56,11 @@ export const RESEND_MS = 20_000;
 export const OUTBOX_DAYS = 7;
 const MAX_WAITING = 2_000;
 const SEEN_FRAMES = 1_000;
+/**
+ * The outbox is written at most this often: a busy team sends many frames a second, and a full
+ * outbox is megabytes, so writing it for each one froze everything else the daemon does.
+ */
+export const SAVE_MS = 1_000;
 
 const newId = (): string => randomBytes(12).toString('base64url');
 
@@ -67,6 +72,8 @@ export class Courier<M> {
   private waiting: Waiting<M>[] = [];
   private readonly seen = new Map<string, Set<string>>();
   private timer: NodeJS.Timeout | undefined;
+  /** The outbox file, written in the background a moment after a change (BLG-942). */
+  private readonly outbox: JsonFile | undefined;
 
   constructor(
     private readonly link: CourierLink<M>,
@@ -74,6 +81,7 @@ export class Courier<M> {
     /** A message that waited was taken by their Mac. */
     private readonly onAcked: (to: string, msg: M) => void = () => undefined,
   ) {
+    this.outbox = file ? new JsonFile(file, () => this.waiting.map(({ to, frame, at, key, mailedAt }) => ({ to, frame, at, ...(key ? { key } : {}), ...(mailedAt ? { mailedAt } : {}) })), SAVE_MS) : undefined;
     const saved = file ? readJson(file) : undefined;
     if (Array.isArray(saved)) {
       const cutoff = Date.now() - OUTBOX_DAYS * 86_400_000;
@@ -89,8 +97,14 @@ export class Courier<M> {
     this.timer.unref();
   }
 
+  /** Stops resending, and writes what waits now if a write was still to come. */
   stop(): void {
     clearInterval(this.timer);
+    try {
+      this.outbox?.flush();
+    } catch {
+      // Best effort: what waits is still in memory.
+    }
   }
 
   /**
@@ -191,13 +205,9 @@ export class Courier<M> {
     if (this.waiting.length !== before) this.save();
   }
 
+  /** Written soon, in the background (once for every change in the meantime); stop() writes it at once. */
   private save(): void {
-    if (!this.file) return;
-    try {
-      writeJson(this.file, this.waiting.map(({ to, frame, at, key, mailedAt }) => ({ to, frame, at, ...(key ? { key } : {}), ...(mailedAt ? { mailedAt } : {}) })));
-    } catch {
-      // Best effort: what waits is still in memory.
-    }
+    this.outbox?.changed();
   }
 }
 

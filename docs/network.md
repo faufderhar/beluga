@@ -71,6 +71,23 @@ at once. A relayed link is retried directly now and then and replaced once that 
 `av_get`/`av_data` (profile pictures), `g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`, `gw` (the gateway), `share`
 (sharing with friends), `team` (team boards: friends on the same GitHub repository, see docs/tasks-and-plans.md phase 3).
 
+**Each person's share of your Mac's time** (`inbound-budget.ts`, BLG-942). The link limits count frames
+and bytes; this one counts the work they make. Every frame is handled on the daemon's one thread, the
+thread that also answers your clicks and runs your agents, and how much work comes in is up to the
+other Mac (a bug in their Beluga, like the team board loop of 2026-11-13, can send it without end).
+So each person's frames take at most 200 ms of every second (400 ms for everyone together, with a
+400 ms burst after a quiet spell): within that they're handled as they come; past it, theirs wait
+in a queue of their own, in order, worked through in 8 ms slices between everything else. A queue
+past 5,000 frames takes no more until it eases; what matters is resent by its sender, since it
+wasn't acknowledged. The black box notes whose frames were waiting, once a minute per person.
+A call's frames never wait in that queue (BLG-950): a ring is sent once and repeated only every
+10 s, so behind a teammate's board backlog it rang for nobody, both callers hearing only their own
+ringing. They're handled at once, ahead of what waits, and still cost that person's share; the
+call service keeps its own limit of 60 a second.
+The daemon's own big files never hold the thread: the board and the team's copy of it write only
+the tasks a change touched to a journal (`core/journal-file.ts`), and the outboxes and the plans are
+written in the background (`JsonFile` in `net/mesh/files.ts`).
+
 **Delivered, then Seen** (BLG-798). A direct message is Delivered once the install that is them on the network
 (their Mac, or their Always On) acks it with `dm_ack`. `dm_seen { id }` says their messages up to that one were on
 a screen of theirs: a conversation visible in a Beluga window in front, or opened on their phone (`network.read`),
@@ -441,7 +458,10 @@ conversation, and it's the same chat.
   link to send it on) doesn't start, and the Call button says so before you press it. The caller
   hears it ring at the others' (a bright ring-ring, then a moment of quiet, as a phone does) until
   someone joins; the window wakes
-  its sound on that click, since WebKit keeps sound started without one silent.
+  its sound on that click, since WebKit keeps sound started without one silent. The ringback and
+  the bells as people come and go play as a stream in a hidden `<audio>`, like the voices, from the
+  speaker picked for calls: with the microphone open, macOS's voice processing turns down anything
+  else the window plays, and the caller heard no ringback.
 - **Missed calls.** A ring that stops before you answered or said Not Now (nobody picked up in
   45 s, or the caller hung up) leaves "Ann tried calling you at 14:05" where it rang in the
   conversation, with Call Back, and in the inbox (core/calls/missed.ts, kept in
@@ -808,6 +828,14 @@ after either of you restarts (`~/.beluga/shared-projects.json`). New worktrees a
 back. Each worktree also becomes a workspace shared with them (the state's `shared`, `via: 'mesh'`), so its conversation,
 files and changes open as a room share's do; unlike those, it isn't wiped when a room ends. Your side keeps who has what
 in `~/.beluga/project-shares.json`.
+
+**A plain chat, shared with a friend.** A chat in no project is shared from its own **Share** sheet, one at a time
+(`shareWithFriend({ peerId, workspaceId, role })`; all your chats at once is refused). It travels as your `Chats`
+project with `chats: true`, so their Mac shows it under "Chats" with your avatar, as a chat (`shared[].chat`), and
+offers no Files, Diff, copy or fork. They follow its conversation and Scratch and ask your agent there, as in a
+worktree. It has no project folder: their `fs_*` requests reach only its Scratch folders (`core/plain-chat-files.ts`,
+checked in `Session.handle`, so a person in your room it's shared with gets the same), and anything else (`fs_search`,
+`ws_diff`, a link out of Scratch) is answered "A chat has no project files: only its Scratch is shared".
 
 **What travels** (`protocol.ts`): each message rides in `{f, m}`, acknowledged with `{ack}`.
 

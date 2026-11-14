@@ -71,7 +71,7 @@ export function prepareMoved(board: BoardState, issues: readonly Issue[], target
     keysTaken.add(key);
     const aliases = [...new Set([...(i.aliases ?? []), ...(free ? [] : [i.key])])].filter((k) => k !== key);
     const map = (id: string): string | undefined => ids.get(id) ?? (findIssue(board, id) && !ids.has(id) ? id : undefined);
-    const { worktrees: _w, worktreeGone: _g, carriedBy: _c, board: _b, movedTo: _m, archivedAt: _a, needsChecks: _n, link: _l, ...rest } = i;
+    const { worktrees: _w, worktreeGone: _g, carriedBy: _c, board: _b, movedTo: _m, archivedAt: _a, needsChecks: _n, mergedHeld: _mh, link: _l, ...rest } = i;
     // Under way there: ready here again (the plan's next agent picks it up from its branch).
     const status = i.status === 'in_progress' ? 'todo' : i.status;
     const parent = i.parent ? map(i.parent) : undefined;

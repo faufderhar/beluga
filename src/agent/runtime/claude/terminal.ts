@@ -6,7 +6,7 @@ import { pathVariants } from './claude-sessions.js';
 import { belugaHome } from '../../../core/home.js';
 import type { AgentRef } from '../../../protocol.js';
 import { claudeCodeCommand, claudeCodeReady } from '../../claude-code.js';
-import type { PolicyContext } from '../../policy.js';
+import { type PolicyContext, isYourRun } from '../../policy.js';
 import { runInstructions } from '../../run-instructions.js';
 import { runToolSuites } from '../../run-tools.js';
 import { GATE_TOKEN_ENV, GATE_URL_ENV, gateHookFile, gateHookSettings, terminalHookAnswer } from '../../terminal-hook.js';
@@ -14,6 +14,7 @@ import { ToolHost } from '../../tool-host.js';
 import { gateTool } from '../../tool-gate.js';
 import type { AgentRunInput, RoomBridge, TerminalLaunch, TerminalSink } from '../../types.js';
 import { TerminalShelf } from '../../view-tools.js';
+import { claudeShellSetup, zshCompatEnv } from './zsh-compat.js';
 
 /** Claude Code's own settings file (~/.claude.json, or in $CLAUDE_CONFIG_DIR). */
 const claudeJson = (env: NodeJS.ProcessEnv = process.env): string => (env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json'));
@@ -125,7 +126,7 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
   const askOnly = place.askOnly;
   const autoEdit = !askOnly && place.autoEdit;
   const extraDirs = place.additionalDirectories;
-  const policy: PolicyContext = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(place.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
+  const policy: PolicyContext = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, yourRun: isYourRun(input), askOnly: Boolean(askOnly), ...(place.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
   const bridge = input.channel && opts.bridge.inChannel ? opts.bridge.inChannel(input.channel) : opts.bridge;
   const mounted = await (opts.toolHost ?? toolHost()).mount(
     runToolSuites(input, bridge, new TerminalShelf(sink), cwd),
@@ -141,7 +142,10 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
     config = writeMcpConfig(mounted.servers, opts.home);
     const { args: session, session: id, fresh } = sessionArgs(place.resume, Boolean(place.forkSession));
     const model = input.model ?? opts.model;
-    const instructions = runInstructions({ ...input, terminal: true }, opts.bridge.selfName(), opts.agentOf?.(input) ?? place.agent);
+    // zsh-compat.sh makes Claude Code's zsh take the bash it writes (zsh-compat.ts); the prompt says what's left.
+    const env = { ...process.env, ...input.env };
+    const compat = zshCompatEnv(env, opts.home);
+    const instructions = runInstructions({ ...input, terminal: true }, opts.bridge.selfName(), opts.agentOf?.(input) ?? place.agent, claudeShellSetup(env, compat));
     const args = [
       ...session,
       // Yours, never a project's .claude/ (see ownerSettings in runner.ts).
@@ -169,7 +173,7 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
     return {
       file: opts.claudePath ?? claudeCodeCommand(),
       args,
-      env: { ...input.env, [GATE_URL_ENV]: mounted.hookUrl ?? '', [GATE_TOKEN_ENV]: mounted.token },
+      env: { ...compat, ...input.env, [GATE_URL_ENV]: mounted.hookUrl ?? '', [GATE_TOKEN_ENV]: mounted.token },
       session: id,
       fresh,
       close,

@@ -1,6 +1,6 @@
 import { NewLabelSheet } from '../../tasks/NewLabelSheet.js';
 import { ProjectContextSheet } from '../../tasks/ProjectContextSheet.js';
-import { EnvironmentSheet } from '../EnvironmentSheet.js';
+import { EnvironmentSheet, WorktreeEnvSheet } from '../EnvironmentSheet.js';
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { BoardSheet } from '../../tasks/boards.js';
 import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
@@ -38,7 +38,7 @@ const slug = (name: string): string =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
 
-/** Fork a workspace: a copy with its committed work and its conversation, under a new name. */
+/** Fork a workspace: a copy of all of it (commits, uncommitted changes, Scratch, conversation), under a new name. */
 function ForkSheet({ wsId, close }: { wsId: string; close: () => void }) {
   const api = useApi();
   const ws = useApp((st) => findWorkspace(st.projects, wsId));
@@ -50,7 +50,7 @@ function ForkSheet({ wsId, close }: { wsId: string; close: () => void }) {
     <FormSheet
       title={`Fork “${ws.name}”`}
       icon="branch"
-      intro="A new worktree that starts from this one’s commits, with a copy of its conversation, so you can try another direction. Uncommitted changes stay here."
+      intro="A new worktree that starts exactly where this one is: its commits, uncommitted changes, Scratch and conversation, so you can try another direction. This one stays as it is."
       submitLabel="Fork"
       canSubmit={Boolean(slug(name)) && !taken}
       onSubmit={() => {
@@ -204,7 +204,9 @@ export function NativeSheets() {
     case 'project_context':
       return <ProjectContextSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'project_env':
-      return <EnvironmentSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+      return <EnvironmentSheet key={sheet.projectId} projectId={sheet.projectId} {...(sheet.tab ? { tab: sheet.tab } : {})} close={close} />;
+    case 'worktree_env':
+      return <WorktreeEnvSheet key={sheet.workspaceId} workspaceId={sheet.workspaceId} close={close} />;
     case 'new_plan':
       return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
     case 'new_sentinel':
@@ -223,6 +225,8 @@ export function NativeSheets() {
       return <PlanModeSheet key={sheet.planId} planId={sheet.planId} close={close} />;
     case 'git_trouble':
       return <GitTroubleSheet key={`${sheet.wsId}:${sheet.trouble.kind}`} wsId={sheet.wsId} trouble={sheet.trouble} retry={sheet.retry} close={close} />;
+    case 'share_copy':
+      return <ShareCopyAlert sheet={sheet} close={close} />;
     case 'confirm':
       return (
         <Alert
@@ -242,4 +246,24 @@ export function NativeSheets() {
         />
       );
   }
+}
+
+/**
+ * Their agent can't read your chat: a copy of its messages can go with yours, only if you say so.
+ * Cancel keeps the words in the box; Send Without It sends them alone.
+ */
+function ShareCopyAlert({ sheet, close }: { sheet: Extract<NativeSheet, { kind: 'share_copy' }>; close: () => void }) {
+  const named = sheet.titles.map((t) => `“${t}”`).join(', ');
+  const one = sheet.titles.length === 1;
+  return (
+    <Alert
+      title={`Share a copy of ${named} with ${sheet.person}?`}
+      message={`${sheet.person}’s agent can’t read ${one ? 'that chat' : 'those chats'}. A copy of ${one ? 'its' : 'their'} messages, as ${one ? 'it is' : 'they are'} now, leaves this computer with your message: no tool output, secrets hidden.`}
+      tone="info"
+      icon="people"
+      confirm={{ label: 'Share Copy', onClick: () => (close(), sheet.share()) }}
+      alternative={{ label: 'Send Without It', onClick: () => (close(), sheet.without()) }}
+      onCancel={close}
+    />
+  );
 }

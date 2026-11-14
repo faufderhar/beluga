@@ -125,8 +125,15 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: 'Needs a fix', detail: `“${next.milestone.milestone.title}” didn’t pass the agent’s check` };
     case 'answer':
       return { title: 'Your agent asked something', detail: next.tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') };
-    case 'stalled':
-      return { title: next.tasks.length === 1 ? `Resume ${next.tasks[0]!.issue?.key ?? `“${next.tasks[0]!.task.title}”`}` : `Resume ${next.tasks.length} Tasks`, detail: next.tasks.map((t) => t.watch?.line ?? `${t.issue?.key ?? t.task.title} stopped again`).join(' · ') };
+    case 'stalled': {
+      // The title is the button, so it says what pressing it does (Resume). One task that said what
+      // it waits on you for: that's the detail, instead of the bare stall.
+      const one = next.tasks.length === 1 ? next.tasks[0]! : undefined;
+      const name = one ? (one.issue?.key ?? `“${one.task.title}”`) : '';
+      const title = one ? `Resume ${name}` : `Resume ${next.tasks.length} Tasks`;
+      if (one?.watch?.said) return { title, detail: `It says: “${one.watch.said}”` };
+      return { title, detail: next.tasks.map((t) => t.watch?.line ?? `${t.issue?.key ?? t.task.title} stopped again`).join(' · ') };
+    }
     case 'working':
       return { title: next.tasks.length ? `${next.tasks.length} ${next.tasks.length === 1 ? 'task' : 'tasks'} in progress` : 'Starting…', ...(next.note ? { detail: next.note } : {}) };
     case 'waiting':
@@ -272,8 +279,12 @@ export function headline(view: PlanView): Headline {
       return { who: 'beluga', text: next.why };
     case 'merging':
       return { who: next.milestone.merging?.conflict?.stuck ? 'you' : 'beluga', text: next.text };
-    case 'stalled':
-      return { who: 'you', text: `Resume ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}: its agent stopped again without finishing` };
+    case 'stalled': {
+      // What it said last is usually what it waits on you for: the plan's sentence says it (the feed has it whole).
+      const said = next.tasks.length === 1 ? next.tasks[0]!.watch?.said : undefined;
+      const keys = next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ');
+      return { who: 'you', text: said ? `Resume ${keys} once you’ve done what it asks: “${said}”` : `Resume ${keys}: its agent stopped again without finishing` };
+    }
     case 'ship':
       return shipHeadline(plan, next.branch, next.pr);
     case 'done':

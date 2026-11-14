@@ -1,7 +1,8 @@
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as outputFiles from '../src/core/claude-code/output-files.js';
 import { bgLaunchOf, cleanTerminal, exitCodeOf, taskIdOf } from '../src/core/claude-code/tasks.js';
 import { factsOf, parseLine } from '../src/core/claude-code/transcript.js';
 import { ClaudeCodeWatcher } from '../src/core/claude-code/watch.js';
@@ -140,8 +141,12 @@ describe('the watcher: background commands, followed live', () => {
 
   it("never shows a file a command only names: not outside the project or temp folders, not one older than the command", async () => {
     const home = path.join(root, 'claude');
-    const outside = path.join(os.homedir(), `.klaud-test-${process.pid}-${Date.now()}.log`);
-    writeFileSync(outside, 'private\n');
+    // The test home is itself temporary. Model a file outside every allowed root without
+    // writing into the developer's home (or assuming the checkout isn't in a temp folder).
+    const outside = path.join(path.parse(os.homedir()).root, 'beluga-private', 'not-a-task.log');
+    const readTail = outputFiles.readTail;
+    const reads = vi.spyOn(outputFiles, 'readTail').mockImplementation((file, bytes) =>
+      file === outside ? { text: 'private\n', size: 8, mtime: now } : readTail(file, bytes));
     const stale = path.join(cwd, 'old.log');
     writeFileSync(stale, 'from before\n');
     const old = (now - 60 * 60_000) / 1000;
@@ -154,9 +159,10 @@ describe('the watcher: background commands, followed live', () => {
     try {
       expect(fresh.taskOutput(SID, undefined, 'bout')?.text).toBe('');
       expect(fresh.taskOutput(SID, undefined, 'bstale')?.text).toBe('');
+      expect(reads.mock.calls.some(([file]) => file === outside)).toBe(false);
     } finally {
       fresh.stop();
-      rmSync(outside, { force: true });
+      reads.mockRestore();
     }
   });
 

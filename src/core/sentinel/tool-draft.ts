@@ -23,7 +23,7 @@ const stepName = z.string().max(80);
 
 const TOOL_TRIGGER = z
   .discriminatedUnion('kind', [
-    ScheduleTriggerSchema.describe('every: hours (with hours: 1|2|3|6|12), day, other-day, week (with days: 0 Sunday…6 Saturday), month (with day: 1…28); at: "HH:MM" local time'),
+    ScheduleTriggerSchema.describe('every: minutes (with minutes: 1|5|10|15|30, on the clock: every 15 is :00, :15, :30, :45; at is not used), hours (with hours: 1|2|3|6|12), day, other-day, week (with days: 0 Sunday…6 Saturday), month (with day: 1…28); at: "HH:MM" local time. A missed slot (the Mac asleep) runs once at most (catch-up) or not at all (skip). Every few minutes with an Ask your agent step uses the user’s plan quickly: prefer 15 or 30 (never 1 without a reason), or set limits.perDay'),
     z.object({ kind: z.literal('manual') }),
     z.object({ kind: z.literal('after'), sentinelId: z.string().min(1).max(80).describe('The other sentinel’s id (sentinel_list)'), on: z.enum(['success', 'failure', 'always']) }),
     z.object({ kind: z.literal('beluga'), what: z.enum(BELUGA_EVENTS), projectId: z.string().max(80).optional() }).describe('Something in Beluga happened'),

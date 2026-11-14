@@ -171,7 +171,8 @@ describe('forking a friend’s worktree to your Mac', () => {
   it.skipIf(LOSES_A_MESSAGE_ON_WINDOWS)('someone who only follows along can’t fork', async () => {
     net = await crowd();
     const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
-    const kay = await mac(net, 'kay', { workspaces: await createDemoWorkspaces() });
+    // Permission is checked before looking for a local repository: Kay needs no demo copy.
+    const kay = await mac(net, 'kay');
     macs.push(ata, kay);
     await befriend(ata.person, kay.person);
     const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;

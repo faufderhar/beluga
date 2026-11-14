@@ -42,17 +42,22 @@ function useSettled<T>(value: T): T {
 
 const quiet = (): undefined => undefined;
 
-/** The PDF at a place, read and opened (and let go when you leave it); read again when `version` changes. */
-function usePdf(at: Location, version: unknown): { doc?: PDFDocumentProxy; error?: string } {
+/** Where a PDF comes from: a file at a place, or bytes already here (base64, a kept or fetched document). */
+export type PdfSource = { readonly at: Location } | { readonly data: string };
+
+/** The PDF read and opened (and let go when you leave it); read again when `version` changes. */
+function usePdf(source: PdfSource, version: unknown): { doc?: PDFDocumentProxy; error?: string } {
   const api = useApi();
   const [state, setState] = useState<{ key: string; doc?: PDFDocumentProxy; error?: string }>();
-  const key = `${at.owner}\0${at.share}\0${at.path}`;
+  // Bytes key themselves (the same string again is the same document).
+  const key = 'data' in source ? source.data : `${source.at.owner}\0${source.at.share}\0${source.at.path}`;
   useEffect(() => {
     let alive = true;
     let close: (() => void) | undefined;
     void (async () => {
       try {
-        const [{ data }, lib] = await Promise.all([api.files.readImageFile(at), import('./pdf-lib.js')]);
+        const read = 'data' in source ? Promise.resolve({ data: source.data }) : api.files.readImageFile(source.at);
+        const [{ data }, lib] = await Promise.all([read, import('./pdf-lib.js')]);
         const opened = await lib.openPdf(base64Bytes(data));
         close = opened.close;
         if (alive) setState({ key, doc: opened.doc });
@@ -113,8 +118,12 @@ function Page({ doc, n, scale, guess }: { doc: PDFDocumentProxy; n: number; scal
   );
 }
 
-export function PdfView({ at, controls, version }: { at: Location; controls: boolean; version?: unknown }) {
-  const { doc, error } = usePdf(at, version);
+/**
+ * Drawn with PDF.js rather than the web view's own viewer: the Mac's web view (WKWebView) draws a
+ * PDF only as a whole page, so one in an iframe (a blob or a data URL) stays blank.
+ */
+export function PdfView({ controls, version, ...source }: PdfSource & { controls: boolean; version?: unknown }) {
+  const { doc, error } = usePdf(source, version);
   const [width, setWidth] = useState(0);
   const [first, setFirst] = useState<Size>();
   const [zoom, setZoom] = useState<'fit' | number>('fit');

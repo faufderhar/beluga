@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { type Identity, identityFromPem, loadIdentity } from '../net/crypto.js';
+import { type Identity, generateIdentity, identityFromPem, loadIdentity } from '../net/crypto.js';
 import { readJson } from '../net/mesh/files.js';
 import { readAlwaysOn } from './always-on-state.js';
 
@@ -47,9 +47,23 @@ export interface StartIdentities {
   readonly you: Identity;
 }
 
+/**
+ * identity.json, or a one-off key for this run when the file is there but broken: Beluga still starts
+ * (or a handover still ends), and the file stays as it is (replacing it would change your peer id and
+ * the trust tied to it).
+ */
+export function identityOrOneOff(file: string, warn: (message: string) => void): Identity {
+  try {
+    return loadIdentity(file);
+  } catch (err) {
+    warn(`${err instanceof Error ? err.message : String(err)}. Beluga runs with a one-off identity until it's fixed: restore the file from a backup, or move it aside to get a new identity (friends will see you as someone new).`);
+    return generateIdentity();
+  }
+}
+
 /** The identities this install starts with (identity.json is made when missing, as ever). */
-export function identitiesAtStart(dir: string): StartIdentities {
-  const own = loadIdentity(path.join(dir, IDENTITY_FILE));
+export function identitiesAtStart(dir: string, warn: (message: string) => void = (m) => console.error(m)): StartIdentities {
+  const own = identityOrOneOff(path.join(dir, IDENTITY_FILE), warn);
   const standby = standbyIdentity(dir);
   const local = standby && readAlwaysOn(dir)?.standIn ? standby : own;
   return { local, you: standby ?? local };

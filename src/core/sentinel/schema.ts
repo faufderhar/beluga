@@ -19,6 +19,7 @@ export const ScheduleTriggerSchema = z.object({
   every: z.enum(SCHEDULE_EVERY),
   at: HHMM.default('07:00'),
   hours: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(6), z.literal(12)]).optional(),
+  minutes: z.union([z.literal(1), z.literal(5), z.literal(10), z.literal(15), z.literal(30)]).optional(),
   days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
   day: z.number().int().min(1).max(28).optional(),
   missed: z.enum(['catch-up', 'skip']).default('catch-up'),

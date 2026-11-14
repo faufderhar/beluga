@@ -1,7 +1,9 @@
 import { createBoardTools } from './board-tools.js';
 import { createCallNotesTools } from './call-notes-tools.js';
+import { createChatTools } from './chat-tools.js';
 import { createDashboardTools } from './dashboard-tools.js';
 import { createMacTools } from './mac-tools.js';
+import { createMcpTools } from './mcp-tools.js';
 import { createPhoneTools } from './phone-tools.js';
 import { createPlanTools } from './plan-tools.js';
 import { createSentinelTools } from './sentinel-tools.js';
@@ -37,6 +39,10 @@ export function runToolSuites(input: AgentRunInput, bridge: RoomBridge, shelf: V
     ...(input.phoneTools ? { beluga_phone: createPhoneTools(input.phoneTools) } : {}),
     // Your own runs can look up what was said in calls you were in (core/calls, BLG-715).
     ...(input.callNotesTools ? { beluga_calls: createCallNotesTools(input.callNotesTools) } : {}),
+    // Your own runs sign in to your MCP servers from the chat, never /mcp in a terminal (core/mcp-sign-in.ts).
+    ...(input.mcpTools ? { beluga_mcp: createMcpTools(input.mcpTools) } : {}),
+    // Your own runs can find and read other chats (core/chat-links).
+    ...(input.chatTools ? { beluga_chats: createChatTools(input.chatTools) } : {}),
     // Your own runs, when you turned agent threads on (core/threads).
     ...(input.threadTools ? { beluga_threads: createThreadTools(input.threadTools) } : {}),
     beluga_view: createViewTools(shelf, cwd),

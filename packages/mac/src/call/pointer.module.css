@@ -1,0 +1,73 @@
+/*
+ * One person's pointer over a shared screen (BLG-733, BLG-912): an arrow in their colour, and
+ * beside it their face in a ring of the same colour. Their name slides out of the face while they
+ * click or move, and folds back into it once they rest.
+ */
+
+.pointer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+  transition: opacity 160ms linear;
+}
+.pointerArrow {
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.28));
+}
+.pointerTag {
+  position: absolute;
+  left: 12px;
+  top: 16px;
+  display: inline-flex;
+  align-items: center;
+  /* Its box is the arrow's (no width): it takes its own, or the folding name would never open. */
+  width: max-content;
+  padding: 2px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  color: #1d1f24;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transform-origin: 9px 50%;
+}
+.pointerFace {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px #ffffff;
+}
+/* The name: a column that opens to its width and folds to nothing. */
+.pointerName {
+  display: grid;
+  grid-template-columns: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-columns 320ms var(--ease-out),
+    opacity 200ms linear;
+}
+.pointerName > span {
+  min-width: 0;
+  overflow: hidden;
+}
+.pointerName > span > span {
+  display: block;
+  padding: 0 7px 0 5px;
+}
+.pointer[data-open='false'] .pointerName {
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-columns 420ms var(--ease-out),
+    opacity 240ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pointerName,
+  .pointer[data-open='false'] .pointerName {
+    transition: opacity 120ms linear;
+  }
+}

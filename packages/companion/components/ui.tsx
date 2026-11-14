@@ -125,10 +125,22 @@ export function More({ onPress, label = 'More', size = 34 }: { readonly onPress:
 }
 
 /** A list row: icon badge, a label (and a quiet line under it), something on the right, a chevron. */
-export function Row({ Icon, tone = 'plain', label, sub, right, onPress, onLongPress, chevron = true, first }: { readonly Icon?: LucideIcon; readonly tone?: Tone; readonly label: string; readonly sub?: string; readonly right?: ReactNode; readonly onPress?: () => void; readonly onLongPress?: (() => void) | undefined; readonly chevron?: boolean; readonly first?: boolean }) {
+/**
+ * A list row. `shared`: it's shared with someone (a worktree of yours, 1.55): a small green dot at
+ * its icon's corner, named for screen readers ("Shared with 2 people").
+ */
+export function Row({ Icon, tone = 'plain', label, sub, right, onPress, onLongPress, chevron = true, first, shared }: { readonly Icon?: LucideIcon; readonly tone?: Tone; readonly label: string; readonly sub?: string; readonly right?: ReactNode; readonly onPress?: () => void; readonly onLongPress?: (() => void) | undefined; readonly chevron?: boolean; readonly first?: boolean; readonly shared?: string }) {
+  const badge = Icon ? <IconBadge Icon={Icon} tone={tone} size={30} /> : null;
   const body = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 }}>
-      {Icon ? <IconBadge Icon={Icon} tone={tone} size={30} /> : null}
+      {badge && shared ? (
+        <View>
+          {badge}
+          <View accessible accessibilityLabel={shared} style={{ position: 'absolute', right: -2, bottom: -2, width: 10, height: 10, borderRadius: 5, backgroundColor: color.ok, borderWidth: 2, borderColor: elevation.card.surface }} />
+        </View>
+      ) : (
+        badge
+      )}
       <View style={{ flex: 1, gap: 1 }}>
         <T v="body" numberOfLines={1} style={{ fontWeight: '500' }}>
           {label}

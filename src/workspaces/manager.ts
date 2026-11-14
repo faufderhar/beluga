@@ -11,7 +11,7 @@ import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envChangesAs
 import { WorkspaceStore } from './store.js';
 import { migrateMainConversations } from './main-migration.js';
 import { stopTestProcesses } from './test-procs.js';
-import { applySnapshot, dropSnapshots, snapshotBase } from './snapshots.js';
+import { applySnapshot, dropSnapshots, forkRef, snapshot, snapshotBase } from './snapshots.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree, sweepPartialArchives } from './archive.js';
 import { worktreeOrigin } from './origin.js';
 import { deleteFolderInBackground, removeWorktreeKeepingBranch, sweepSetAside } from './others.js';
@@ -33,7 +33,7 @@ import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, gr
 export type ArrangeTarget = { readonly project: string } | { readonly group: string };
 import { type ProjectScripts, type ResolvedScripts, resolveScripts, saveProjectFile } from './scripts.js';
 import { PROJECT_DIR, sentFolder } from '../shared/scratch-dir.js';
-import { dropSent } from './scratch.js';
+import { copyScratch, dropSent } from './scratch.js';
 import { BRANCH_PREFIX_DEFAULT } from '../shared/settings-schema.js';
 import { envRecord, parseEnvText } from '../shared/env-vars.js';
 import type { ThreadRecord } from '../shared/threads.js';
@@ -136,6 +136,8 @@ export class WorkspaceManager {
   private forks = new Map<string, ForkOf>();
   /** A remote's default branch learned while fetching, for repos without origin/HEAD (by root). */
   private remoteDefaults = new Map<string, string>();
+  /** Worktree branches (root and branch) already checked for a fork pull request's head to follow: git asked once each. */
+  private readonly pullHeadsChecked = new Set<string>();
 
   /** What new branches start with (Settings › Workspaces; the session points this at your choice). */
   branchPrefix: () => string = () => BRANCH_PREFIX;
@@ -561,6 +563,7 @@ export class WorkspaceManager {
         if (rec.kind === 'chat') workspaces.push({ ...rec, projectId: id, external: false, ...(real(rec.path) === real(root) || rec.thread?.readOnly ? { askOnly: true } : {}) });
         else if (rec.archived && rec.kind === 'worktree') workspaces.push({ ...rec, projectId: id, external: false });
       }
+      await this.followPullHeads(root, workspaces);
       const withStatus = await Promise.all(
         workspaces.map(async (w) => (w.archived || w.kind === 'chat' ? w : { ...w, status: await g.status(w.path, w.kind === 'main' ? undefined : w.base, shippedOf(w)).catch(() => undefined) })),
       );
@@ -890,6 +893,9 @@ export class WorkspaceManager {
       // `git pull` there brings the pull request's new commits.
       await g.git(root, ['config', `branch.${branch}.remote`, 'origin']);
       await g.git(root, ['config', `branch.${branch}.merge`, `refs/pull/${pull.number}/head`]);
+      // And keeps its head here current (BLG-948): what git pull brings is never "not on the PR".
+      await g.followPullHead(root, branch).catch(() => undefined);
+      this.pullHeadsChecked.add(`${root}\0${branch}`);
     }
     await g.excludeProjectDir(dir);
     await copyEnvFiles(root, dir);
@@ -898,6 +904,18 @@ export class WorkspaceManager {
     this.saveRecord(record);
     const status = await g.status(dir, base).catch(() => undefined);
     return this.adopt(project, { ...record, projectId: project.id, external: false, ...(status ? { status } : {}) });
+  }
+
+  /**
+   * Fork pull requests' worktrees made before their heads were followed (BLG-948) get the fetch
+   * refspec that keeps them current: once per branch while the daemon runs, never in a refresh's way.
+   */
+  private async followPullHeads(root: string, workspaces: readonly Workspace[]): Promise<void> {
+    const fresh = workspaces.filter((w) => w.kind === 'worktree' && !w.archived && w.branch && !this.pullHeadsChecked.has(`${root}\0${w.branch}`));
+    for (const w of fresh) {
+      this.pullHeadsChecked.add(`${root}\0${w.branch}`);
+      await g.followPullHead(root, w.branch!).catch(() => undefined);
+    }
   }
 
   /**
@@ -997,29 +1015,48 @@ export class WorkspaceManager {
 
   /**
    * Copy a workspace into a new worktree that starts from its current state, with its conversation.
+   * A worktree goes whole: its commits, its uncommitted work (still uncommitted in the copy, taken
+   * without touching a file or the index of the source) and its Scratch folder.
    * `at`: from an earlier snapshot of it instead (see snapshots.ts), with `session` (Claude's, cut to
    * there; null: none) and `history` (the conversation up to there) in place of the whole of them.
+   * `id`: the id it gets (from newWorktreeId: its row shows under it while it's made), else a fresh one.
    */
-  async fork(id: string, name: string, opts: { base?: string; at?: string; session?: string | null; history?: readonly unknown[] } = {}): Promise<Workspace> {
+  async fork(id: string, name: string, opts: { base?: string; at?: string; session?: string | null; history?: readonly unknown[]; id?: string } = {}): Promise<Workspace> {
     const source = this.require(id);
     const project = this.projectOf(source);
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    // `opts.base`: start from there (e.g. the latest origin) instead of the source's own commits.
-    const from = opts.at ? await snapshotBase(source.path, opts.at) : (opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD')));
-    const branch = await this.freeBranch(project.root, `${this.branchPrefix()}${s}`);
-    await g.addWorktree(project.root, dir, branch, from);
-    await g.excludeProjectDir(dir);
-    if (opts.at) await applySnapshot(dir, opts.at);
-    await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
+    const newId = opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId();
+    const worktree = source.kind === 'worktree' && existsSync(source.path);
+    // As it is now, uncommitted work too (`opts.base`: from there instead, e.g. the latest origin).
+    const ref = forkRef(newId);
+    const now = worktree && !opts.at && opts.base === undefined ? await snapshot(source.path, ref, 'Beluga: uncommitted work, forked') : undefined;
+    const at = opts.at ?? now;
+    try {
+      const from = at ? await snapshotBase(source.path, at) : (opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD')));
+      const branch = await this.freeBranch(project.root, `${this.branchPrefix()}${s}`);
+      await g.addWorktree(project.root, dir, branch, from);
+      await g.excludeProjectDir(dir);
+      if (at) await applySnapshot(dir, at);
+      if (worktree) await copyScratch(source.path, dir);
+      await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
+      return await this.recordFork(source, { id: newId, name: s, dir, branch, base: opts.base ?? source.base ?? project.base, root: project.root }, opts);
+    } finally {
+      if (now) await g.git(source.path, ['update-ref', '-d', ref]).catch(() => undefined);
+    }
+  }
+
+  /** fork's record of the new worktree, its conversation (a copy of the source's, or `opts.history`) and the refreshed list. */
+  private async recordFork(source: Workspace, made: { id: string; name: string; dir: string; branch: string; base: string; root: string }, opts: { session?: string | null; history?: readonly unknown[] }): Promise<Workspace> {
+    const { dir, branch } = made;
     const record: WorkspaceRecord = {
-      id: freshId(),
-      projectRoot: project.root,
-      name: s,
+      id: made.id,
+      projectRoot: made.root,
+      name: made.name,
       path: dir,
       kind: 'worktree',
       branch,
-      base: opts.base ?? source.base ?? project.base,
+      base: made.base,
       createdAt: Date.now(),
       forkedFrom: source.id,
       ...forkSessionOf(source, opts.session),
@@ -1524,6 +1561,26 @@ export class WorkspaceManager {
     return { name: s, ...(branch ? { branch } : {}), ...(kept ? { branchKept: kept } : {}) };
   }
 
+  /**
+   * Make a fork pull request's worktree a branch of your own (BLG-948), for a pull request of its
+   * own when the fork can't be pushed to: it gets a name nothing here or on a remote has (beluga/<its
+   * name>, so the fork's branch name never finds the fork's PR), and stops following the fork's
+   * pull request. Its commits, the fork's and yours, all stay. → the branch's name now.
+   */
+  async leavePull(id: string): Promise<string> {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only a worktree’s branch can have a pull request of its own');
+    if (!(await g.followsPull(ws.path, ws.branch))) return ws.branch;
+    const wanted = `${this.branchPrefix()}${slug(ws.name) || 'pull-request'}`;
+    let branch = wanted;
+    for (let i = 2; (await g.isCommit(ws.path, `refs/heads/${branch}`)) || (await this.onRemote(ws.path, branch)); i++) branch = `${wanted}-${i}`;
+    await g.git(ws.path, ['branch', '-m', ws.branch, branch]);
+    await g.stopFollowingPull(ws.path, branch);
+    this.patchRecord(id, { branch });
+    await this.refresh();
+    return branch;
+  }
+
   /** Is this branch on a remote already (a remote branch of the same name)? Its upstream alone says nothing: a new worktree's is origin/main. */
   private async onRemote(repo: string, branch: string): Promise<boolean> {
     return Boolean((await g.tryGit(repo, ['for-each-ref', '--count=1', `refs/remotes/*/${branch}`]))?.trim());
@@ -1609,10 +1666,10 @@ export class WorkspaceManager {
   }
 
   /** Copy a worktree's env changes back into the main folder; they're in step again, so nothing is asked. */
-  applyEnvBack(id: string): number {
+  applyEnvBack(id: string, opts: { readonly removed?: boolean } = {}): number {
     const ws = this.require(id);
     const changes = this.envChanges(id, true);
-    applyEnvChanges(ws.path, ws.projectRoot, changes);
+    applyEnvChanges(ws.path, ws.projectRoot, changes, opts);
     const files = changes.map((c) => c.file);
     this.patchRecord(id, { envSnapshot: { ...ws.envSnapshot, ...envHashes(ws.path, files) }, envKept: dropKeys(ws.envKept, files) });
     return changes.length;

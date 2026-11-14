@@ -7,6 +7,7 @@ import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { copyText } from '../../lib/copy.js';
 import { keepSeen, lastSeen } from '../../lib/last-seen.js';
+import { makeAhead } from '../../lib/make-ahead.js';
 import { ago } from '../../tasks/tasks-model.js';
 import s from '../../issues/issues.module.css';
 import pr from './pull-row.module.css';
@@ -103,9 +104,15 @@ export const PullRow = memo(function PullRow({ projectId, pull }: { projectId: s
   const ws = useApp((st) => st.projects.find((p) => p.id === projectId)?.workspaces.find((w) => w.kind === 'worktree' && !w.archived && mine(w.branch))?.id);
   const onGitHub = (): void => actions.openLink({ kind: 'url', url: pull.url });
   const open = (): void => (ws ? actions.run({ type: 'open_ws', id: ws }) : onGitHub());
-  // Its worktree's page opens at once while git fetches the branch; a failure says why in a toast.
-  const checkOut = (): void =>
-    void api.issues.openPull(projectId, pull.number).catch((err: unknown) => toast(client, `Couldn’t open #${pull.number} in a worktree: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+  // Its worktree's row and page show the moment you click (BLG-942), before the daemon has asked GitHub
+  // anything; git fetches the branch behind them. A failure takes them away and says why in a toast.
+  const checkOut = (): void => {
+    const ahead = makeAhead(client, projectId, `pr-${pull.number}`, pull.base ? { base: `origin/${pull.base}` } : {});
+    void api.issues.openPull(projectId, pull.number, ahead ? { id: ahead.id } : undefined).catch((err: unknown) => {
+      ahead?.drop();
+      toast(client, `Couldn’t open #${pull.number} in a worktree: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    });
+  };
   const menu = (): ActionItem[] => [
     ws ? { label: 'Open the Worktree', icon: 'branch', onSelect: open } : { label: 'Open in Worktree', icon: 'branch', onSelect: checkOut },
     { label: 'Open on GitHub', icon: 'external', separate: true, onSelect: onGitHub },

@@ -17,15 +17,20 @@ export interface AgentLabelOptions {
   readonly capital?: boolean;
 }
 
+/** Model families whose makers write them in their own way. */
+const BRANDS: Readonly<Record<string, string>> = { deepseek: 'DeepSeek', glm: 'GLM', minimax: 'MiniMax' };
+
 /** Model ids as people say them: "opus" → "Opus", "gpt-5" → "GPT-5", "claude-sonnet-4-5" → "Sonnet 4.5", OpenCode's "anthropic/claude-sonnet-4-5" the same (its provider isn't said). */
 export function modelName(model: string): string {
-  const m = model.trim().replace(/^[\w.@-]+\//, '').replace(/^claude-/i, '');
+  // Every provider before it goes (a router's too: openrouter/deepseek/deepseek-r1).
+  const m = model.trim().replace(/^(?:[\w.@-]+\/)+/, '').replace(/^claude-/i, '');
   if (/^gpt/i.test(m)) return m.replace(/^gpt/i, 'GPT');
   // A dated id's date ("-20250929") isn't said.
   const [first = '', ...rest] = m.split('-').filter((p) => !/^\d{8}$/.test(p));
   const version = rest.filter((p) => /^\d+$/.test(p)).join('.');
-  const words = rest.filter((p) => !/^\d+$/.test(p));
-  return [first.charAt(0).toUpperCase() + first.slice(1), ...words, version].filter(Boolean).join(' ');
+  // A short model code ("k2", "r1") in capitals, as its makers write it.
+  const words = rest.filter((p) => !/^\d+$/.test(p)).map((w) => (/^[a-z]\d/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w));
+  return [BRANDS[first.toLowerCase()] ?? first.charAt(0).toUpperCase() + first.slice(1), ...words, version].filter(Boolean).join(' ');
 }
 
 /** Just the agent: "Claude", or "Codex (GPT-5)" with `model`. */

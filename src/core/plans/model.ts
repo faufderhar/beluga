@@ -271,6 +271,8 @@ export interface TaskWatch {
   readonly wokeAt?: number;
   /** It stalled again soon after a wake: it waits for you (Resume, or Open Chat). */
   readonly needsYou?: boolean;
+  /** What it said last when it came to wait for you (often what it needs from you), clipped. */
+  readonly said?: string;
   /** The one line it's shown with: “KLD-36 stopped, woke it at 11:13”. */
   readonly line: string;
   /** Stopped by your usage limit: when it goes on by itself (see shared/run-failure.ts). */
@@ -396,6 +398,8 @@ export interface PlansSlice {
 }
 
 export const KEEP_PLAN_ACTIVITY = 200;
+/** A line in the plan's feed (`Plans.note`), at most: what's longer is cut. */
+export const NOTE_MAX = 300;
 export const DEFAULT_PARALLEL = 3;
 export const MAX_PARALLEL = 8;
 

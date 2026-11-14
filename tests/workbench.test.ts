@@ -18,7 +18,7 @@ import { PeerClient } from '../src/net/peer-client.js';
 import { TerminalManager } from '../src/terminal/index.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { runId, setupId } from '../src/core/workbench.js';
+import { endedWords, runId, setupId } from '../src/core/workbench.js';
 import { ASSISTANT_TITLE, assistantChannel } from '../src/shared/assistant.js';
 import { attach, waitFor } from './helpers.js';
 import { posixSh } from '../src/terminal/pty.js';
@@ -112,6 +112,14 @@ async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Prom
 const projectOf = (w: WorkspaceManager) => w.list.find((p) => p.root)!;
 
 describe('setup and run scripts', () => {
+  it('says how a setup ended: its exit code, or the signal that stopped it', () => {
+    expect(endedWords(2)).toBe('exit code 2');
+    expect(endedWords(0, 1)).toBe('exit code 0');
+    expect(endedWords(null, os.constants.signals.SIGHUP)).toBe('stopped by SIGHUP');
+    expect(endedWords(null, 999)).toBe('stopped by signal 999');
+    expect(endedWords(null)).toBe('exit code ?');
+  });
+
   it('runs the setup command in every new worktree, in its terminal, and reports the result', async () => {
     hub = await startHub({ keys });
     const dir = repo({ 'klaud.json': JSON.stringify({ scripts: { setup: 'echo installing && touch .ready', run: 'echo serving; sleep 30' } }) });
@@ -122,8 +130,12 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().approvals.length === 1, 4000);
     expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
     kay.session.answerApproval('always');
-    // A new worktree and a login shell can take a while on a busy CI runner: generous waits.
-    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', SLOW * 20_000);
+    // A new worktree and a login shell can take a while on a busy CI runner: generous waits. Flaky on
+    // CI's Linux runner only (its shell stopped with no output): if it hangs again, say how it ended.
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', SLOW * 20_000).catch((err: unknown) => {
+      const term = terminals.get(setupId(ws!.id));
+      throw new Error(`${String(err)}: ${JSON.stringify({ setup: kay.state().setup[ws!.id], exited: term?.exited, terminal: term?.backlog().slice(-300) })}`);
+    });
     const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
     await waitFor(() => kay.state().setup[next!.id]?.status === 'done', SLOW * 20_000);
     expect(kay.state().approvals).toHaveLength(0);
@@ -221,7 +233,7 @@ describe('setup and run scripts', () => {
     kay.session.answerApproval('always');
     // Flaky on CI's runners only (BLG-268 PR): if it hangs again, say how far each worktree got.
     await waitFor(() => kay.state().setup[one!.id]?.status === 'done' && kay.state().setup[two!.id]?.status === 'done', 20_000).catch((err: unknown) => {
-      const at = (id: string) => ({ setup: kay.state().setup[id], listed: Boolean(kay.workspaces.find(id)), terminal: terminals.get(setupId(id))?.backlog().slice(-300) });
+      const at = (id: string) => ({ setup: kay.state().setup[id], listed: Boolean(kay.workspaces.find(id)), exited: terminals.get(setupId(id))?.exited, terminal: terminals.get(setupId(id))?.backlog().slice(-300) });
       throw new Error(`${String(err)}: ${JSON.stringify({ one: at(one!.id), two: at(two!.id), approvals: kay.state().approvals.map((a) => a.title) })}`);
     });
     // Remembered: the next worktree just sets up, without asking Claude again.
@@ -359,6 +371,19 @@ describe('pull requests', () => {
     expect(kay.runs[1]?.prompt).toContain('gh run view --log-failed');
     kay.bench.openPr(ws!.id);
     expect(kay.opened).toEqual(['https://github.com/x/app/pull/7']);
+  });
+
+  it('one Beluga asks for by itself (a task reached In Review, BLG-927) runs the same instructions and leaves the screen where you are', async () => {
+    hub = await startHub({ keys });
+    const kay = await solo(repo());
+    const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'auth');
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
+    kay.bench.createPr(ws!.id, 'open it as a draft (gh pr create --draft)', { auto: true });
+    await waitFor(() => kay.runs.length === 1, 4000);
+    expect(kay.runs[0]?.prompt).toContain('gh pr create --base main --head beluga/auth');
+    expect(kay.runs[0]?.prompt).toContain('For this pull request, also: open it as a draft (gh pr create --draft)');
+    expect(kay.screen.getState().view).toEqual({ kind: 'overview' });
+    expect(kay.screen.getState().toast?.text).toContain('is opening a draft pull request');
   });
 
   it("stays quiet about PRs you didn't ask for, and ignores worktrees other tools made", async () => {

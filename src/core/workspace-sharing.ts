@@ -14,6 +14,8 @@ export interface FriendShareInput {
   readonly projectId?: string;
   readonly workspaceId?: string;
   readonly role: WsRole;
+  /** The whole project, even for a friend who has only some of its worktrees (without it, their scope stays). */
+  readonly whole?: boolean;
 }
 
 /** What core/friend-share does for WorkspaceSharing. */

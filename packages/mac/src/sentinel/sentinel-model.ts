@@ -15,6 +15,8 @@ import {
   type RunSummary,
   type ScheduleEvery,
   type ScheduleHours,
+  type ScheduleMinutes,
+  SCHEDULE_MINUTES,
   type ScheduleTrigger,
   type Sentinel,
   type SentinelState,
@@ -332,7 +334,7 @@ export const EVERY_CHOICES: ReadonlyArray<{ readonly value: ScheduleEvery; reado
   { value: 'other-day', label: 'Every other day' },
   { value: 'week', label: 'Every week' },
   { value: 'month', label: 'Every month' },
-  { value: 'hours', label: 'Every few hours' },
+  { value: 'hours', label: 'Through the day' },
 ];
 
 export const DEFAULT_SCHEDULE: ScheduleTrigger = { kind: 'schedule', every: 'day', at: '07:00', missed: 'catch-up' };
@@ -343,8 +345,12 @@ export function withEvery(t: ScheduleTrigger, every: ScheduleEvery): ScheduleTri
   if (every === 'week') return { ...base, days: t.days?.length ? t.days : [1] };
   if (every === 'month') return { ...base, day: t.day ?? 1 };
   if (every === 'hours') return { ...base, hours: t.hours ?? 3 };
+  if (every === 'minutes') return { ...base, minutes: t.minutes ?? 30 };
   return base;
 }
+
+/** The "How often" segment a schedule shows under: every few minutes and every few hours share "Through the day". */
+export const everySegment = (t: ScheduleTrigger): ScheduleEvery => (t.every === 'minutes' ? 'hours' : t.every);
 
 /** A weekday chip pressed: on or off (one stays on). Monday first, as the chips show them. */
 export function toggleDay(days: readonly number[] | undefined, day: number): number[] {
@@ -360,6 +366,25 @@ export const WEEK = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export const HOURS_CHOICES: readonly ScheduleHours[] = [1, 2, 3, 6, 12];
 
+/** "Through the day"'s Every menu: every few minutes (on the clock), then every few hours. Values: "5m", "1h"… */
+export const INTERVAL_CHOICES: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }> = [
+  ...SCHEDULE_MINUTES.map((m) => ({ value: `${m}m`, label: m === 1 ? 'minute' : `${m} minutes`, description: m === 1 ? 'Best without an agent step' : m === 15 ? 'On the clock: :00, :15, :30, :45' : m === 30 ? 'On the clock: :00 and :30' : 'On the clock' })),
+  ...HOURS_CHOICES.map((h) => ({ value: `${h}h`, label: h === 1 ? 'hour' : `${h} hours` })),
+];
+
+/** Which of the Every menu's choices a schedule is. */
+export const intervalOf = (t: ScheduleTrigger): string => (t.every === 'minutes' ? `${t.minutes ?? 30}m` : `${t.hours ?? 1}h`);
+
+/** An Every menu choice picked: every few minutes or every few hours, the rest kept. */
+export function withInterval(t: ScheduleTrigger, value: string): ScheduleTrigger {
+  const m = /^(\d+)([mh])$/.exec(value);
+  if (!m) return t;
+  const n = Number(m[1]);
+  const { hours: _h, minutes: _m, ...rest } = t;
+  if (m[2] === 'm') return (SCHEDULE_MINUTES as readonly number[]).includes(n) ? { ...rest, every: 'minutes', minutes: n as ScheduleMinutes } : t;
+  return (HOURS_CHOICES as readonly number[]).includes(n) ? { ...rest, every: 'hours', hours: n as ScheduleHours } : t;
+}
+
 /** "What starts it": a schedule, by hand, after another sentinel, or an event (each kind this Beluga runs). */
 export function triggerChoices(): Array<{ readonly value: TriggerKind; readonly label: string; readonly disabled: boolean; readonly description?: string }> {
   return (Object.keys(TRIGGER_INFO) as TriggerKind[]).map((k) => ({ value: k, label: k === 'schedule' ? 'On a schedule' : TRIGGER_INFO[k].label, disabled: !triggerAvailable(k), ...(triggerAvailable(k) ? { description: TRIGGER_HINT[k] } : { description: LATER }) }));
@@ -367,7 +392,7 @@ export function triggerChoices(): Array<{ readonly value: TriggerKind; readonly 
 
 /** The menu's one line under each kind. */
 const TRIGGER_HINT: Readonly<Record<TriggerKind, string>> = {
-  schedule: 'Every day, week, month or few hours',
+  schedule: 'Every few minutes or hours, every day, week or month',
   manual: 'Run Now, here or from your phone',
   after: 'When another sentinel’s run ends',
   beluga: 'A task is done, a pull request opens, an agent finishes…',
@@ -767,7 +792,7 @@ export const patchStep = (steps: readonly Step[], id: string, patch: Partial<Ste
 
 // ---------------------------------------------------------------- properties
 
-export const PER_DAY_CHOICES: readonly number[] = [0, 1, 2, 3, 4, 6, 12, 24];
+export const PER_DAY_CHOICES: readonly number[] = [0, 1, 2, 3, 4, 6, 12, 24, 48, 96];
 export const PAUSE_AFTER_CHOICES: readonly number[] = [0, 1, 2, 3, 5, 10];
 
 export const perDayLabel = (n: number | undefined): string => (!n ? 'No limit' : n === 1 ? 'Once a day' : `${n} a day`);

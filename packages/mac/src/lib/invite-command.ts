@@ -41,7 +41,7 @@ export async function runInvite(client: SocketClient, ui: UiStore, route: Invite
       const how: string[] = [];
       for (const f of route.friends) {
         try {
-          const done = await shareWithFriend(client, ui, { peerId: f.peerId, name: f.name, ...(route.projectId ? { projectId: route.projectId } : {}), ...(route.workspaceId ? { workspaceId: route.workspaceId } : {}), role: 'contribute' });
+          const done = await shareWithFriend(client, ui, { peerId: f.peerId, name: f.name, ...(route.projectId ? { projectId: route.projectId } : {}), ...(route.workspaceId ? { workspaceId: route.workspaceId } : { whole: true }), role: 'contribute' });
           if (done === 'sheet') return;
           how.push(f.name);
         } catch (err) {

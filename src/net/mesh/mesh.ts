@@ -27,6 +27,8 @@ import { type Entry, NameSchema, type Profile } from './schemas.js';
 import { type ChatExtras, type ChatFile, type FriendView, type GroupView, type InvitationView, type MessageView, type NetworkSummary, type Presence, dmConversation, groupConversation } from './views.js';
 import { type LinkMessage, PROTO } from './wire.js';
 import { isLate } from '../patient-timer.js';
+import { blackbox } from '../../core/blackbox/recorder.js';
+import { type BudgetOptions, InboundBudget } from './inbound-budget.js';
 import type { AgentRef } from '../../protocol.js';
 
 /**
@@ -56,6 +58,8 @@ export interface MeshOptions {
   readonly app?: string;
   /** Where frames wait for a friend you're never online with at the same time (mailbox.ts); none: only links. */
   readonly mailbox?: MailboxOptions;
+  /** How much of this Mac's time each person's frames may take (inbound-budget.ts; tests tune it). */
+  readonly inbound?: BudgetOptions;
 }
 
 /** What using an invitation got you. */
@@ -137,6 +141,10 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private readonly leavingHooks = new Set<() => Promise<unknown>>();
   private untilTimer: NodeJS.Timeout | undefined;
   private closed = false;
+  /** Each person's share of this Mac's time for what their Mac sends (BLG-942). */
+  private readonly inbound: InboundBudget;
+  /** When each person's waiting frames were last noted in the black box. */
+  private readonly busyNoted = new Map<string, number>();
   /** Who you're pulling chat files from now (set by core/chat/files.ts). */
   private filesFrom: (peerId: string) => boolean = () => false;
 
@@ -148,6 +156,17 @@ export class Mesh extends EventEmitter<MeshEvents> {
   ) {
     super();
     this.timing = { ...DEFAULT_TIMING, ...opts.timing };
+    this.inbound = new InboundBudget({
+      ...opts.inbound,
+      onBusy: (peerId, waiting, dropped) => {
+        // Noted once a minute per person: whose Beluga sends more than this Mac gives it, so a loop can be found.
+        const now = Date.now();
+        if (now - (this.busyNoted.get(peerId) ?? 0) < 60_000) return;
+        this.busyNoted.set(peerId, now);
+        blackbox.record('log', `${this.nameFor(peerId)}'s Beluga is sending more than its share of this Mac's time: theirs are handled in turn (${waiting} waiting${dropped ? ', more let go until it eases' : ''})`);
+      },
+      onError: (err) => blackbox.record('error', `a frame from a linked Mac failed: ${err instanceof Error ? err.message : String(err)}`),
+    });
     this.friends = new FriendBook(path.join(opts.dir, 'friends.json'));
     this.invitations = new InvitationBook(path.join(opts.dir, 'invitations.json'));
     this.dms = new DmBook(opts.dir);
@@ -189,7 +208,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
         this.avatarAsked.delete(peerId);
         this.emit('change');
       },
-      onMessage: (link, msg) => this.onMessage(link, msg),
+      // In turn, within each person's share of the thread: a busy friend's Beluga can't hold up yours.
+      // A call's frames go at once: a ring stuck behind a teammate's board backlog never rang (BLG-950).
+      onMessage: (link, msg) => (msg.t === 'call' ? this.inbound.urgent(link.peerId, () => this.onMessage(link, msg)) : this.inbound.take(link.peerId, () => this.onMessage(link, msg))),
       wantsFiles: (peerId) => this.filesFrom(peerId),
     });
     this.pairing = new PairingHost({
@@ -671,6 +692,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
     if (this.closed) return;
     await this.leaving();
     this.closed = true;
+    this.inbound.stop();
     clearInterval(this.ticker);
     clearTimeout(this.untilTimer);
     await this.pairing.close();

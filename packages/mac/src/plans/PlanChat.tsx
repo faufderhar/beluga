@@ -7,6 +7,9 @@ import { PaneLook } from "../chat/Items.js";
 import { QueueTray } from "../chat/QueueTray.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
 import { useMentionWorld } from "../chat/Mention.js";
+import { caretAfterDraw, useDraftChips } from "../chat/draft-chips.js";
+import { boxChats } from "../chat/chat-box.js";
+import { withChatWords } from "@beluga/shared/chat-ref.js";
 import { useSuggestions } from "../chat/Suggestions.js";
 import { suggest } from "@beluga/ui/suggest.js";
 import { MaxFire } from "../chat/MaxFire.js";
@@ -81,6 +84,13 @@ export function PlanChat({
     setTextState(next);
   };
   const box = useRef<HTMLTextAreaElement>(null);
+  // A chat's row dropped here: its chip at the cursor. It never sends.
+  useDraftChips(channel, (chips) => {
+    const at = box.current?.value === words.current ? box.current.selectionStart : words.current.length;
+    const next = withChatWords(words.current, at, boxChats(chips));
+    setText(next.text);
+    caretAfterDraw(box, next.caret);
+  });
   useEffect(() => {
     const focus = (): void => box.current?.focus();
     document.addEventListener("beluga:focus-composer", focus);
@@ -320,6 +330,7 @@ export function PlanChat({
       {sug.list}
       <form
         ref={form}
+        data-chat-box={channel}
         className={cx(
           p.chatBox,
           burning ? (fire.border ? m.max : m.maxPlain) : effects && m.fxOnly,

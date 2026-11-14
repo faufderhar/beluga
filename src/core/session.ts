@@ -1,4 +1,5 @@
 import { actingVia, asActingAgent } from './acting-agent.js';
+import { takeYourHand } from './by-hand.js';
 import { closePreviews } from '../preview/off.js';
 import { experimentOn } from '../shared/experiments.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,10 +10,11 @@ import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
 import path from 'node:path';
-import type { AgentBackend, RoomBridge } from '../agent/types.js';
+import type { AgentBackend, ChatChain, RoomBridge } from '../agent/types.js';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
 import { guardedBackend } from '../agent/runtime/guard.js';
 import { type SideRoute, routeSideCall, routedBackend } from '../agent/runtime/router.js';
+import { observeRuntime } from '../telemetry/hook.js';
 import { sideCalls } from '../agent/side-calls.js';
 import type { ChatAnswerRequest } from './chat/claude-prompt.js';
 import { localRuntime } from '../agent/runtime/local.js';
@@ -60,6 +62,7 @@ import { type PeerRun, type ShellRunner, describeShellResult } from './peer-run.
 import type { GuestControl, ProjectInvites } from './project-invites.js';
 import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
+import { chatFilesRefusal } from './plain-chat-files.js';
 import { coalesce } from './coalesce.js';
 import { PowerSaver, paced } from './power-saver.js';
 import type { EnvVars } from './env-vars.js';
@@ -120,6 +123,8 @@ export interface SessionOptions {
   readonly desktopNotify?: (n: import('./notify.js').DesktopNote) => void;
   /** Open a URL or file with the system (injected in tests). */
   readonly open?: (target: string) => void;
+  /** Open a web page on the screen in use (its `openExternal` capability), else with the system: an MCP sign-in's page. */
+  readonly openPage?: (url: string) => Promise<void>;
   /** Keep Claude Code current in the background (the Mac app's daemon; never in tests or the demo). */
   readonly updateAgent?: () => Promise<boolean>;
   /** Injected in tests: pull request lookups and the GitHub CLI check. */
@@ -286,7 +291,7 @@ export class Session {
     const options = { cwd: this.opts.agentCwd, autoEdit: true, additionalDirectories: [], bridge: this.bridge, ownEnv: this.ownEnv };
     return routedBackend(agent, 'claude', (id) => {
       const rt = also.find((r) => r.id === id);
-      return rt ? guardedBackend(rt.create(options), rt.capabilities) : undefined;
+      return rt ? observeRuntime(guardedBackend(rt.create(options), rt.capabilities), rt.id) : undefined;
     });
   }
 
@@ -298,7 +303,8 @@ export class Session {
 
   /** Your default agent's backend, sending each turn whose place picked another runtime to that one's (agent/runtime/router.ts). */
   private routed(main: AgentRuntime, rt: NonNullable<SessionOptions['runtime']>): AgentBackend {
-    const make = (r: AgentRuntime): AgentBackend => guardedBackend(r.create({ ...rt.options, bridge: this.bridge, ownEnv: this.ownEnv }), r.capabilities);
+    // Each runtime's turns also reach usage statistics, when you chose to send them (src/telemetry/hook.ts).
+    const make = (r: AgentRuntime): AgentBackend => observeRuntime(guardedBackend(r.create({ ...rt.options, bridge: this.bridge, ownEnv: this.ownEnv }), r.capabilities), r.id);
     // Every other runtime that has plan usage reports it too (Codex's windows on the usage tab).
     const withUsage = KNOWN_RUNTIMES.map((r) => r.id).filter((id) => id !== main.id && rt.runtimes(id)?.capabilities.hasUsage);
     return routedBackend(
@@ -328,7 +334,7 @@ export class Session {
     // A local endpoint is Claude Code pointed elsewhere (BLG-449), as in routed(): it runs wherever Claude does.
     const rt = runtime === LOCAL_RUNTIME ? (this.opts.runtime?.runtimes('claude') ? localRuntime((v) => this.local.resolve(v)) : undefined) : this.opts.runtime?.runtimes(runtime);
     if (!rt || !this.opts.runtime) return undefined;
-    const backend = guardedBackend(rt.create({ ...this.opts.runtime.options, bridge: this.bridge, ownEnv: this.ownEnv }), rt.capabilities);
+    const backend = observeRuntime(guardedBackend(rt.create({ ...this.opts.runtime.options, bridge: this.bridge, ownEnv: this.ownEnv }), rt.capabilities), rt.id);
     this.otherBackends.set(runtime, backend);
     return backend;
   }
@@ -394,7 +400,7 @@ export class Session {
       this.projectsTimer.unref();
       this.workspaceTimer = setInterval(paced(WORKSPACE_REFRESH_MS, saving, () => void this.workspaces?.refresh()), WORKSPACE_REFRESH_MS);
       this.workspaceTimer.unref();
-      // A quiet fetch of each project's remote every ~15 minutes (the project home's "fetched … ago").
+      // A quiet fetch of each project's remote as often as Settings › Workspaces says (the project home's "fetched … ago").
       this.workspaces.mainSync.start();
     }
   }
@@ -669,16 +675,19 @@ export class Session {
   }
 
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
-  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef, via: MessageVia | undefined = actingVia()): string {
+  /** `chain`: the chain your own agent sent it on in (see AgentRequestBody.chain). */
+  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef, via: MessageVia | undefined = actingVia(), chain?: ChatChain): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
+    // The message you just sent from a screen (core/by-hand.ts): its run uses Claude in Chrome as usual. Before it's sent: the run may start at once.
+    if (target === this.selfId && !via && !chain && takeYourHand(prompt)) this.host.markYours(requestId);
     // "@bob:codex" (BLG-520): the agent rides the ask, in the room only; their Mac runs it or says which one did (see namedAsks).
     const named = agent && channel === 'room' ? { agent: { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } } : {};
     if (named.agent) {
       this.namedAsks.set(requestId, { peer: target, agent: named.agent });
       if (this.namedAsks.size > 200) this.namedAsks.delete(this.namedAsks.keys().next().value!);
     }
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...(via ? { via } : {}), ...named }, { to: target });
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...(via ? { via } : {}), ...named, ...(chain ? { chain } : {}) }, { to: target });
     return requestId;
   }
 
@@ -689,7 +698,7 @@ export class Session {
    * Returns the request's id (undefined when you can't ask there). `shown`: the message is in the
    * chat already, under this request id (see showAsk), so it isn't drawn again.
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true, shown?: string): string | undefined {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true, shown?: string, chain?: ChatChain): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its agent. Ask the owner to let you contribute`, 'warn');
@@ -703,17 +712,34 @@ export class Session {
     // Your own Claude at work here: a steer says it isn't read yet from the moment it's drawn, and anything else waits in the queue from then.
     const running = !shared && this.host.runningIn(channel);
     if (echo && !shown) this.sendChat(typeof echo === 'string' ? echo : prompt, false, channel, requestId, urgent && running, !urgent && running);
-    return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId);
+    return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId, undefined, actingVia(), shared ? undefined : chain);
+  }
+
+  /**
+   * A message an MCP App in this conversation posts for you (ui/message, Settings › Experimental ›
+   * MCP Apps): said in the chat as yours, marked as the app's (`app`: its tool), and asked of your
+   * Claude like a line you typed. Only in a conversation of your own Claude (not the group chat).
+   */
+  askFromApp(text: string, channel: string, app: string): boolean {
+    if (channel === 'room' || this.sharing.sharedFor(channel)) return false;
+    const requestId = randomUUID();
+    const running = this.host.runningIn(channel);
+    const mid = randomUUID();
+    const words = text.slice(0, MAX_TEXT);
+    this.store.dispatch({ type: 'chat', id: chatMessageId(this.selfId, mid, ''), from: this.selfId, text: words, ts: Date.now(), byAgent: false, channel, request: requestId, fromApp: app, ...(running ? { queued: true as const } : {}) });
+    // People you invited into this chat see it too, as sendChat sends (without the app's mark: their Beluga has no field for it).
+    for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: words, byAgent: false, channel, mid }, { to });
+    return this.askOwnClaude(text, channel, false, false, requestId) !== undefined;
   }
 
   /**
    * A turn a plan starts by itself. In a worktree an external agent started it stays at that agent's
    * level, and ends with its grant: a plan's brief must not lift it to yours.
    */
-  askForPlan(prompt: string, channel: string, echo: boolean): string | undefined {
+  askForPlan(prompt: string, channel: string, echo: boolean, chain?: ChatChain): string | undefined {
     const ws = channel.startsWith('ws:') ? this.workspaces?.manager.find(channel.slice(3)) : undefined;
     const agent = ws?.kind === 'worktree' ? ws.startedByAgent : undefined;
-    return agent ? asActingAgent(agent, () => this.askOwnClaude(prompt, channel, false, echo)) : this.askOwnClaude(prompt, channel, false, echo);
+    return agent ? asActingAgent(agent, () => this.askOwnClaude(prompt, channel, false, echo, undefined, chain)) : this.askOwnClaude(prompt, channel, false, echo, undefined, chain);
   }
 
   /**
@@ -1264,6 +1290,9 @@ export class Session {
     if (GUARDED.has(body.kind) && !this.replay.admit(id, sentAt)) return;
     // Someone invited by link to a project only reaches that project.
     if (from !== this.selfId && this.invites.isRestricted(from) && !guestMayDo(body, this.opts.shares)) return;
+    // A plain chat shared with someone, in your room or over the network, gives only its Scratch.
+    const refused = from === this.selfId ? undefined : chatFilesRefusal(this.store.getState().projects, body);
+    if (refused) return void this.send(refused, { to: from });
     switch (body.kind) {
       case 'fs_search':
         if (!this.opts.shares.canAccess(body.share, from, this.selfId) || !this.opts.shares.isPrivate(body.share)) {
@@ -1579,7 +1608,7 @@ export class Session {
     this.sayWhoAnswers(from, body);
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
-    if (!this.workspaces?.deletedChannel(channel)) this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}), ...(body.agent ? { agent: body.agent } : {}), ...(body.via ? { via: body.via } : {}) });
+    if (!this.workspaces?.deletedChannel(channel)) this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}), ...(body.agent ? { agent: body.agent } : {}), ...(body.via ? { via: body.via } : {}), ...(body.fromChat ? { fromChat: body.fromChat } : {}) });
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;
     clearTimeout(waiter.timer);
     this.agentWaiters.delete(body.requestId);

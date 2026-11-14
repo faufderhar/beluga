@@ -2,7 +2,8 @@ import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { APP_VERSION } from '../lib/boot.js';
-import { useApp, useBeluga } from '../lib/beluga.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { DEFAULT_LEVEL } from '@beluga/core/telemetry-store.js';
 import { usePrefs } from '../lib/prefs.js';
 import { usePrivacyAccess } from '../lib/privacy.js';
 import { AccessStepView } from './AccessSteps.js';
@@ -13,15 +14,16 @@ import { Glass, GlassBackdrop } from './Glass.js';
 import { type Prepared, prepareWormhole } from './finale-sound.js';
 import { WORMHOLE, WORMHOLE_TOTAL, Wormhole } from './Wormhole.js';
 import { EASE_OUT, SPRING } from './fx.js';
-import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, resumeAt, saveMark, savePlace, shouldShow, stepBy, stepIndex, tourPlace, wasDone } from './onboarding-model.js';
+import { SHOW_WELCOME, type Step, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, lastSettingOf, resumeAt, saveMark, savePlace, shouldShow, stepBy, stepIndex, stepsFor, tourPlace, wasDone } from './onboarding-model.js';
 import { PhoneStep } from './PhoneStep.js';
+import { ShareStep } from './ShareStep.js';
 import { TerminalStep } from './TerminalStep.js';
 import { Fire, Look, Popups, Setup } from './SetupSteps.js';
 import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, yourAgents: 0.8, parallel: 0.9, agents: 0.9, tables: 0.9, machines: 0.9, friends: 0.9, sentinel: 0.9, uses: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, yourAgents: 0.8, parallel: 0.9, agents: 0.9, tables: 0.9, machines: 0.9, friends: 0.9, sentinel: 0.9, uses: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, share: 0.7, ready: 1 };
 
 /** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
 const ARRIVE_S = 1.6;
@@ -41,6 +43,8 @@ function arrive(): void {
 }
 
 export function useOnboarding(): { open: boolean; start: Step; close: (how: 'finished' | 'skipped') => void; arrive: () => void } {
+  const api = useApi();
+  const telemetry = useApp((st) => st.telemetry);
   const [open, setOpen] = useState(() => shouldShow(localStorage, window.location.search));
   // Where it opens: the step it was left on (macOS's "Quit & Reopen" after a permission), or the welcome.
   const [start, setStart] = useState<Step>(() => resumeAt(localStorage) ?? 'hello');
@@ -64,6 +68,9 @@ export function useOnboarding(): { open: boolean; start: Step; close: (how: 'fin
     arrive,
     close: (how) => {
       saveMark(localStorage, APP_VERSION, how);
+      // Finished or skipped before its step: usage statistics stay at Limited, as the step has it (BLG-922).
+      if (telemetry.available && !telemetry.level) void api.telemetry.choose(DEFAULT_LEVEL, 'onboarding').catch(() => undefined);
+      void api.telemetry.mark('onboarding_done', how).catch(() => undefined);
       clearPlace(localStorage);
       setOpen(false);
     },
@@ -71,20 +78,20 @@ export function useOnboarding(): { open: boolean; start: Step; close: (how: 'fin
 }
 
 /** The dots under every step: where you are, the tour's and the permissions' parts grouped, each one a way back. */
-function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) => void }) {
-  const at = stepIndex(step);
+function Progress({ step, steps, go }: { readonly step: Step; readonly steps: readonly Step[]; readonly go: (to: Step) => void }) {
+  const at = stepIndex(step, steps);
   return (
     <div className={s.progress} role="group" aria-label="Steps">
-      {STEPS.map((st, i) => (
+      {steps.map((st, i) => (
         <button
           key={st}
           type="button"
           aria-current={st === step ? 'step' : undefined}
-          aria-label={`Step ${i + 1} of ${STEPS.length}`}
+          aria-label={`Step ${i + 1} of ${steps.length}`}
           className={s.progressDot}
           data-past={i < at}
           // A little room where a group (the tour, the permissions) starts or ends.
-          data-gap={i > 0 && groupOf(st) !== groupOf(STEPS[i - 1]!) ? '' : undefined}
+          data-gap={i > 0 && groupOf(st) !== groupOf(steps[i - 1]!) ? '' : undefined}
           disabled={i > at}
           onClick={() => go(st)}
         >
@@ -103,9 +110,12 @@ function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) =
  */
 export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly start?: Step; readonly onClose: (how: 'finished' | 'skipped') => void; readonly onArrive?: () => void }) {
   const { ui } = useBeluga();
+  const api = useApi();
   const prefs = usePrefs();
   const projects = useApp((st) => st.projects.filter((p) => p.root).length);
   const phones = useApp((st) => st.companion.devices.length);
+  // Usage statistics' step only in a build that can send them (BLG-922).
+  const steps = stepsFor(useApp((st) => st.telemetry.available));
   const still = (useReducedMotion() ?? false) || prefs.reduceMotion;
   const [step, setStep] = useState<Step>(start);
   // Kept as it goes: macOS's "Quit & Reopen" after a permission brings you back to this step.
@@ -128,9 +138,10 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
   const go = (to: Step): void => {
     setDir(stepIndex(to) >= stepIndex(step) ? 1 : -1);
     setStep(to);
+    void api.telemetry.mark('onboarding_step', to).catch(() => undefined);
   };
-  const next = (): void => (step === 'ready' ? finish('finished') : go(stepBy(step, 1)));
-  const back = (): void => go(stepBy(step, -1));
+  const next = (): void => (step === 'ready' ? finish('finished') : go(stepBy(step, 1, steps)));
+  const back = (): void => go(stepBy(step, -1, steps));
   const exit = useRef<ReturnType<typeof setTimeout>>(undefined);
   const beats = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   // The wormhole's sound, readied once the last step has settled (so the click doesn't wait on it).
@@ -259,6 +270,7 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
               {inAccess(step) ? <AccessStepView step={step} access={privacy.access} recheck={privacy.recheck} go={go} /> : null}
               {step === 'popups' ? <Popups /> : null}
               {step === 'phone' ? <PhoneStep /> : null}
+              {step === 'share' ? <ShareStep /> : null}
               {step === 'ready' ? <Ready projects={projects} onOpen={() => finish('finished')} onAddProject={() => finish('finished', () => ui.patch({ addProject: true }))} /> : null}
             </motion.section>
           </AnimatePresence>
@@ -271,7 +283,7 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
               <button type="button" className={s.navBack} onClick={back} aria-label="Back">
                 <Icon name="back" size={14} />
               </button>
-              <Progress step={step} go={go} />
+              <Progress step={step} steps={steps} go={go} />
               <div className={s.navRight}>
                 {place ? (
                   <button type="button" className={s.navSkipTour} onClick={() => go(afterTour())}>
@@ -284,7 +296,7 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
                   </button>
                 ) : null}
                 <motion.button type="button" className={s.navNext} data-quiet={(inAccess(step) && privacy.access?.[step] !== 'granted') || (step === 'phone' && !phones) ? '' : undefined} onClick={next} whileTap={{ scale: 0.96 }}>
-                  {step === LAST_SETTING ? 'Finish' : inAccess(step) ? accessNext(privacy.access?.[step]) : 'Continue'}
+                  {step === lastSettingOf(steps) ? 'Finish' : inAccess(step) ? accessNext(privacy.access?.[step]) : 'Continue'}
                   <Icon name="arrowRight" size={13} />
                 </motion.button>
               </div>

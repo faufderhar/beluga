@@ -122,7 +122,7 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
   const items = [
     ...MERGE_METHODS.map((m) => ({ label: m.label, hint: gap ? `Pushes the ${commits}, then merges this way once ${gap === 1 ? 'its' : 'their'} checks pass` : m.hint, checked: m.method === method, onSelect: () => void merge(m.method) })),
     ...(auto && !gap ? [{ label: 'Merge When Checks Pass', hint: `${chosen.label} as soon as GitHub allows it`, separate: true, onSelect: () => void merge(method, 'auto') }] : []),
-    ...(skip ? [{ label: gap ? 'Push and Merge Now, Skipping Checks' : 'Merge Now, Skipping Checks', hint: `${gap ? `Pushes the ${commits}, then ${chosen.label.toLowerCase()}` : chosen.label} into the base on GitHub right away, past its checks and reviews (needs admin rights)`, danger: true, separate: Boolean(gap), onSelect: () => void merge(method, 'admin') }] : []),
+    ...(skip ? [{ label: gap ? 'Push and Merge Now, Skipping Checks' : 'Merge Now, Skipping Checks', hint: `${gap ? `Pushes the ${commits}, then ${chosen.label.toLowerCase()}` : chosen.label} into the base on GitHub right away, past its checks and reviews, and stops the checks still running (needs admin rights)`, danger: true, separate: Boolean(gap), onSelect: () => void merge(method, 'admin') }] : []),
   ];
   const tip = pr.draft ? 'It’s a draft: mark it ready for review on GitHub first' : gap ? `${commits} here ${gap === 1 ? 'isn’t' : 'aren’t'} on PR #${pr.number} yet: pushes ${gap === 1 ? 'it' : 'them'}, then ${chosen.label.toLowerCase()} once ${gap === 1 ? 'its' : 'their'} checks pass` : `${chosen.label} on GitHub`;
   return (

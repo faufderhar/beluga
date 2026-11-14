@@ -11,6 +11,7 @@ import { followed, isFresh, timeAgo } from '../layout/panel/scratch-model.js';
 import { type Places, howLabel, outputsKey, placeOf } from './outputs-model.js';
 import s from './agent-outputs.module.css';
 import { everyWhileShown } from '../lib/window-active.js';
+import { oneAtATime } from '../lib/one-at-a-time.js';
 import { revealLabel } from '../lib/os-words.js';
 import { useRevealFileLabel, useRevealLabel } from '../lib/remote-open.js';
 import { revealThereLabel } from '@beluga/machines/open.js';
@@ -33,9 +34,9 @@ export function useAgentOutputs(sessionId: string, agentId: string, live: boolea
   useEffect(() => {
     let alive = true;
     let sig: string | undefined;
-    const look = (): void => {
+    const look = oneAtATime(() => {
       if (document.visibilityState !== 'visible') return;
-      api.claudeCode.outputs(sessionId, agentId).then(
+      return api.claudeCode.outputs(sessionId, agentId).then(
         (res) => {
           const key = `${res.scratch ?? ''}#${res.missing ? 'missing' : outputsKey(res.outputs)}`;
           if (!alive || key === sig) return;
@@ -45,7 +46,7 @@ export function useAgentOutputs(sessionId: string, agentId: string, live: boolea
         // A failed look keeps what's on screen until the next one.
         () => undefined,
       );
-    };
+    });
     look();
     const stop = everyWhileShown(look, live ? POLL_LIVE_MS : POLL_MS);
     return () => {

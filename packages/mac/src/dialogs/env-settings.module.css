@@ -1,8 +1,9 @@
+/* The list's room in its sheet: what's left under the tabs, scrolling inside (FormSheet's `scrolls`). */
 .sheetBody {
-  max-height: min(62vh, 560px);
   margin: 0 -4px;
-  padding: 0 4px;
+  padding: 0 4px 2px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .intro {
   margin: 0 4px 14px;
@@ -12,7 +13,7 @@
 .head,
 .row {
   display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr) 24px 30px;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr) 24px 50px;
   align-items: center;
   gap: 6px;
   padding: 0 10px 0 14px;
@@ -162,8 +163,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 0 12px 0 14px;
+  min-height: 42px;
+  padding: 8px 12px 8px 14px;
   border-bottom: 0.5px solid var(--hairline);
 }
 .sourceIcon {
@@ -184,7 +185,7 @@
 .fixedKey:focus {
   box-shadow: none;
 }
-/* ".env" on a row from the file; a soft accent arrow on one changed here (click: the file's again). */
+/* ".env" on a row from the file (or one kept in Beluga with the same value). */
 .sourceTag {
   display: grid;
   place-items: center;
@@ -196,15 +197,23 @@
   font-family: var(--font-mono);
   font-size: 0.74rem;
 }
-.sourceEdited {
+/* A value changed here over the file's (or another layer's): a soft accent bar, and the way back beside it. */
+.changed {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.changed .value:not(:focus) {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
+}
+.reset {
+  display: grid;
+  place-items: center;
   width: 22px;
   height: 22px;
-  padding: 0;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 5px;
   color: var(--accent);
 }
-.sourceEdited:hover {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
+.reset:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .inlineLink {
   padding: 0;
@@ -213,4 +222,116 @@
 }
 .inlineLink:hover {
   text-decoration: underline;
+}
+/* A row lent from below: its name greyed; typing in its value sets it here. */
+.lent .key {
+  color: var(--text-2);
+  font-weight: 450;
+}
+.lent .value:not(:focus) {
+  background: transparent;
+  color: var(--text-2);
+}
+.neededTag {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--text-2);
+  font-family: inherit;
+}
+/* The value and its copy button, which shows on hover. */
+.valueCell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+.valueCell .value {
+  padding-right: 26px;
+}
+.copy {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--text-3);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease-out;
+}
+.row:hover .copy,
+.copy:focus-visible {
+  opacity: 1;
+}
+.copy:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.searchBar,
+.exampleNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px 0 14px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.exampleNote {
+  border-top: 0.5px solid var(--hairline);
+  border-bottom: 0;
+}
+.exampleNote code {
+  font-size: 0.86rem;
+}
+.search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  font-size: 0.92rem;
+}
+.search:focus {
+  outline: none;
+}
+/* Settings › Environment: each project, with how many it sets, opening its own Environment. */
+.projectRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px 0 14px;
+  text-align: left;
+}
+.projectRow + .projectRow {
+  border-top: 0.5px solid var(--hairline);
+}
+.projectRow:hover {
+  background: var(--bg-hover);
+}
+.projectName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tabs {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 14px;
+}
+/* The last column: a source tag, the revert arrow or the remove button, centred. */
+.head > :nth-child(4),
+.row > :nth-child(4) {
+  justify-self: center;
+}
+/* Two lines when it lists several names: room to breathe. */
+.exampleNote {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  line-height: 1.4;
 }

@@ -72,6 +72,7 @@ here",
   },
   "conv:mac:assistant": {
     "canSend": true,
+    "chatLinks": true,
     "more": false,
     "needsYou": [],
     "outputs": [
@@ -217,6 +218,7 @@ here",
       "runtime": "claude",
     },
     "canSend": true,
+    "chatLinks": true,
     "icon": "abcdef0123456789abcdef01",
     "more": false,
     "needsYou": [
@@ -533,6 +535,7 @@ Then protect \`/api/payments\`.",
       "runtime": "claude",
     },
     "canSend": true,
+    "chatLinks": true,
     "icon": "abcdef0123456789abcdef01",
     "more": false,
     "needsYou": [

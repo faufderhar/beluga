@@ -234,6 +234,11 @@ export interface Issue {
   readonly worktreeGone?: boolean;
   /** It was kept out of review: an acceptance criterion is neither ticked nor explained (see criteria.ts). */
   readonly needsChecks?: boolean;
+  /**
+   * Its work merged (its pull request, or its worktree into main) while a criterion was neither ticked
+   * nor explained (BLG-952): kept In Review, held, instead of Done; settling them makes it Done.
+   */
+  readonly mergedHeld?: boolean;
   readonly proof: readonly Proof[];
   readonly activity: readonly Activity[];
   readonly createdAt: number;

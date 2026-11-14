@@ -677,3 +677,21 @@
 .livePart {
   padding-top: 0;
 }
+
+/* A message from an agent in another chat: its own card, not a bubble of yours. */
+.fromChat {
+  padding: 8px 12px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.fromChatHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  opacity: 0.8;
+}

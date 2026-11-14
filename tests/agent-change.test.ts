@@ -145,6 +145,121 @@ describe('a plan’s agent for its work, changed (BLG-498)', () => {
     expect('agent' in t.plans.need(plan.id)).toBe(false);
   });
 
+  /** A plan whose home is one chat record; `followAgent` moves it as manager.setAgent does (its effort, and its model unless the pick names one, cleared). */
+  function followSetup(home = 'ws:c1', planAgent?: AgentRef) {
+    const t = setup();
+    const chats = new Map<string, { agent?: AgentRef; model?: string; effort?: string }>([['c1', {}]]);
+    const followed: Array<[string, AgentRef | undefined]> = [];
+    const controller = Object.assign(Object.create(t.controller as object), { manager: { find: (id: string) => chats.get(id) } }) as WorkspaceController;
+    const plans = new Plans({ store: t.store, dir: null });
+    const followAgent = (ch: string, a: AgentRef | undefined): void => {
+      followed.push([ch, a]);
+      const { model, ...ref } = a ?? ({} as Partial<AgentRef>);
+      chats.set(ch.slice(3), a ? { agent: ref as AgentRef, ...(model ? { model } : {}) } : {});
+    };
+    const work = new PlansWork({ store: t.store, plans, board: t.work, controller, git: null, askClaude: () => 'ask', intend: () => undefined, delayMs: 0, followAgent });
+    const plan = plans.create({ projectId: 'api', home, autonomy: 'step', ...(planAgent ? { agent: planAgent } : {}) }, t.work.myClaude());
+    return { ...t, boardWork: t.work, controller, chats, followed, plans, work, plan, chat: () => chats.get('c1')! };
+  }
+
+  it('its own conversation follows: the pick, null back to your default, and the same pick again brings a drifted one back', () => {
+    const t = followSetup();
+    t.work.setWorkAgent(t.plan.id, LOCAL);
+    expect(t.chat()).toEqual({ agent: { runtime: 'local', label: 'Local model' }, model: 'qwen3' });
+    // Switched away by hand: the same pick again brings it back.
+    t.chats.set('c1', { agent: { runtime: 'codex', label: 'Codex' }, model: 'gpt-5.5' });
+    t.work.setWorkAgent(t.plan.id, LOCAL);
+    t.work.setWorkAgent(t.plan.id, null);
+    expect(t.followed).toEqual([
+      ['ws:c1', LOCAL],
+      ['ws:c1', LOCAL],
+      ['ws:c1', undefined],
+    ]);
+    expect(t.chat()).toEqual({});
+  });
+
+  it('the same pick again leaves a conversation already on it alone: its own effort and model stay', () => {
+    const t = followSetup();
+    t.work.setWorkAgent(t.plan.id, LOCAL);
+    t.chats.set('c1', { ...t.chat(), effort: 'high' });
+    t.work.setWorkAgent(t.plan.id, LOCAL);
+    expect(t.chat()).toEqual({ agent: { runtime: 'local', label: 'Local model' }, model: 'qwen3', effort: 'high' });
+    // A pick naming no model: the conversation's own model and effort stay too.
+    const ANY: AgentRef = { runtime: 'local', label: 'Local model' };
+    const u = followSetup('ws:c1', ANY);
+    u.chats.set('c1', { agent: ANY, model: 'qwen3-coder', effort: 'low' });
+    u.work.setWorkAgent(u.plan.id, ANY);
+    expect(u.followed).toEqual([]);
+    expect(u.chat()).toEqual({ agent: ANY, model: 'qwen3-coder', effort: 'low' });
+    // Your default again, on a conversation already on it: nothing moves.
+    const v = followSetup();
+    v.chats.set('c1', { model: 'opus', effort: 'max' });
+    v.work.setWorkAgent(v.plan.id, null);
+    expect(v.followed).toEqual([]);
+  });
+
+  it('a pick naming no model takes the model the last pick put there off it', () => {
+    const t = followSetup('ws:c1', CODEX);
+    t.chats.set('c1', { agent: { runtime: 'codex', label: 'Codex' }, model: 'gpt-5.5' });
+    const ANY: AgentRef = { runtime: 'codex', label: 'Codex' };
+    t.work.setWorkAgent(t.plan.id, ANY);
+    expect(t.followed).toEqual([['ws:c1', ANY]]);
+    expect(t.chat()).toEqual({ agent: ANY });
+  });
+
+  it('a done plan, a home that isn’t a conversation, and one that’s gone keep theirs', () => {
+    const done = followSetup();
+    const other = new Plans({ store: done.store, dir: null });
+    const work = new PlansWork({ store: done.store, plans: other, board: done.boardWork, controller: done.controller, git: null, askClaude: () => 'ask', intend: () => undefined, delayMs: 0, followAgent: (ch, a) => void done.followed.push([ch, a]) });
+    other.adopt({ ...done.plan, status: 'done' });
+    work.setWorkAgent(done.plan.id, LOCAL);
+    expect(other.need(done.plan.id).agent).toEqual(LOCAL);
+    const room = followSetup('room');
+    room.work.setWorkAgent(room.plan.id, LOCAL);
+    const gone = followSetup('ws:nope');
+    gone.work.setWorkAgent(gone.plan.id, LOCAL);
+    expect([...done.followed, ...room.followed, ...gone.followed]).toEqual([]);
+    expect(room.plans.need(room.plan.id).agent).toEqual(LOCAL);
+  });
+
+  /** create(): a new conversation (c1) whose agent is recorded, on a Mac that runs what `runtimes` says. */
+  function createSetup(runtimes: ReadonlyArray<{ id: string; available: boolean }>) {
+    const t = setup();
+    t.store.dispatch({ type: 'runtimes', runtimes: runtimes.map((r) => ({ ...r, label: r.id })) } as never);
+    const set: Array<[string, AgentRef | undefined]> = [];
+    const controller = Object.assign(Object.create(t.controller as object), {
+      newChat: async () => ({ id: 'c1' }),
+      manager: { setAgent: (id: string, a: AgentRef | undefined) => void set.push([id, a]) },
+    }) as WorkspaceController;
+    const plans = new Plans({ store: t.store, dir: null });
+    const asked: string[] = [];
+    const work = new PlansWork({ store: t.store, plans, board: t.work, controller, git: null, askClaude: (_p, ch) => void asked.push(ch), intend: () => undefined, delayMs: 0 });
+    return { ...t, set, asked, work };
+  }
+
+  it('a new plan made with an agent opens its conversation on it', async () => {
+    const t = createSetup([
+      { id: 'claude', available: true },
+      { id: 'local', available: true },
+    ]);
+    await t.work.create({ projectId: 'api', goal: 'A faster parser', agent: LOCAL }, { quiet: true });
+    expect(t.set).toEqual([['c1', LOCAL]]);
+    expect(t.asked).toEqual(['ws:c1']);
+  });
+
+  it('one this Mac can’t run: your default plans it, the plan keeps the pick, and the conversation says why', async () => {
+    const t = createSetup([
+      { id: 'claude', available: true },
+      { id: 'local', available: false },
+    ]);
+    const plan = await t.work.create({ projectId: 'api', goal: 'A faster parser', agent: LOCAL }, { quiet: true });
+    expect(t.set).toEqual([]);
+    expect(plan.agent).toEqual(LOCAL);
+    expect(t.asked).toEqual(['ws:c1']);
+    const said = t.store.getState().log.filter((l) => l.channel === 'ws:c1' && l.type === 'system');
+    expect(said.map((l) => l.type === 'system' && [l.text, l.level])).toEqual([['Local model isn’t set up on this Mac, so your default agent plans this.', 'warn']]);
+  });
+
   it('the API: plans.setWorkAgent takes an agent or null', () => {
     const args = PLANS_API['plans.setWorkAgent'].args;
     expect(args.parse(['plan-1', LOCAL])[1]).toEqual(LOCAL);

@@ -33,6 +33,9 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
   const projectShares = useApp((st) => st.projectShares);
   const projects = useApp((st) => st.projects);
   if (!ws) return null;
+  // A chat says chat, never worktree; a plain one (in no project) has no project files to give, only its Scratch.
+  const what = ws.kind === 'chat' ? 'chat' : 'worktree';
+  const gives = project?.root ? 'its conversation, files and Scratch' : 'its conversation and Scratch';
   const rows = worktreeShareRows({ peers, self, members, network, projectShares, projects }, ws.id);
   const said = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'warn'));
   const set = (row: WorktreeShareRow, access: Access): void => {
@@ -56,13 +59,13 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
     ? 'Turn on the Beluga network in Settings to share with your friends.'
     : network.friends.length
       ? 'All your friends have it.'
-      : 'No friends yet. Add a friend, then share this worktree with them here.';
+      : `No friends yet. Add a friend, then share this ${what} with them here.`;
   const byLink = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(project?.root ? project.id : undefined) });
   const addFriend = (): void => (close(), openNet({ kind: 'add_friend' }));
   return (
     <Sheet
       title={`Share “${ws.name}”`}
-      subtitle="Only this worktree: people you add see its conversation, files and Scratch, and can ask your agent here. Friends get it over the Beluga network, so nobody needs to be in your room."
+      subtitle={`Only this ${what}: people you add see ${gives}, and can ask your agent here. Friends get it over the Beluga network, so nobody needs to be in your room.`}
       icon="share"
       close={close}
       footer={
@@ -108,7 +111,7 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
                   <span className={s.itemTitle}>
                     {row.name} {presence && presence.state !== 'online' ? <Tag tone="muted">{presence.label}</Tag> : null}
                   </span>
-                  <span className={s.itemDetail}>{shareRowDetail(row, inRoom)}</span>
+                  <span className={s.itemDetail}>{shareRowDetail(row, inRoom, what)}</span>
                 </div>
                 <Select<Access> label={`Access for ${row.name}`} value={row.access} options={ACCESS} onChange={(a) => set(row, a)} />
               </div>

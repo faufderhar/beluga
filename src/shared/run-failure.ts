@@ -21,6 +21,11 @@ export interface RunFailure {
   readonly detail: string;
   /** The runtime that failed ('codex'); unset: Claude Code. */
   readonly runtime?: string;
+  /**
+   * A friend's or guest's run that couldn't sign in: the variable this Mac signs Claude Code in with
+   * (ANTHROPIC_API_KEY…), which such a run is never given.
+   */
+  readonly envSignIn?: string;
 }
 
 /** Who a failure's words name: the agent, its app, and whose API it calls. */
@@ -51,6 +56,7 @@ export function resetWords(at: number, now = Date.now()): string {
 /** The card's headline: "Claude hit your usage limit · resets at 15:00". */
 export function failureTitle(f: RunFailure, now = Date.now()): string {
   const who = WHO[f.runtime ?? 'claude'] ?? WHO.claude!;
+  if (f.envSignIn && (f.kind === 'signed_out' || f.kind === 'api')) return `${who.app} couldn’t sign in for this run: this Mac signs it in with ${f.envSignIn}, which friends’ runs never get`;
   switch (f.kind) {
     case 'usage_limit':
       return `You hit your ${who.agent} plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;

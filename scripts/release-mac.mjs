@@ -12,6 +12,7 @@
 //   --skip-build       reuse what the last `npm run app:build` made
 //   --dry-run          build and write latest.json, but don't touch GitHub
 //   --force            release even if GitHub's latest release isn't older
+//   --no-telemetry     release without usage statistics (otherwise it needs BELUGA_TELEMETRY_URL/KEY or ~/.tauri/beluga-telemetry.json)
 //   --ad-hoc           sign the app ad hoc instead of with the "Beluga Self-Signed" certificate
 //                      ($APPLE_SIGNING_IDENTITY picks another); updates then lose Screen Recording
 //   --key <file>       the updater's private key (default ~/.tauri/beluga-updater.key, else
@@ -127,6 +128,24 @@ function signingEnv(opts) {
   return { TAURI_SIGNING_PRIVATE_KEY: readFileSync(key, 'utf8').trim(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password };
 }
 
+/** Where the maintainer keeps the release's usage-statistics config (beside the updater key): { "url", "key" }. */
+export const telemetryFile = () => path.join(os.homedir(), '.tauri/beluga-telemetry.json');
+
+/**
+ * Usage statistics for the release: BELUGA_TELEMETRY_URL and BELUGA_TELEMETRY_KEY, else the file
+ * above. A release without them would quietly stop asking and sending, so it stops here instead,
+ * unless --no-telemetry says that's meant.
+ */
+export function telemetryEnv(opts, file = telemetryFile()) {
+  if (opts.flags.has('no-telemetry')) return { BELUGA_TELEMETRY_URL: '', BELUGA_TELEMETRY_KEY: '' };
+  if (process.env.BELUGA_TELEMETRY_URL && process.env.BELUGA_TELEMETRY_KEY) return {};
+  if (!existsSync(file)) throw new Error(`No usage-statistics config: set BELUGA_TELEMETRY_URL and BELUGA_TELEMETRY_KEY, or put { "url", "key" } in ${file} (a Ratel ingest-only key). --no-telemetry releases without it.`);
+  const { url, key } = JSON.parse(readFileSync(file, 'utf8'));
+  if (!url || !key) throw new Error(`${file} needs "url" and "key".`);
+  if (!/^rtl_pub_/.test(key)) console.warn(`Warning: the key in ${file} doesn't look like an ingest-only key (rtl_pub_…). Only ship one that can't read anything.`);
+  return { BELUGA_TELEMETRY_URL: url, BELUGA_TELEMETRY_KEY: key };
+}
+
 /** The certificate releases are signed with when $APPLE_SIGNING_IDENTITY doesn't name another. */
 export const CODE_SIGN_IDENTITY = 'Beluga Self-Signed';
 
@@ -181,7 +200,7 @@ function main() {
   const arch = archOf();
   if (!opts.flags.has('skip-build')) {
     console.log(`Building ${APP} ${version} (${arch}) with update signing…`);
-    run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts), ...codeSignEnv(opts) } });
+    run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts), ...codeSignEnv(opts), ...telemetryEnv(opts) } });
   }
 
   // The build names its files for tauri.conf.json's productName; the release names them for the app.

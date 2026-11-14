@@ -56,6 +56,16 @@ run('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund', `--cpu=${arch}`, `--o
   rmSync(path.join(out, 'node_modules', name), { recursive: true, force: true });
 }
 rmSync(path.join(out, 'package-lock.json'), { force: true });
+// Usage statistics: only a release built with BELUGA_TELEMETRY_URL and BELUGA_TELEMETRY_KEY set can
+// send them (an ingest-only Ratel key: it adds data to one project and reads nothing). A build from
+// source has no such file, so it never asks and never sends (src/telemetry/config.ts).
+{
+  const url = process.env.BELUGA_TELEMETRY_URL;
+  const key = process.env.BELUGA_TELEMETRY_KEY;
+  const file = path.join(out, 'telemetry-release.json');
+  rmSync(file, { force: true });
+  if (url && key) writeFileSync(file, JSON.stringify({ url, key }) + '\n', { mode: 0o644 });
+}
 // Nothing loads these at run time (BLG-383): cloudflared's binary (downloaded to ~/.beluga/bin when
 // the relay fallback first needs it), mathjax's es5 build (math-svg.ts uses mathjax-full/js), and
 // whisper's C++ sources and wasm fallback (the native build is there).

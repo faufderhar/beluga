@@ -123,6 +123,19 @@ export default function Settings() {
       store.toast({ text: 'Your Mac is away: change this when it’s linked.', tone: 'warn' });
     });
   };
+  // Usage statistics (BLG-922): the Mac's level, when its build can send them.
+  const canShare = useSupports('telemetry');
+  const sharing = home?.data.mac.telemetry;
+  const [shareLevel, setShareLevel] = useState<'off' | 'limited' | 'on' | undefined>(undefined);
+  const share = shareLevel ?? sharing?.level ?? 'off';
+  const chooseShare = (level: 'off' | 'limited' | 'on') => {
+    haptic.tap();
+    setShareLevel(level);
+    void store.call(calls.telemetry(level), { queue: false }).catch(() => {
+      setShareLevel(undefined);
+      store.toast({ text: 'Your Mac is away: change this when it’s linked.', tone: 'warn' });
+    });
+  };
   useEffect(() => {
     void permission(false).then(setPerm);
   }, []);
@@ -288,6 +301,25 @@ export default function Settings() {
                 />
                 <T v="caption" c={color.text3} style={{ paddingHorizontal: 6 }}>
                   A sleeping Mac can’t be reached or woken from here, so Beluga keeps it from sleeping. Its display still sleeps; closing the lid still sleeps it.
+                </T>
+              </View>
+            ) : null}
+            {canShare && sharing ? (
+              <View style={{ gap: 8 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                  Usage statistics
+                </T>
+                <Segments
+                  value={share}
+                  onChange={chooseShare}
+                  options={[
+                    { key: 'off', label: 'Off' },
+                    { key: 'limited', label: 'Limited' },
+                    { key: 'on', label: 'On' },
+                  ]}
+                />
+                <T v="caption" c={color.text3} style={{ paddingHorizontal: 6 }}>
+                  {share === 'off' ? 'Nothing is sent.' : share === 'limited' ? 'Only the very essential data.' : 'How you use Beluga and its statistics, sent anonymously.'} Beluga is free and open source: this is how it gets better for you.
                 </T>
               </View>
             ) : null}

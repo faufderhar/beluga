@@ -2,8 +2,10 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { QueuedMessage } from '@beluga/ui/compose.js';
 import { channelOf } from '@beluga/core/store.js';
 import { imageLinksAsWords } from '@beluga/shared/attachment-links.js';
+import { chatMentionsAsTitles } from '@beluga/shared/chat-ref.js';
 import { slotWaitNote } from '@beluga/shared/run-slots.js';
 import { Icon, type IconName } from '../components/Icon.js';
+import { InlineCode } from '../components/views/Inline.js';
 import { Tip, cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useFlightLanding } from './flight.js';
@@ -78,6 +80,8 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   if (!queue.length) return null;
+  // One line of words: a chat it names by its title, never its ref.
+  const shown = (prompt: string): string => imageLinksAsWords(chatMentionsAsTitles(prompt));
   const yours = queue.filter((q) => q.yours);
   const call = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, errorText(err), 'error'));
   const settle = (id: string): void =>
@@ -114,12 +118,18 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
           const at = yours.indexOf(q);
           const who = q.by === selfName ? (q.claude === selfName ? '' : `for ${q.claude}'s agent`) : `${q.by}`;
           return (
-            <Row key={q.requestId} channel={channel} prompt={q.prompt} mine={q.yours} className={cx(s.row, !q.yours && s.theirs)}>
+            <Row key={q.requestId} channel={channel} prompt={q.prompt} mine={q.yours && !q.origin} className={cx(s.row, !q.yours && s.theirs)}>
               <span className={s.n}>{i + 1}</span>
-              <span className={s.text} title={imageLinksAsWords(q.prompt)} translate="no">
-                {imageLinksAsWords(q.prompt) || 'A message'}
+              <span className={s.text} title={shown(q.prompt)} translate="no">
+                {shown(q.prompt) || 'A message'}
               </span>
-              {who ? <span className={s.who}>{who}</span> : null}
+              {q.origin ? (
+                <span className={s.fromChat} data-queue-from={q.origin.ref}>
+                  From <InlineCode text={`chat:${q.origin.ref}`} fallback={q.origin.title} /> · {q.origin.agent.label}, an agent
+                </span>
+              ) : who ? (
+                <span className={s.who}>{who}</span>
+              ) : null}
               {q.yours ? (
                 <span className={s.acts}>
                   {yours.length > 1 ? (
@@ -128,17 +138,20 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
                       <Act icon="chevronDown" label="Move down" disabled={at === yours.length - 1} onClick={() => call(api.host.reorderQueued(q.requestId, at + 1))} />
                     </>
                   ) : null}
-                  <Act
-                    icon="pencil"
-                    label="Edit: take it out of the queue and back into the box"
-                    onClick={() =>
-                      call(
-                        api.host.cancelQueued(q.requestId).then((ok) => {
-                          if (ok) onEdit(q.prompt);
-                        }),
-                      )
-                    }
-                  />
+                  {/* An agent's words never go in your box as yours. */}
+                  {q.origin ? null : (
+                    <Act
+                      icon="pencil"
+                      label="Edit: take it out of the queue and back into the box"
+                      onClick={() =>
+                        call(
+                          api.host.cancelQueued(q.requestId).then((ok) => {
+                            if (ok) onEdit(q.prompt);
+                          }),
+                        )
+                      }
+                    />
+                  )}
                   <Act icon="x" label="Remove from the queue" onClick={() => call(api.host.cancelQueued(q.requestId))} />
                   <SteerButton steering={steering.has(q.requestId)} steerKey={steerKey} onSteer={() => steer(q.requestId)} />
                 </span>

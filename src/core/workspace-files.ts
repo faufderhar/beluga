@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { accessSync, constants, existsSync, readFileSync, realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import { MAX_FILE_BYTES } from '../protocol.js';
@@ -496,6 +497,8 @@ export interface FormatterInfo {
   /** Why not (shown on the disabled Format button). */
   readonly reason?: string;
   readonly version?: string;
+  /** Beluga's own Prettier, because the project doesn't install one. */
+  readonly bundled?: boolean;
 }
 
 /** Prettier's command-line script in the nearest node_modules from the file's folder up to `top` (then each extra root), or undefined. */
@@ -508,19 +511,41 @@ export function findPrettier(fileAbs: string, top: string, more: readonly string
   }
   for (const m of more) if (m && !dirs.includes(m)) dirs.push(m);
   for (const d of dirs) {
-    const pkgFile = path.join(d, 'node_modules', 'prettier', 'package.json');
-    if (!existsSync(pkgFile)) continue;
-    try {
-      const pkg = JSON.parse(readFileSync(pkgFile, 'utf8')) as { version?: string; bin?: string | Record<string, string> };
-      const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.prettier;
-      if (!binRel) continue;
-      const bin = path.join(path.dirname(pkgFile), binRel);
-      if (existsSync(bin)) return { bin, ...(pkg.version ? { version: pkg.version } : {}) };
-    } catch {
-      // A broken install: keep looking.
-    }
+    const found = prettierAt(path.join(d, 'node_modules', 'prettier', 'package.json'));
+    if (found) return found;
   }
   return undefined;
+}
+
+/** Prettier's script and version from its package.json, or undefined when it isn't a usable install. */
+function prettierAt(pkgFile: string): { bin: string; version?: string } | undefined {
+  if (!existsSync(pkgFile)) return undefined;
+  try {
+    const pkg = JSON.parse(readFileSync(pkgFile, 'utf8')) as { version?: string; bin?: string | Record<string, string> };
+    const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.prettier;
+    if (!binRel) return undefined;
+    const bin = path.join(path.dirname(pkgFile), binRel);
+    return existsSync(bin) ? { bin, ...(pkg.version ? { version: pkg.version } : {}) } : undefined;
+  } catch {
+    return undefined; // A broken install.
+  }
+}
+
+/** The Prettier Beluga ships with (a dependency of the engine), for projects that don't install their own. */
+export function ownPrettier(): { bin: string; version?: string } | undefined {
+  try {
+    return prettierAt(createRequire(import.meta.url).resolve('prettier/package.json'));
+  } catch {
+    return undefined; // A build without it: Format says Prettier isn't there.
+  }
+}
+
+/** The project's own Prettier first (the version its CI and teammates use), else Beluga's. */
+function resolvePrettier(file: string, root: string, more: readonly string[]): { bin: string; version?: string; bundled?: true } | undefined {
+  const project = findPrettier(file, root, more);
+  if (project) return project;
+  const own = ownPrettier();
+  return own ? { ...own, bundled: true } : undefined;
 }
 
 /** Text in a language Prettier formats out of the box. */
@@ -533,17 +558,18 @@ export function formatterFor(root: string, rel: string, more: readonly string[] 
   } catch (err) {
     return { available: false, reason: (err as Error).message };
   }
-  const found = findPrettier(file, root, more);
-  if (!found) return { available: false, reason: 'Prettier isn’t installed in this project (add it to its devDependencies to format here)' };
-  if (!PRETTIER_FILES.test(rel)) return { available: false, reason: 'Prettier doesn’t format this kind of file', ...(found.version ? { version: found.version } : {}) };
-  return { available: true, ...(found.version ? { version: found.version } : {}) };
+  const found = resolvePrettier(file, root, more);
+  if (!found) return { available: false, reason: 'Prettier isn’t available' };
+  const about = { ...(found.version ? { version: found.version } : {}), ...(found.bundled ? { bundled: true as const } : {}) };
+  if (!PRETTIER_FILES.test(rel)) return { available: false, reason: 'Prettier doesn’t format this kind of file', ...about };
+  return { available: true, ...about };
 }
 
 /** The text as the project's Prettier lays it out (its own config and .prettierignore apply). */
 export function formatWithPrettier(root: string, rel: string, content: string, more: readonly string[] = [], timeoutMs = 20_000): Promise<string> {
   const file = resolveInWorkspace(root, rel);
-  const found = findPrettier(file, root, more);
-  if (!found) return Promise.reject(new FileEditError('Prettier isn’t installed in this project'));
+  const found = resolvePrettier(file, root, more);
+  if (!found) return Promise.reject(new FileEditError('Prettier isn’t available'));
   return new Promise((resolve, reject) => {
     // The daemon runs on Node, so Prettier's script runs on the same one (no PATH needed).
     const child = spawn(process.execPath, [found.bin, '--stdin-filepath', file], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });

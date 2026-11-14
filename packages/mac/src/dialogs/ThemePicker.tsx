@@ -2,13 +2,13 @@ import type { CSSProperties } from 'react';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useDocTheme } from '../components/markdown/use-doc-theme.js';
-import { ACCENTS, type UiPrefs, pickTheme, useChosenPrefs } from '../lib/prefs.js';
+import { ACCENTS, accentCss, type UiPrefs, pickTheme, useChosenPrefs } from '../lib/prefs.js';
 import { type AppTheme, type ThemeBase, THEMES, themeFor } from '../lib/themes.js';
 import { Group } from './settings-controls.js';
 import t from './themes.module.css';
 
 /** The accent a theme shows with your Accent: its own while that's System or Theme, else yours. */
-const accentFor = (theme: AppTheme, accent: UiPrefs['accent']): string => (accent === 'system' || accent === 'theme' ? (theme.accent ?? 'AccentColor') : ACCENTS[accent]);
+const accentFor = (theme: AppTheme, accent: UiPrefs['accent']): string => (accent === 'system' || accent === 'theme' ? (theme.accent ?? accentCss('system', CSS.supports('color', 'AccentColor'))) : ACCENTS[accent]);
 
 /** A theme as a little Beluga window: the sidebar with a picked row, a message, Claude's answer and the four states. */
 function ThemeCard({ theme, on, accent }: { readonly theme: AppTheme; readonly on: boolean; readonly accent: string }) {

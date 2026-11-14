@@ -23,6 +23,8 @@ export function useSharpZoom(): void {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const { domNode, panZoom, transform } = store.getState();
+      // The view is gliding somewhere (Fit to View, a step): setting it now would stop it where it is. It settles when it lands.
+      if (gliding(domNode?.querySelector('.react-flow__renderer'))) return settle();
       // A view left between device pixels draws every glyph soft: snap it to whole ones (KLD-70). Moving it
       // fires another change, so this settles once more with nothing left to snap, and is redrawn then.
       const [x, y, zoom] = transform;
@@ -45,6 +47,12 @@ export function useSharpZoom(): void {
   }, [dom]);
   useEffect(() => () => clearTimeout(timer.current), []);
 }
+
+/** React Flow is animating the view: d3 keeps the element's running transitions on it (`__transition`) until they end. */
+export const gliding = (pane: Element | null | undefined): boolean => {
+  const running = (pane as { __transition?: object } | null | undefined)?.__transition;
+  return !!running && Object.keys(running).length > 0;
+};
 
 /** The nearest whole device pixel. */
 export const snap = (v: number, dpr = globalThis.devicePixelRatio || 1): number => Math.round(v * dpr) / dpr;

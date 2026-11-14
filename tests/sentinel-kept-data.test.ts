@@ -31,7 +31,8 @@ describe('what a sentinel keeps', () => {
   function kept() {
     const home = mkdtempSync(path.join(os.tmpdir(), 'beluga-kept-'));
     dirs.push(home);
-    const s = setup({ home });
+    // Its clock an hour after the run: documents are kept 14 days, so the real date would age them out.
+    const s = setup({ home, now: () => T + 60 * 60_000 });
     const sn = s.sentinels.create(brief);
     // The run has to sit inside the document keep window (14 days). A fixed October date falls out of it.
     const recent = Date.now() - 60_000;
