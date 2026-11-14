@@ -42,6 +42,15 @@ const TRAILING = /[.,;:!?)\]}"'”]+$/u;
 
 const lower = (s: string): string => s.toLowerCase();
 
+/**
+ * The words for a file or folder in the worktree: "@src/auth.ts", "@src/". A folder keeps the
+ * trailing slash pathRef asks for; a slash already on the path is not doubled.
+ */
+export function fileMention(path: string, dir: boolean): string {
+  const clean = path.replace(/\/+$/, '');
+  return dir ? `@${clean}/` : `@${clean}`;
+}
+
 /** The folder or file a path names in the worktree, if it's there. */
 function pathRef(token: string, world: MentionWorld): MentionRef | undefined {
   if (!world.entries || token.startsWith('/') || token.includes('..')) return undefined;
