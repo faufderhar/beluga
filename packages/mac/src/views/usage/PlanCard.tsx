@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import type { AppState } from '@beluga/core/store.js';
-import { type CardWindow, type FriendRoom, type ProviderCard, friendRooms, providerCards, shortTokens, withLocalUsage } from '@beluga/ui/usage-cards.js';
+import { type CardWindow, type FriendRoom, type ProviderCard, friendRooms, providerCards, shortTokens, tokenDetail, tokenTotal, withLocalUsage } from '@beluga/ui/usage-cards.js';
 import { agentMark } from '@beluga/shared/agent-marks.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar, IconButton, cx } from '../../components/ui.js';
@@ -35,9 +35,9 @@ function TokensFigures({ card }: { card: ProviderCard }) {
       <div className={s.window}>
         <div className={s.windowHead}>
           <span className={s.windowTitle}>Tokens</span>
-          <span className={s.windowPct}>{card.tokens ? shortTokens(card.tokens.input + card.tokens.output) : '–'}</span>
+          <span className={s.windowPct}>{card.tokens ? shortTokens(tokenTotal(card.tokens)) : '–'}</span>
         </div>
-        <div className={s.windowFoot}>{card.tokens ? `${shortTokens(card.tokens.input)} in · ${shortTokens(card.tokens.output)} out` : 'Since Beluga started'}</div>
+        <div className={s.windowFoot}>{card.tokens ? tokenDetail(card.tokens) : 'Since Beluga started'}</div>
       </div>
       {hideSpeed ? null : (
         <div className={s.window}>

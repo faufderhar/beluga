@@ -30,11 +30,12 @@ test('the home and a conversation offer only the models turned on, and effort ca
   const models = settings.getByRole('heading', { name: 'Models in chat' });
   await expect(models).toBeVisible();
   await expect(settings.getByText('Only these appear in the chat’s model menu.')).toBeVisible();
-  const haiku = settings.getByRole('switch', { name: 'Claude Haiku' });
+  // OpenCode lists "Claude Haiku 4.5" too. The name is a substring match, so exact keeps Claude's own switch.
+  const haiku = settings.getByRole('switch', { name: 'Claude Haiku', exact: true });
   await expect(haiku).toHaveAttribute('aria-checked', 'true');
   await haiku.click();
   await expect(haiku).toHaveAttribute('aria-checked', 'false');
-  await expect(settings.getByRole('switch', { name: 'Claude Opus' })).toHaveAttribute('aria-checked', 'true');
+  await expect(settings.getByRole('switch', { name: 'Claude Opus', exact: true })).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
   await expect(settings).toBeHidden();
 

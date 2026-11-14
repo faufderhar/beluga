@@ -158,6 +158,19 @@ export function cacheDetail(parts: CacheCounts): string {
 /** "Cache 77%". */
 export const cacheLabel = (pct: number): string => `Cache ${pct}%`;
 
+/**
+ * The hit rate for the window on screen now, from cache counts the agent put on the context
+ * event. `used` is the fill (fresh input plus both cache buckets), so fresh input is what's left
+ * after the cache. Undefined when this report didn't include a cache split: the meter then uses
+ * the conversation's ledger (`cacheHitOf`).
+ */
+export function cacheHitFromContext(info: { readonly used: number; readonly cacheRead?: number; readonly cacheWrite?: number } | undefined): { readonly pct: number; readonly label: string; readonly detail: string; readonly counts: CacheCounts } | undefined {
+  if (!info || (info.cacheRead === undefined && info.cacheWrite === undefined)) return undefined;
+  const cacheRead = counted(info.cacheRead);
+  const cacheWrite = counted(info.cacheWrite);
+  return cacheHitOf({ last: { input: Math.max(0, info.used - cacheRead - cacheWrite), cacheRead, cacheWrite } });
+}
+
 /** What the context meter shows for this conversation's cache, if there is anything to divide by. */
 export function cacheHitOf(usage: { readonly session?: CacheCounts; readonly last?: CacheCounts } | undefined): { readonly pct: number; readonly label: string; readonly detail: string; readonly counts: CacheCounts } | undefined {
   const counts = sessionCache(usage);

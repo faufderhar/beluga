@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { findGrok, writeGatePlugin } from '../src/agent/runtime/grok/connection.js';
 import { createGrokRuntime } from '../src/agent/runtime/grok/index.js';
 import { modelChoice, probeOf } from '../src/agent/runtime/grok/models.js';
-import { grokFailure, grokUsageEvent } from '../src/agent/runtime/grok/runner.js';
+import { grokContextEvent, grokFailure, grokLiveContext, grokUsageEvent, mergeLiveContext } from '../src/agent/runtime/grok/runner.js';
 import { ScriptedGrok } from '../src/agent/runtime/grok/scripted.js';
 import { askGrokBtw, grokComplete } from '../src/agent/runtime/grok/side.js';
 import { GROK_MISSING, GROK_SIGN_IN, grokStatus } from '../src/agent/runtime/grok/status.js';
@@ -126,6 +126,35 @@ describe('what Grok says, as Beluga reads it', () => {
     const used = JSON.parse(grokUsageEvent({ usage: { inputTokens: 400, outputTokens: 12, cachedReadTokens: 100, cacheCreationTokens: 5, costUsdTicks: 25_000_000 } }, 's1')!) as Record<string, unknown>;
     expect(used).toEqual({ input: 300, output: 12, cacheRead: 100, cacheWrite: 5, cost: 0.0025, session: 's1' });
     expect(grokUsageEvent({}, 's1')).toBeUndefined();
+  });
+
+  it('fills the context meter from the prompt, and falls back to totalTokens when the prompt was not counted', () => {
+    const full = JSON.parse(grokContextEvent({ usage: { inputTokens: 400, cachedReadTokens: 100, cacheCreationTokens: 5 }, totalTokens: 99_000 }, 256_000, 'grok-4.7')!) as Record<string, unknown>;
+    expect(full).toEqual({ used: 405, window: 256_000, model: 'grok-4.7', cacheRead: 100, cacheWrite: 5 });
+    const headless = JSON.parse(grokContextEvent({ usage: { inputTokens: 7_210, cacheReadInputTokens: 41_000, cacheCreationInputTokens: 20 } }, 256_000, 'grok-4.7')!) as Record<string, unknown>;
+    expect(headless).toMatchObject({ used: 48_230, cacheRead: 41_000, cacheWrite: 20 });
+    expect(JSON.parse(grokContextEvent({ totalTokens: 12_400 }, 256_000, 'grok-4.7')!)).toEqual({ used: 12_400, window: 256_000, model: 'grok-4.7' });
+    expect(grokContextEvent({ usage: { cacheCreationTokens: 0 } }, 256_000)).toBeUndefined();
+  });
+
+  it('reads a usage update while the turn is running, and ignores tool and message chunks', () => {
+    expect(JSON.parse(grokLiveContext({ sessionUpdate: 'usage_update', used: 50_000, size: 256_000 }, 0, 'grok-4.7')!)).toEqual({ used: 50_000, window: 256_000, model: 'grok-4.7' });
+    expect(JSON.parse(grokLiveContext({ sessionUpdate: 'usage_update', used: 50_000, size: 256_000, totalTokens: 100 }, 0, 'grok-4.7')!)).toMatchObject({ used: 50_000 });
+    const turn = JSON.parse(grokLiveContext({ sessionUpdate: 'turn_usage', usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 4 } }, 256_000, 'grok-4.7')!) as Record<string, unknown>;
+    expect(turn).toMatchObject({ used: 104, cacheRead: 90, cacheWrite: 4, window: 256_000 });
+    expect(grokLiveContext({ sessionUpdate: 'tool_call', rawInput: { inputTokens: 99 } }, 256_000)).toBeUndefined();
+    expect(grokLiveContext({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } }, 256_000)).toBeUndefined();
+    expect(grokLiveContext({ sessionUpdate: 'auto_compact_completed', tokens_before: 12_000 }, 256_000)).toBeUndefined();
+    const carried = mergeLiveContext(JSON.stringify({ used: 60_000, window: 256_000 }), JSON.stringify({ used: 50_000, window: 256_000, cacheRead: 40_000, cacheWrite: 100 }));
+    expect(JSON.parse(carried)).toEqual({ used: 60_000, window: 256_000, cacheRead: 40_000, cacheWrite: 100 });
+    expect(mergeLiveContext(JSON.stringify({ used: 1, cacheRead: 1, cacheWrite: 0 }), carried)).toBe(JSON.stringify({ used: 1, cacheRead: 1, cacheWrite: 0 }));
+  });
+
+  it('keeps headless cache beside uncached input, and does not add reasoning that is already in the output', () => {
+    const headless = JSON.parse(grokUsageEvent({ usage: { inputTokens: 7210, outputTokens: 1893, cacheReadInputTokens: 41000, cacheCreationInputTokens: 20, reasoningTokens: 412, costUSD: 0.04 } }, 's1')!) as Record<string, unknown>;
+    expect(headless).toEqual({ input: 7210, output: 1893, cacheRead: 41000, cacheWrite: 20, cost: 0.04, session: 's1' });
+    const snake = JSON.parse(grokUsageEvent({ usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 90, cache_creation_input_tokens: 4, reasoning_tokens: 3 } }, 's2')!) as Record<string, unknown>;
+    expect(snake).toMatchObject({ input: 10, output: 3, cacheRead: 90, cacheWrite: 4, cost: 0 });
   });
 
   it('tells a signed-out run as a sign-in, and as Grok’s', () => {
@@ -272,9 +301,29 @@ describe('a run', () => {
     const { backend } = setup();
     const r = run('hello');
     await backend.run({ ...r, place: place() });
-    const usage = r.events.find(([k]) => k === 'usage');
-    expect(JSON.parse(usage![1])).toMatchObject({ input: 200, output: 12, cacheRead: 100, cost: 0.0025 });
-    expect(r.events.some(([k]) => k === 'context')).toBe(true);
+    const usage = r.events.filter(([k]) => k === 'usage');
+    expect(usage).toHaveLength(1);
+    expect(JSON.parse(usage[0]![1])).toMatchObject({ input: 200, output: 12, cacheRead: 100, cost: 0.0025 });
+    const contexts = r.events.filter(([k]) => k === 'context').map(([, text]) => JSON.parse(text) as { used: number });
+    // The window, then this prompt's tokens, while the turn was still running. The prompt's own fill replaces them.
+    expect(contexts.some((c) => c.used === 12_000)).toBe(true);
+    expect(contexts.some((c) => c.used === 13_200 && (c as { cacheRead?: number }).cacheRead === 9_000)).toBe(true);
+    expect(contexts.at(-1)).toMatchObject({ used: 300, window: 256_000, model: 'grok-4.7', cacheRead: 100, cacheWrite: 0 });
+  });
+
+  it('shows the context meter and the cache hit while the turn is still running', async () => {
+    const { backend } = setup();
+    let seen: { used?: number; cacheRead?: number; cacheWrite?: number; window?: number } | undefined;
+    const r = run('hello', {
+      canUseTool: async () => {
+        const last = [...r.events].reverse().find(([k]) => k === 'context');
+        seen = last ? (JSON.parse(last[1]) as typeof seen) : undefined;
+        return true;
+      },
+    });
+    await backend.run({ ...r, place: place() });
+    expect(seen).toMatchObject({ used: 13_200, cacheRead: 9_000, cacheWrite: 400, window: 256_000 });
+    expect(r.events.filter(([k]) => k === 'usage')).toHaveLength(1);
   });
 
   it('runs /compact as its own, and says how full it was', async () => {

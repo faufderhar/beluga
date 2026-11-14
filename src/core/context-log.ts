@@ -27,6 +27,12 @@ export interface ContextInfo {
   readonly breakdown?: ContextBreakdown;
   /** The model the window is for. */
   readonly model?: string;
+  /**
+   * Cache reads and writes inside `used`, when the agent reported them. The meter turns these
+   * into the hit rate while a turn is still running, before the usage ledger has this turn.
+   */
+  readonly cacheRead?: number;
+  readonly cacheWrite?: number;
 }
 
 /** The slice of a system log item this module writes. */
@@ -47,6 +53,9 @@ export interface ContextEventData {
   readonly compacting?: boolean;
   readonly breakdown?: ContextBreakdown;
   readonly model?: string;
+  /** Cache reads and writes inside `used` (see ContextInfo). */
+  readonly cacheRead?: number;
+  readonly cacheWrite?: number;
   readonly pre?: number;
   readonly post?: number;
   readonly trigger?: string;
@@ -83,6 +92,8 @@ export function parseContextEvent(text: string): ContextEventData | undefined {
     ...(typeof d.compacting === 'boolean' ? { compacting: d.compacting } : {}),
     ...(breakdown ? { breakdown } : {}),
     ...(str(d.model, 120) ? { model: str(d.model, 120) } : {}),
+    ...(num(d.cacheRead) !== undefined ? { cacheRead: num(d.cacheRead) } : {}),
+    ...(num(d.cacheWrite) !== undefined ? { cacheWrite: num(d.cacheWrite) } : {}),
     ...(num(d.pre) !== undefined ? { pre: num(d.pre) } : {}),
     ...(num(d.post) !== undefined ? { post: num(d.post) } : {}),
     ...(d.trigger === 'auto' || d.trigger === 'manual' ? { trigger: d.trigger } : {}),
@@ -135,12 +146,16 @@ export function applyContextEvent<L extends { readonly id: string; readonly type
 
   if (e.event === 'context') {
     if (data.used === undefined && data.compacting === undefined && !data.breakdown) return state;
+    // A new fill replaces the cache split. A flag-only update (compacting) keeps the split it had.
+    const pair = (read: number | undefined, write: number | undefined): { cacheRead: number; cacheWrite: number } | undefined => (read !== undefined || write !== undefined ? { cacheRead: read ?? 0, cacheWrite: write ?? 0 } : undefined);
+    const cache = data.used === undefined ? pair(prev?.cacheRead, prev?.cacheWrite) : pair(data.cacheRead, data.cacheWrite);
     const info: ContextInfo = {
       used: data.used ?? prev?.used ?? 0,
       window,
       ...(data.compacting ? { compacting: true } : {}),
       ...((data.breakdown ?? (data.used === undefined ? prev?.breakdown : undefined)) ? { breakdown: data.breakdown ?? prev?.breakdown } : {}),
       ...((data.model ?? prev?.model) ? { model: data.model ?? prev?.model } : {}),
+      ...(cache ? cache : {}),
     };
     // "Compacting" before any numbers came: the meter shows it (and the divider), with nothing used yet.
     const context = data.used === undefined && !prev && !data.compacting ? state.context : { ...state.context, [channel]: info };

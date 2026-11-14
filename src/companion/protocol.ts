@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 56 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 57 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -151,6 +151,8 @@ export const COMPANION_PROTO = { major: 1, minor: 56 } as const;
  * Mac sidebar's green dot. An older Mac sends none; an older phone shows none.
  * 1.56 (BLG-952): a task held for its checks says so (`TaskSummary.needsChecks`): how many criteria are
  * neither ticked nor explained, and whether its work already merged. An older Mac sends none; an older phone shows none.
+ * 1.57: a provider's token figure counts cache reads and cache writes too (`UsageView.tokens.cacheRead` /
+ * `cacheWrite`), beside input and output. An older phone shows input and output only; an older Mac sends neither cache field.
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 32, providers: 33, dialogues: 34, workAgents: 35, terminalView: 36, reactions: 41, cancelSteer: 43, triage: 44, draftReview: 45, threads: 47, threadAgents: 47, seen: 48, computers: 49, externalAgents: 50, chatLinks: 51, chatOrigin: 52, queuedOrigin: 53, telemetry: 54, sharedMark: 55 } as const;
 
@@ -261,8 +263,8 @@ export const UsageView = z.object({
   runtime: z.string().max(32).optional(),
   /** 1.33: the agent that answers when nobody names one. */
   isDefault: z.boolean().optional(),
-  /** 1.33: a local model's tokens since the Mac started, and its speed over the last run. */
-  tokens: z.object({ input: z.number().min(0), output: z.number().min(0) }).optional(),
+  /** 1.33: a local model's tokens since the Mac started, and its speed over the last run. 1.57: cache reads and cache writes, when conversations counted them. */
+  tokens: z.object({ input: z.number().min(0), output: z.number().min(0), cacheRead: z.number().min(0).optional(), cacheWrite: z.number().min(0).optional() }).optional(),
   tokensPerSec: z.number().min(0).optional(),
   /** 1.33: false when it's installed on the Mac but not signed in. */
   signedIn: z.boolean().optional(),

@@ -5,6 +5,8 @@ import { expect, test } from './fixtures.js';
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test('a fresh install walks through the welcome, picks a look, and never sees it again', async ({ page }) => {
+  // The whole welcome, then a reload. The 45s default runs out on a busy CI Mac before the sidebar is back.
+  test.setTimeout(90_000);
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await expect(welcome).toBeVisible();

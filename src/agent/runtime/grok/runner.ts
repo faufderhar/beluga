@@ -66,17 +66,143 @@ export const GROK_DIALECT: AcpDialect = {
   result: grokResultText,
 };
 
-interface GrokTurnMeta {
-  readonly totalTokens?: number;
-  readonly usage?: { readonly inputTokens?: number; readonly outputTokens?: number; readonly cachedReadTokens?: number; readonly cacheCreationTokens?: number; readonly costUsdTicks?: number };
+/** A positive finite count; anything else is nothing reported. */
+const count = (n: number | undefined): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
+
+/**
+ * What `session/prompt` puts on `_meta.usage`. ACP names the whole prompt `inputTokens` and the
+ * cache hit `cachedReadTokens`. Headless and model-usage names (`cacheReadInputTokens`,
+ * `cache_read_input_tokens`) already leave the cache out of input.
+ */
+interface GrokUsageCounts {
+  readonly inputTokens?: number;
+  readonly input_tokens?: number;
+  readonly outputTokens?: number;
+  readonly output_tokens?: number;
+  readonly cachedReadTokens?: number;
+  readonly cacheReadInputTokens?: number;
+  readonly cache_read_input_tokens?: number;
+  readonly cacheCreationTokens?: number;
+  readonly cacheCreationInputTokens?: number;
+  readonly cache_creation_input_tokens?: number;
+  readonly cachedWriteTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly reasoning_tokens?: number;
+  readonly costUsdTicks?: number;
+  readonly costUSD?: number;
 }
 
-/** A turn's tokens and cost, in Beluga's shape. Grok's input count includes what came from cache, and its output count its reasoning. */
+interface GrokTurnMeta {
+  readonly totalTokens?: number;
+  readonly usage?: GrokUsageCounts;
+}
+
+/** The first name Grok actually filled in. Two names for one bucket are not added together. */
+const firstCount = (...ns: Array<number | undefined>): number => {
+  for (const n of ns) {
+    const v = count(n);
+    if (v) return v;
+  }
+  return 0;
+};
+
+interface GrokParts {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+  readonly cost: number;
+}
+
+/** Fresh input, output, cache read, cache write and cost, each once. */
+function grokParts(usage: GrokUsageCounts): GrokParts {
+  // ACP's cachedReadTokens is inside inputTokens. The headless names are not, so only that one comes back out.
+  const acpRead = count(usage.cachedReadTokens);
+  const cacheRead = firstCount(usage.cachedReadTokens, usage.cacheReadInputTokens, usage.cache_read_input_tokens);
+  const cacheWrite = firstCount(usage.cacheCreationTokens, usage.cacheCreationInputTokens, usage.cache_creation_input_tokens, usage.cachedWriteTokens);
+  const reportedIn = usage.inputTokens ?? usage.input_tokens ?? 0;
+  const input = Math.max(0, (typeof reportedIn === 'number' && Number.isFinite(reportedIn) ? reportedIn : 0) - acpRead);
+  // Output already includes reasoning when Grok sends both. A turn that reports only reasoning still counts it.
+  const output = firstCount(usage.outputTokens, usage.output_tokens) || firstCount(usage.reasoningTokens, usage.reasoning_tokens);
+  const ticks = usage.costUsdTicks;
+  const cost = typeof ticks === 'number' && Number.isFinite(ticks) ? Math.max(0, ticks / TICKS_PER_USD) : typeof usage.costUSD === 'number' && Number.isFinite(usage.costUSD) ? Math.max(0, usage.costUSD) : 0;
+  return { input, output, cacheRead, cacheWrite, cost };
+}
+
+/** A turn's tokens and cost, in Beluga's shape: fresh input, output, cache read and cache write, each once. */
 export function grokUsageEvent(meta: GrokTurnMeta | undefined, session: string): string | undefined {
   const usage = meta?.usage;
   if (!usage) return undefined;
-  const cacheRead = usage.cachedReadTokens ?? 0;
-  return JSON.stringify({ input: Math.max(0, (usage.inputTokens ?? 0) - cacheRead), output: usage.outputTokens ?? 0, cacheRead, cacheWrite: usage.cacheCreationTokens ?? 0, cost: Math.max(0, (usage.costUsdTicks ?? 0) / TICKS_PER_USD), session });
+  return JSON.stringify({ ...grokParts(usage), session });
+}
+
+/**
+ * The context meter for one report. What's in the window is fresh input plus cache read and cache
+ * write (output isn't in the window until the next turn). `totalTokens` is only the fallback when
+ * that fill wasn't reported. Cache counts ride along so the hit rate can show before the ledger
+ * write; both zero, they're left off.
+ */
+export function grokContextEvent(meta: GrokTurnMeta | undefined, size: number, model?: string): string | undefined {
+  const parts = meta?.usage ? grokParts(meta.usage) : undefined;
+  const fill = parts ? parts.input + parts.cacheRead + parts.cacheWrite : 0;
+  const base = contextEvent(fill > 0 ? fill : count(meta?.totalTokens), size, model);
+  if (!base || !parts || fill <= 0 || (parts.cacheRead <= 0 && parts.cacheWrite <= 0)) return base;
+  return JSON.stringify({ ...(JSON.parse(base) as Record<string, unknown>), cacheRead: parts.cacheRead, cacheWrite: parts.cacheWrite });
+}
+
+/** Session updates that are never a usage report (a tool call can carry numbers that aren't tokens). */
+const NOT_USAGE = new Set(['agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk', 'tool_call', 'tool_call_update', 'available_commands_update', 'config_option_update', 'current_mode_update', 'plan', 'auto_compact_completed']);
+
+const USAGE_KEYS = ['inputTokens', 'input_tokens', 'outputTokens', 'output_tokens', 'cachedReadTokens', 'cacheReadInputTokens', 'cache_read_input_tokens', 'cacheCreationTokens', 'cacheCreationInputTokens', 'cache_creation_input_tokens', 'cachedWriteTokens', 'totalTokens'] as const;
+
+const hasUsageShape = (o: object): boolean => USAGE_KEYS.some((k) => typeof (o as Record<string, unknown>)[k] === 'number');
+
+const asRecord = (v: unknown): Record<string, unknown> | undefined => (v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined);
+
+/**
+ * A `session/update` (or an `_x.ai` notification) as a context event, while the turn is still
+ * running. `usage_update` is the window (`used` / `size`). `turn_usage`, and any other update
+ * shaped like Grok's usage, is the prompt's tokens. Anything else is ignored.
+ */
+export function grokLiveContext(update: unknown, size: number, model?: string): string | undefined {
+  const u = asRecord(update);
+  if (!u) return undefined;
+  const kind = typeof u.sessionUpdate === 'string' ? u.sessionUpdate : '';
+  if (NOT_USAGE.has(kind)) return undefined;
+  const nested = asRecord(u.usage);
+  const shaped = hasUsageShape(u) || Boolean(nested && hasUsageShape(nested));
+  if (kind !== 'usage_update' && kind !== 'turn_usage' && !shaped) return undefined;
+  const usageObj = nested && hasUsageShape(nested) ? nested : hasUsageShape(u) ? u : undefined;
+  const total = count(typeof u.totalTokens === 'number' ? u.totalTokens : typeof nested?.totalTokens === 'number' ? nested.totalTokens : undefined);
+  const reported = typeof u.size === 'number' && u.size > 0 ? u.size : size;
+  const fromTokens = usageObj || total ? grokContextEvent({ ...(total ? { totalTokens: total } : {}), ...(usageObj ? { usage: usageObj as GrokUsageCounts } : {}) }, reported, model) : undefined;
+  const fromWindow = typeof u.used === 'number' ? contextEvent(u.used, reported, model) : undefined;
+  // The prompt's own fill carries the cache split, so it wins. A bare `used` is the window when
+  // that fill wasn't there (`totalTokens` would otherwise stand in for it).
+  if (fromTokens) {
+    const body = JSON.parse(fromTokens) as { cacheRead?: unknown; cacheWrite?: unknown };
+    if (body.cacheRead !== undefined || body.cacheWrite !== undefined || !fromWindow) return fromTokens;
+  }
+  return fromWindow;
+}
+
+/**
+ * A later window-only update (usage_update's `used`, with no cache split) keeps the cache counts
+ * from the last report, so the hit rate stays on screen while the window moves.
+ */
+export function mergeLiveContext(next: string, prev: string | undefined): string {
+  if (!prev) return next;
+  let body: Record<string, unknown>;
+  let prior: Record<string, unknown>;
+  try {
+    body = JSON.parse(next) as Record<string, unknown>;
+    prior = JSON.parse(prev) as Record<string, unknown>;
+  } catch {
+    return next;
+  }
+  if (body.cacheRead !== undefined || body.cacheWrite !== undefined) return next;
+  if (typeof prior.cacheRead !== 'number' && typeof prior.cacheWrite !== 'number') return next;
+  return JSON.stringify({ ...body, ...(typeof prior.cacheRead === 'number' ? { cacheRead: prior.cacheRead } : {}), ...(typeof prior.cacheWrite === 'number' ? { cacheWrite: prior.cacheWrite } : {}) });
 }
 
 const SIGNED_OUT = /authentication required|not authenticated|grok login/i;
@@ -143,6 +269,8 @@ export function createGrokBackend(opts: GrokBackendOptions): AgentBackend {
       let model: string | undefined;
       let window = 0;
       let lastContext: string | undefined;
+      /** The turn running now, so a usage update lands on its conversation (a follow-up's, once one starts). */
+      let turnSink: TurnSink | undefined;
       /** A /compact turn is running, and how full it left the window (Grok says so in its own notification). */
       let compacting = false;
       let compacted: { readonly before: number; readonly after: number } | undefined;
@@ -174,17 +302,27 @@ export function createGrokBackend(opts: GrokBackendOptions): AgentBackend {
         let options: readonly ConfigOption[] = [];
         /** Why steps were turned down in the turn now running: Grok is told when it's sent back. */
         const declined: string[] = [];
+        /** The meter, as soon as Grok says how full the window is. Not a ledger write: that waits for the prompt's own total. */
+        const publishContext = (raw: unknown): void => {
+          const ev = grokLiveContext(raw, window, model);
+          if (!ev || compacting) return;
+          const next = mergeLiveContext(ev, lastContext);
+          if (next === lastContext) return;
+          (turnSink ?? { onEvent: input.onEvent }).onEvent('context', (lastContext = next));
+        };
         rpc.onNotification((method, params) => {
           if (params.sessionId !== sid) return;
           if (method === '_x.ai/session_notification') {
             const u = params.update as { sessionUpdate?: string; tokens_before?: number; tokens_after?: number };
             if (u.sessionUpdate === 'auto_compact_completed') compacted = { before: u.tokens_before ?? 0, after: u.tokens_after ?? 0 };
+            else publishContext(params.update);
             return;
           }
           if (method !== 'session/update') return;
           const update = params.update as SessionUpdate;
           if (update.sessionUpdate === 'available_commands_update') commands = new Set(update.availableCommands.map((c) => c.name));
           if (update.sessionUpdate === 'config_option_update') options = update.configOptions;
+          publishContext(update);
           events.handle(update);
         });
         // Every tool call Grok makes: Beluga's gate decides (and you, when it asks), once each.
@@ -291,6 +429,7 @@ export function createGrokBackend(opts: GrokBackendOptions): AgentBackend {
         /** One prompt: what it said last, and how it ended. */
         const runPrompt = async (sink: TurnSink, blocks: ContentBlock[]): Promise<{ text: string; res: PromptResponse }> => {
           events.beginTurn(sink);
+          turnSink = sink;
           const done = deferred<PromptResponse>();
           active = { done, sink };
           try {
@@ -300,13 +439,14 @@ export function createGrokBackend(opts: GrokBackendOptions): AgentBackend {
             const meta = res._meta as GrokTurnMeta | undefined;
             const used = grokUsageEvent(meta, sid);
             if (used) sink.onEvent('usage', used);
-            const ev = contextEvent(meta?.totalTokens ?? 0, window, model);
+            const ev = grokContextEvent(meta, window, model);
             if (ev && ev !== lastContext && !compacting) sink.onEvent('context', (lastContext = ev));
             return { text, res };
           } catch (err) {
             events.endTurn(false);
             throw err;
           } finally {
+            turnSink = undefined;
             active = undefined;
           }
         };

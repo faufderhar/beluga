@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cacheHitRows } from '../src/ui/cache-usage.js';
 import { usageViews } from '../src/companion/views.js';
-import { withLocalUsage, type ProviderCard } from '../src/ui/usage-cards.js';
+import { tokenDetail, tokenTotal, withLocalUsage, type ProviderCard } from '../src/ui/usage-cards.js';
 
 const counts = (input: number, cacheRead: number, cacheWrite: number) => ({ input, cacheRead, cacheWrite });
 
@@ -64,12 +64,22 @@ describe('Grok usage on this Mac', () => {
   });
 
   it('adds tokens counted in Grok conversations, and does not replace a period window', () => {
-    const ledger = { runtimes: [grokRuntime], defaultRuntime: 'claude', projects: [{ name: 'beluga', workspaces: [{ agent: { runtime: 'grok' }, usage: { input: 1000, output: 250 } }, { agent: { runtime: 'claude' }, usage: { input: 9, output: 9 } }] }] };
+    const ledger = { runtimes: [grokRuntime], defaultRuntime: 'claude', projects: [{ name: 'beluga', workspaces: [{ agent: { runtime: 'grok' }, usage: { input: 1000, output: 250, cacheRead: 8000, cacheWrite: 40 } }, { agent: { runtime: 'claude' }, usage: { input: 9, output: 9, cacheRead: 90 } }] }] };
     const noted = withLocalUsage([], ledger);
-    expect(noted[0]).toMatchObject({ shape: 'tokens', tokens: { input: 1000, output: 250 } });
+    expect(noted[0]).toMatchObject({ shape: 'tokens', tokens: { input: 1000, output: 250, cacheRead: 8000, cacheWrite: 40 } });
+    expect(tokenTotal(noted[0]!.tokens!)).toBe(9290);
+    expect(tokenDetail(noted[0]!.tokens!)).toBe('1k in · 250 out · 8k cache read · 40 cache write');
     expect(noted[0]!.note).toMatch(/conversations on this Mac/);
+    const phone = usageViews(undefined, undefined, ledger);
+    expect(phone[0]!.tokens).toEqual({ input: 1000, output: 250, cacheRead: 8000, cacheWrite: 40 });
     const quota: ProviderCard = { key: 'grok', agent: { runtime: 'grok', label: 'Grok Build' }, shape: 'quota', windows: [{ label: 'This period', short: 'thi', pct: 12 }], signedIn: true, isDefault: false };
     expect(withLocalUsage([quota], ledger)[0]).toBe(quota);
+  });
+
+  it('counts a conversation that was only cache', () => {
+    const ledger = { runtimes: [grokRuntime], projects: [{ name: 'beluga', workspaces: [{ agent: { runtime: 'grok' }, usage: { input: 0, output: 0, cacheRead: 500 } }] }] };
+    expect(withLocalUsage([], ledger)[0]).toMatchObject({ shape: 'tokens', tokens: { input: 0, output: 0, cacheRead: 500 } });
+    expect(tokenDetail({ input: 0, output: 12 })).toBe('0 in · 12 out');
   });
 
   it('keeps a signed-out Grok signed out, and a team plan in its own words', () => {

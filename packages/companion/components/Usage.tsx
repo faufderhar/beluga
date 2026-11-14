@@ -5,6 +5,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import { until, useSupports } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { HomeView, UsageView } from '../lib/link/protocol';
+import { shortTokens, tokenDetail, tokenTotal } from '../../../src/ui/usage-cards';
 import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
 import { AgentMarkIcon, runtimeMark } from './AgentMark';
@@ -33,9 +34,6 @@ function Bar({ pct }: { pct: number }) {
   );
 }
 
-/** "1.2M", "84k", "512" tokens. */
-const shortTokens = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
-
 /** A provider without a plan (a local model): what it used, and how fast it answers. */
 function TokenFigures({ usage, hideSpeed }: { readonly usage: UsageView; readonly hideSpeed?: boolean }) {
   const figure = (label: string, value: string, sub: string) => (
@@ -50,7 +48,7 @@ function TokenFigures({ usage, hideSpeed }: { readonly usage: UsageView; readonl
   const t = usage.tokens;
   return (
     <View style={{ flexDirection: 'row', gap: 16 }}>
-      {figure('Tokens', t ? shortTokens(t.input + t.output) : '–', t ? `${shortTokens(t.input)} in · ${shortTokens(t.output)} out` : 'since your Mac started')}
+      {figure('Tokens', t ? shortTokens(tokenTotal(t)) : '–', t ? tokenDetail(t) : 'since your Mac started')}
       {hideSpeed ? null : figure('Speed', usage.tokensPerSec !== undefined ? `${Math.round(usage.tokensPerSec)} tok/s` : '–', 'over its last run')}
     </View>
   );
