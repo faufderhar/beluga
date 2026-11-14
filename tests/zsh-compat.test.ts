@@ -51,7 +51,8 @@ describe('zsh compat for Claude runs', () => {
     expect(out).toBe('3 3 a\nx\ty\n');
   });
 
-  it('does nothing in bash', () => {
+  // Windows has no /bin/sh. The file is a no-op in bash; this checks a real one.
+  it.skipIf(!existsSync('/bin/sh'))('does nothing in bash', () => {
     const out = execFileSync('/bin/sh', ['-c', `${ZSH_COMPAT}echo ok`], { encoding: 'utf8' });
     expect(out).toBe('ok\n');
   });
@@ -71,8 +72,9 @@ describe("Claude Code's shell", () => {
   });
 
   it("runs a fish user's commands in zsh, before bash", () => {
-    expect(claudeCodeShell({ SHELL: '/opt/homebrew/bin/fish', PATH: '/usr/bin' }, 'darwin', only('/bin/zsh', '/bin/bash'))).toBe('zsh');
-    expect(claudeCodeShell({ SHELL: '/usr/bin/fish', PATH: '/usr/bin' }, 'linux', only('/usr/bin/bash'))).toBe('bash');
+    // path.join follows this machine, so the stand-in paths do too (Windows joins with \).
+    expect(claudeCodeShell({ SHELL: '/opt/homebrew/bin/fish', PATH: '/usr/bin' }, 'darwin', only(path.join('/bin', 'zsh'), path.join('/bin', 'bash')))).toBe('zsh');
+    expect(claudeCodeShell({ SHELL: '/usr/bin/fish', PATH: '/usr/bin' }, 'linux', only(path.join('/usr/bin', 'bash')))).toBe('bash');
     expect(claudeCodeShell({ SHELL: '/usr/bin/fish' }, 'linux', () => false)).toBeUndefined();
   });
 

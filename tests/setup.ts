@@ -30,10 +30,13 @@ const home = made('os-home');
 process.env.HOME = home;
 if (process.platform === 'win32') process.env.USERPROFILE = home;
 // Git also reads $XDG_CONFIG_HOME/git/config, wherever the developer points it: give git (and
-// anything else reading XDG) the test home's own, empty, config.
+// anything else reading XDG) the test home's own config. autocrlf stays off. Git for Windows turns
+// every checkout into CRLF from its system config, and an empty file here would leave that in
+// force: CI sets autocrlf false on the real global file, which this one replaces. The tests read
+// files byte for byte.
 process.env.XDG_CONFIG_HOME = path.join(home, '.config');
 process.env.GIT_CONFIG_GLOBAL = path.join(home, '.gitconfig');
-writeFileSync(process.env.GIT_CONFIG_GLOBAL, '');
+writeFileSync(process.env.GIT_CONFIG_GLOBAL, '[core]\n\tautocrlf = false\n');
 process.env.BELUGA_HOME = made('beluga-home');
 // Nor the old name, for a test that clears BELUGA_HOME (an inherited KLAUD_HOME is real data).
 delete process.env.KLAUD_HOME;
