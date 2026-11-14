@@ -79,8 +79,11 @@ export const ProviderUsage = Usage.extend({
   agent: AgentRef,
   /** Windows that aren't the 5-hour/week pair, by their own names. */
   windows: z.array(NamedUsageWindow).max(6).optional(),
-  /** Tokens used since the Mac started (for providers without a plan). */
-  tokens: z.object({ input: z.number().min(0), output: z.number().min(0) }).optional(),
+  /**
+   * Tokens used since the Mac started (for providers without a plan). Cache reads and cache writes
+   * are present when the run reported them; an older Mac drops those two.
+   */
+  tokens: z.object({ input: z.number().min(0), output: z.number().min(0), cacheRead: z.number().min(0).optional(), cacheWrite: z.number().min(0).optional() }).optional(),
   /** Output tokens per second over the last run. */
   tokensPerSec: z.number().min(0).max(100_000).optional(),
   /** False when the provider is installed but not signed in. */

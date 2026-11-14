@@ -128,6 +128,13 @@ describe('what Grok says, as Beluga reads it', () => {
     expect(grokUsageEvent({}, 's1')).toBeUndefined();
   });
 
+  it('keeps headless cache beside uncached input, and does not add reasoning that is already in the output', () => {
+    const headless = JSON.parse(grokUsageEvent({ usage: { inputTokens: 7210, outputTokens: 1893, cacheReadInputTokens: 41000, cacheCreationInputTokens: 20, reasoningTokens: 412, costUSD: 0.04 } }, 's1')!) as Record<string, unknown>;
+    expect(headless).toEqual({ input: 7210, output: 1893, cacheRead: 41000, cacheWrite: 20, cost: 0.04, session: 's1' });
+    const snake = JSON.parse(grokUsageEvent({ usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 90, cache_creation_input_tokens: 4, reasoning_tokens: 3 } }, 's2')!) as Record<string, unknown>;
+    expect(snake).toMatchObject({ input: 10, output: 3, cacheRead: 90, cacheWrite: 4, cost: 0 });
+  });
+
   it('tells a signed-out run as a sign-in, and as Grok’s', () => {
     expect(grokFailure({ error: 'Authentication required' })).toMatchObject({ failure: { kind: 'signed_out', runtime: 'grok' } });
   });

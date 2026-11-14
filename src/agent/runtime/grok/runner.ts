@@ -66,17 +66,61 @@ export const GROK_DIALECT: AcpDialect = {
   result: grokResultText,
 };
 
-interface GrokTurnMeta {
-  readonly totalTokens?: number;
-  readonly usage?: { readonly inputTokens?: number; readonly outputTokens?: number; readonly cachedReadTokens?: number; readonly cacheCreationTokens?: number; readonly costUsdTicks?: number };
+/** A positive finite count; anything else is nothing reported. */
+const count = (n: number | undefined): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
+
+/**
+ * What `session/prompt` puts on `_meta.usage`. ACP names the whole prompt `inputTokens` and the
+ * cache hit `cachedReadTokens`. Headless and model-usage names (`cacheReadInputTokens`,
+ * `cache_read_input_tokens`) already leave the cache out of input.
+ */
+interface GrokUsageCounts {
+  readonly inputTokens?: number;
+  readonly input_tokens?: number;
+  readonly outputTokens?: number;
+  readonly output_tokens?: number;
+  readonly cachedReadTokens?: number;
+  readonly cacheReadInputTokens?: number;
+  readonly cache_read_input_tokens?: number;
+  readonly cacheCreationTokens?: number;
+  readonly cacheCreationInputTokens?: number;
+  readonly cache_creation_input_tokens?: number;
+  readonly cachedWriteTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly reasoning_tokens?: number;
+  readonly costUsdTicks?: number;
+  readonly costUSD?: number;
 }
 
-/** A turn's tokens and cost, in Beluga's shape. Grok's input count includes what came from cache, and its output count its reasoning. */
+interface GrokTurnMeta {
+  readonly totalTokens?: number;
+  readonly usage?: GrokUsageCounts;
+}
+
+/** The first name Grok actually filled in. Two names for one bucket are not added together. */
+const firstCount = (...ns: Array<number | undefined>): number => {
+  for (const n of ns) {
+    const v = count(n);
+    if (v) return v;
+  }
+  return 0;
+};
+
+/** A turn's tokens and cost, in Beluga's shape: fresh input, output, cache read and cache write, each once. */
 export function grokUsageEvent(meta: GrokTurnMeta | undefined, session: string): string | undefined {
   const usage = meta?.usage;
   if (!usage) return undefined;
-  const cacheRead = usage.cachedReadTokens ?? 0;
-  return JSON.stringify({ input: Math.max(0, (usage.inputTokens ?? 0) - cacheRead), output: usage.outputTokens ?? 0, cacheRead, cacheWrite: usage.cacheCreationTokens ?? 0, cost: Math.max(0, (usage.costUsdTicks ?? 0) / TICKS_PER_USD), session });
+  // ACP's cachedReadTokens is inside inputTokens. The headless names are not, so only that one comes back out.
+  const acpRead = count(usage.cachedReadTokens);
+  const cacheRead = firstCount(usage.cachedReadTokens, usage.cacheReadInputTokens, usage.cache_read_input_tokens);
+  const cacheWrite = firstCount(usage.cacheCreationTokens, usage.cacheCreationInputTokens, usage.cache_creation_input_tokens, usage.cachedWriteTokens);
+  const reportedIn = usage.inputTokens ?? usage.input_tokens ?? 0;
+  const input = Math.max(0, (typeof reportedIn === 'number' && Number.isFinite(reportedIn) ? reportedIn : 0) - acpRead);
+  // Output already includes reasoning when Grok sends both. A turn that reports only reasoning still counts it.
+  const output = firstCount(usage.outputTokens, usage.output_tokens) || firstCount(usage.reasoningTokens, usage.reasoning_tokens);
+  const ticks = usage.costUsdTicks;
+  const cost = typeof ticks === 'number' && Number.isFinite(ticks) ? Math.max(0, ticks / TICKS_PER_USD) : typeof usage.costUSD === 'number' && Number.isFinite(usage.costUSD) ? Math.max(0, usage.costUSD) : 0;
+  return JSON.stringify({ input, output, cacheRead, cacheWrite, cost, session });
 }
 
 const SIGNED_OUT = /authentication required|not authenticated|grok login/i;
