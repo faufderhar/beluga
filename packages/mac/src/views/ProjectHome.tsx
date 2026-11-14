@@ -44,8 +44,12 @@ import {
 import { type Issue, STATUS_INFO } from "@beluga/core/board/model.js";
 import { StatusIcon } from "../tasks/marks.js";
 import { useTaskActions } from "../tasks/use-tasks.js";
+import { withChatWords } from "@beluga/shared/chat-ref.js";
 import { branchOptions } from "../chat/WorktreeDraft.js";
 import { useBoxSuggestions } from "../chat/BoxSuggestions.js";
+import { boxChats } from "../chat/chat-box.js";
+import { caretAfterDraw, useDraftChips } from "../chat/draft-chips.js";
+import { useMentionWorld } from "../chat/Mention.js";
 import { useAttachments } from "../chat/use-attachments.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
 import { DictationStrip, MicButton } from "../chat/Dictation.js";
@@ -283,6 +287,21 @@ function HomeComposer({ project }: { project: Project }) {
     setAutonomy(DEFAULT_AUTONOMY);
     ref.current?.focus();
   }, [project.id]);
+  // Mention in Chat and a file dragged from the tree land here (home:<project id>). Never sends.
+  const homeKey = `home:${project.id}`;
+  useDraftChips(homeKey, (chips) => {
+    const current = words.current;
+    const at = ref.current?.value === current ? (ref.current.selectionStart ?? current.length) : current.length;
+    const next = withChatWords(current, at, boxChats(chips));
+    words.current = next.text;
+    setText(next.text);
+    caretAfterDraw(ref, next.caret);
+  });
+  useEffect(() => {
+    const focus = (): void => ref.current?.focus();
+    document.addEventListener("beluga:focus-composer", focus);
+    return () => document.removeEventListener("beluga:focus-composer", focus);
+  }, []);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -304,8 +323,10 @@ function HomeComposer({ project }: { project: Project }) {
       : [];
   const sendKeys = prefs.sendWith === "enter" ? "↩" : chordLabel('Cmd+Enter');
   // "@src/…" offers the main folder's files (the new worktree starts with the same ones), "/" the commands.
-  const mainId = project.workspaces.find((w) => w.kind === "main")?.id;
+  const mainId = project.workspaces.find((w) => w.kind === "main" && !w.archived)?.id;
   const box = useBoxSuggestions({ text, setText, filesOf: mainId });
+  // The main folder's files, so @src/auth.ts and @src/ draw once dirCache has them.
+  const mentionWorld = useMentionWorld(mainId ? `ws:${mainId}` : undefined, { tasks: true, project: project.id });
   // Create Worktree's ▾ (BLG-506): the same worktree, worked by another agent.
   const startWith = useStartWith();
   const startDeps = useStartDeps();
@@ -496,6 +517,7 @@ function HomeComposer({ project }: { project: Project }) {
       </div>
       <div
         className={cx(s.box, busy && s.busy, att.dropping && c.dropping)}
+        data-chat-box={homeKey}
         {...att.dropProps}
       >
         {box.list}
@@ -506,6 +528,7 @@ function HomeComposer({ project }: { project: Project }) {
         <div className={c.inputWrap}>
           <MentionHighlighter
             text={text}
+            world={mentionWorld}
             input={ref}
             className={s.input ?? ""}
           />

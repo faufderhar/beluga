@@ -1,6 +1,8 @@
 import { Fragment, Suspense, useEffect, useRef, useState } from 'react';
 import type { BrowserRow, ViewerState } from '@beluga/core/store.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
+import { fileMention } from '../chat/mentions.js';
+import { putChips } from '../chat/draft-chips.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
@@ -9,6 +11,7 @@ import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { useActions } from '../lib/actions.js';
 import { copyText } from '../lib/copy.js';
 import { localPathOf, mentionOf, openWithDefaultApp, revealInFinder, saveFile } from '../lib/files.js';
+import { filesWsOf } from '../lib/panel.js';
 import { SCROLL_ROOT } from '../components/markdown/md-dom.js';
 import { type ReaderMode, hasRenderedLook, initialMode } from './reader/reader-model.js';
 import { SearchField, SearchResults } from './SharedSearch.js';
@@ -96,12 +99,20 @@ export function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionIt
     const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
     const mention = (): void => {
       const v = state.view;
-      // The conversation this folder belongs to (a workspace's own chat, else the room's group chat, else a new chat).
-      if (v.kind === 'workspace') actions.run({ type: 'open_ws', id: v.id, tab: 'chat' });
-      else if (v.kind === 'shared') actions.run({ type: 'open_shared', owner: v.owner, id: v.id, tab: 'chat' });
+      // Your own project or worktree: "@src/auth.ts" (a folder "@src/") into the box on screen.
+      // A project page stays there (the home composer). A worktree's chat takes it on its draft.
+      const ws = filesWsOf(state);
+      const own = ws !== undefined && at.owner === state.selfId && at.share === shareNameOf(ws);
+      if (own && (v.kind === 'project' || v.kind === 'workspace')) {
+        if (v.kind === 'workspace') actions.run({ type: 'open_ws', id: v.id, tab: 'chat' });
+        putChips(v.kind === 'project' ? `home:${v.id}` : `ws:${v.id}`, fileMention(at.path, row.dir));
+        document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
+        return;
+      }
+      // A friend's folder stays "name:share/path". The room, or a new chat, takes the same words.
+      if (v.kind === 'shared') actions.run({ type: 'open_shared', owner: v.owner, id: v.id, tab: 'chat' });
       else if (groupChatOpen(state)) actions.run({ type: 'view', view: { kind: 'room' } });
       else actions.run({ type: 'new_chat', projectId: 'chats' });
-      // Added to that chat's own words, once its box shows them.
       setTimeout(() => {
         const current = ui.get().buffer;
         const buffer = `${current}${current && !current.endsWith(' ') ? ' ' : ''}${mentionOf(state, at)} `;

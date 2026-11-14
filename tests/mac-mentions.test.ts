@@ -4,7 +4,7 @@ import { parseInput } from '../src/core/mentions.js';
 import type { DomainState } from '../src/core/store.js';
 import type { FsEntry, PeerInfo } from '../src/protocol.js';
 import { chatLinksToMentions, chatMention, parseChatRef, withChatWords } from '../src/shared/chat-ref.js';
-import { linkMentions, parseMentionHref, resolveMention, splitMentions, type MentionWorld } from '../packages/mac/src/chat/mentions.js';
+import { fileMention, linkMentions, parseMentionHref, resolveMention, splitMentions, type MentionWorld } from '../packages/mac/src/chat/mentions.js';
 import { mentionDir, suggest, typedMention } from '../src/ui/suggest.js';
 
 /** "@mia", "@bob-api", "@add-auth", "@src/", "@src/auth.ts": pills when they name someone or something. */
@@ -18,6 +18,16 @@ const world: MentionWorld = {
   workspaces: [{ label: '@add-auth', id: 'w1' }],
   entries: (dir) => tree[dir],
 };
+
+describe('fileMention', () => {
+  it('names a file as @path and a folder as @path/', () => {
+    expect(fileMention('src/auth.ts', false)).toBe('@src/auth.ts');
+    expect(fileMention('README.md', false)).toBe('@README.md');
+    expect(fileMention('src', true)).toBe('@src/');
+    expect(fileMention('src/', true)).toBe('@src/');
+    expect(fileMention('src/routes', true)).toBe('@src/routes/');
+  });
+});
 
 describe('what a mention names', () => {
   it('friends, Claudes, projects, worktrees, folders and files; anything else is just text', () => {

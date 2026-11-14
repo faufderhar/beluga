@@ -27,6 +27,7 @@ import { useEditSession } from '../../views/reader/edit-store.js';
 import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
+import { useFileDrag } from '../file-drag.js';
 import { type TreeRow, ancestorsOf, foundRows, treeRows } from './tree.js';
 import s from './panel.module.css';
 import k from './content-search.module.css';
@@ -140,6 +141,8 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
   const browserAt = useApp((st) => st.browser.at);
   const review = useApp((st) => (st.review?.workspaceId === wsId ? st.review.data : undefined));
   const rowItems = useRowItems();
+  // A row picked up onto a message box. A shared folder's list is not this tree, so it doesn't drag.
+  const fileDrag = useFileDrag();
   const share = shareNameOf(wsId);
   const at = (path: string): Location => ({ owner: selfId, share, path });
   const keyOf = (path: string): string => `${selfId}:${share}/${path}`;
@@ -307,6 +310,7 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
   const local = shown ? localOf(shown.path) : undefined;
   return (
     <div ref={box} className={s.stack}>
+      {fileDrag}
       <div className={s.top} style={previewed ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
         <div className={s.filterRow}>
           <label className={s.filter}>
@@ -365,6 +369,8 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
                     aria-expanded={row.dir ? row.open : undefined}
                     aria-label={row.name}
                     data-cursor={on}
+                    data-file-row={row.path}
+                    {...(row.dir ? { 'data-file-dir': '' } : {})}
                     className={cx(s.row, s.treeRow, on && s.rowOn, shown?.path === row.path && s.rowShown)}
                     style={{ paddingLeft: 6 + row.depth * 14 }}
                     title={row.path}
