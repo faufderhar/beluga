@@ -101,9 +101,15 @@ export class ScriptedGrok {
       used += 400;
       return { stopReason: 'end_turn', _meta: { sessionId: sid, totalTokens: used, usage: { inputTokens: 300, outputTokens: out, cachedReadTokens: 100, cacheCreationTokens: 0, costUsdTicks: 25_000_000 } } };
     };
+    /** While the turn is still going: the window, then this prompt's tokens (cache included). */
+    const meter = (sid: string): void => {
+      update(sid, { sessionUpdate: 'usage_update', used: 12_000, size: 256_000 });
+      update(sid, { sessionUpdate: 'turn_usage', usage: { inputTokens: 12_800, outputTokens: 20, cachedReadTokens: 9_000, cacheCreationTokens: 400 } });
+    };
     const refused = (sid: string): object => ({ stopReason: 'cancelled', _meta: { sessionId: sid, totalTokens: used } });
 
     const prompt = async (sid: string, blocks: ReadonlyArray<{ type: string; text?: string }>): Promise<object> => {
+      meter(sid);
       const text = blocks.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
       const input = /<input>\n([\s\S]*?)\n<\/input>/.exec(text);
       const words = input ? input[1]!.trim() : scriptedWords(text);

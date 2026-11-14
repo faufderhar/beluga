@@ -3,7 +3,7 @@ import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { formatTokens } from '@beluga/ui/work-models.js';
 import { tokensOf } from '@beluga/workspaces/usage-days.js';
 import { formatBytes } from '@beluga/shared/format.js';
-import { cacheHitOf, contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { cacheHitFromContext, cacheHitOf, contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { contextFacts } from '@beluga/ui/context-facts.js';
 import { speedWords } from '@beluga/shared/local-endpoints.js';
 import { unreadCount } from '@beluga/core/work-store.js';
@@ -187,7 +187,7 @@ function WorkspaceDetails({ id }: { id: string }) {
   if (!ws || !st) return null;
   const members = Object.entries(state.members ?? {});
   const tokens = tokensOf(ws.usage);
-  const cache = cacheHitOf(ws.usage);
+  const cache = cacheHitFromContext(ctx) ?? cacheHitOf(ws.usage);
   const project = state.projects.find((p) => p.id === ws.projectId);
   return (
     <>

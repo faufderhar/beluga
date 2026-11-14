@@ -60,6 +60,16 @@ describe('compaction in the chat', () => {
     expect(s.context[CH]).toEqual({ used: 95_000, window: 1_000_000, model: 'opus[1m]' });
   });
 
+  it('keeps a cache split with the window, and drops it when a new fill doesn’t bring one', () => {
+    let s = initialState('room');
+    s = reduce(s, ev('context', { used: 13_200, window: 256_000, cacheRead: 9_000, cacheWrite: 400 }));
+    expect(s.context[CH]).toEqual({ used: 13_200, window: 256_000, cacheRead: 9_000, cacheWrite: 400 });
+    s = reduce(s, ev('context', { compacting: true }));
+    expect(s.context[CH]).toMatchObject({ used: 13_200, compacting: true, cacheRead: 9_000, cacheWrite: 400 });
+    s = reduce(s, ev('context', { used: 14_000, window: 256_000 }));
+    expect(s.context[CH]).toEqual({ used: 14_000, window: 256_000 });
+  });
+
   it('reads peers’ JSON defensively', () => {
     expect(parseContextEvent('not json')).toBeUndefined();
     expect(parseContextEvent('7')).toBeUndefined();

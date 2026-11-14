@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { contextFacts } from '@beluga/ui/context-facts.js';
-import { cacheHitOf, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { cacheHitFromContext, cacheHitOf, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { tokensOf } from '@beluga/workspaces/usage-days.js';
 import { LOCAL_RUNTIME, speedWords } from '@beluga/shared/local-endpoints.js';
@@ -50,10 +50,16 @@ function useLocalRun(channel: string): { tokens: number; tps?: number } | undefi
   );
 }
 
-/** This conversation's prompt-cache hit rate (fresh, cache read, cache write added up for the session). */
+/**
+ * This conversation's prompt-cache hit rate. While a turn reports cache counts on the context
+ * event, those are what's in the window now. Otherwise the session ledger (fresh, cache read,
+ * cache write added up).
+ */
 function useCacheHit(channel: string): ReturnType<typeof cacheHitOf> {
   return useApp(
     (st) => {
+      const live = cacheHitFromContext(st.context[channel]);
+      if (live) return live;
       const id = channel.startsWith('ws:') ? channel.slice(3) : '';
       return id ? cacheHitOf(findWorkspace(st.projects, id)?.usage) : undefined;
     },

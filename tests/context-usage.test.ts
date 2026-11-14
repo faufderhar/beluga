@@ -4,6 +4,7 @@ import {
   COMPACT_INSTRUCTIONS,
   autoCompactDue,
   breakdownFrom,
+  cacheHitFromContext,
   cacheHitOf,
   cacheHitPct,
   clampThreshold,
@@ -160,6 +161,13 @@ describe('prompt-cache hit rate', () => {
     expect(cacheHitOf({ session: { input: 0, cacheRead: 0, cacheWrite: 0 }, last: { input: 0, cacheRead: 100, cacheWrite: 0 } })).toBeUndefined();
     expect(cacheHitOf(undefined)).toBeUndefined();
     expect(cacheHitOf({})).toBeUndefined();
+  });
+
+  it('reads the hit rate off the window when the context event carried the cache split', () => {
+    expect(cacheHitFromContext(undefined)).toBeUndefined();
+    expect(cacheHitFromContext({ used: 13_200 })).toBeUndefined();
+    expect(cacheHitFromContext({ used: 13_200, cacheRead: 9_000, cacheWrite: 400 })).toMatchObject({ pct: 68, label: 'Cache 68%' });
+    expect(cacheHitFromContext({ used: 300, cacheRead: 100, cacheWrite: 0 })?.counts).toEqual({ input: 200, cacheRead: 100, cacheWrite: 0 });
   });
 
   it('adds a session up across turns, and starts over when the session changes', () => {

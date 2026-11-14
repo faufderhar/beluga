@@ -21,7 +21,7 @@ Make it yours with the radio button, or pick it for one conversation in the agen
 - Pictures in a message.
 - Your skills: Grok Build loads your Claude Code skills itself. Claude Code's custom commands (`~/.claude/commands`) are expanded for it, and its own commands work as typed.
 - Sub-agents: each one its `spawn_subagent` tool starts is a row on the card.
-- Usage: tokens and cost for each turn (fresh input, output, cache reads and cache writes, each once), the context meter for Grok's own window, and the current billing period. On the daemon route `grok usage` prints it. On the shell route, where that command can't, Beluga asks Grok for `_x.ai/billing` (the period `/usage` shows, including the subscription name). When neither can be read, Usage shows those four counts from conversations on this Mac and says the period isn't available from here.
+- Usage: tokens and cost for each turn (fresh input, output, cache reads and cache writes, each once), the context meter for Grok's own window (it updates while a turn is still running, including the cache hit rate), and the current billing period. On the daemon route `grok usage` prints it. On the shell route, where that command can't, Beluga asks Grok for `_x.ai/billing` (the period `/usage` shows, including the subscription name). When neither can be read, Usage shows those four counts from conversations on this Mac and says the period isn't available from here.
 
 ## What's different
 
