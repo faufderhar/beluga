@@ -15,7 +15,9 @@ import { store } from './store';
  * Android only.
  */
 
-const RELEASES = 'https://api.github.com/repos/beluga-labs/beluga/releases/latest';
+import { RELEASE_REPO } from './release';
+
+export const RELEASES = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
 const HOUR = 60 * 60 * 1000;
 const EVERY = 4 * HOUR;
 

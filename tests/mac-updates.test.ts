@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { RELEASE_DOWNLOAD_BASE } from '../src/core/beluga-env.js';
 import type { LogItem } from '../src/core/store.js';
 import { INITIAL_UPDATE_STATE, type UpdateState, activityOf, idleLine, lastCheckedLabel, pillOf, placeAction, shortVersion, statusLine } from '../packages/mac/src/lib/update-model.js';
 
@@ -14,12 +15,46 @@ const ready = state({ phase: 'ready', available: { version: '0.5.0', notes: '- F
 
 describe('the Mac app version', () => {
   it('is the same in tauri.conf.json and package.json, so a release is detected as newer', () => {
-    const conf = JSON.parse(readFileSync('packages/mac/src-tauri/tauri.conf.json', 'utf8')) as { version: string; plugins: { updater: { endpoints: string[]; pubkey: string } }; bundle: { createUpdaterArtifacts: boolean } };
+    const conf = JSON.parse(readFileSync('packages/mac/src-tauri/tauri.conf.json', 'utf8')) as { version: string; plugins: { updater: { endpoints: string[]; pubkey: string; requireSignedVersion: boolean } }; bundle: { createUpdaterArtifacts: boolean } };
     const pkg = JSON.parse(readFileSync('packages/mac/package.json', 'utf8')) as { version: string };
     expect(conf.version).toBe(pkg.version);
     expect(conf.bundle.createUpdaterArtifacts).toBe(true);
-    expect(conf.plugins.updater.endpoints).toEqual(['https://github.com/beluga-labs/beluga/releases/latest/download/latest.json']);
-    expect(Buffer.from(conf.plugins.updater.pubkey, 'base64').toString()).toContain('minisign public key');
+    expect(conf.plugins.updater.requireSignedVersion).toBe(true);
+    expect(conf.plugins.updater.endpoints).toEqual([]);
+    expect(RELEASE_DOWNLOAD_BASE).toContain('faufderhar/beluga/releases/latest/download');
+    const decodedPubkey = Buffer.from(conf.plugins.updater.pubkey, 'base64').toString();
+    expect(decodedPubkey).toContain('minisign public key');
+    // Must never trust the upstream beluga-labs signing key (6A57391D00718E42).
+    expect(decodedPubkey).not.toContain('6A57391D00718E42');
+    const pubLines = decodedPubkey.trim().split('\n');
+    expect(Buffer.from(pubLines[1]!, 'base64').subarray(0, 2).toString('ascii')).toBe('Ed');
+    expect(Buffer.from(pubLines[1]!, 'base64')).toHaveLength(42);
+  });
+
+  it('converges every auto-update and release-install channel onto the custom fork instead of beluga-labs', () => {
+    const updateSources = [
+      'packages/mac/src-tauri/tauri.conf.json',
+      'packages/mac/src-tauri/src/updater.rs',
+      'packages/mac/src/onboarding/PhoneStep.tsx',
+      'packages/companion/lib/release.ts',
+      'packages/companion/lib/update.ts',
+      'packages/companion/lib/phone.ts',
+      'packages/companion/modules/phone-control/android/src/main/java/sh/ratel/beluga/control/PhoneControlModule.kt',
+      'src/core/beluga-env.ts',
+      'src/cli/update.ts',
+      'src/machines/ssh-pair.ts',
+      'src/companion/phone-control.ts',
+      'scripts/install.sh',
+      'scripts/release-mac.mjs',
+      'scripts/release-desktop.mjs',
+    ];
+    for (const file of updateSources) {
+      expect(readFileSync(file, 'utf8'), `${file} still points at beluga-labs`).not.toContain('beluga-labs/beluga');
+    }
+    const updaterRs = readFileSync('packages/mac/src-tauri/src/updater.rs', 'utf8');
+    const updateRulesRs = readFileSync('packages/mac/src-tauri/src/update_rules.rs', 'utf8');
+    expect(updaterRs).toContain('manifest_from_endpoint');
+    expect(updateRulesRs).toContain('pub const RELEASE_REPO: &str = "faufderhar/beluga";');
   });
 
   it('is read from tauri.conf.json by the window, never written twice', () => {

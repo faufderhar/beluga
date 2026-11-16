@@ -3,6 +3,7 @@
  * phone. lib/update.ts looks for it, downloads it and installs it.
  */
 
+export const RELEASE_REPO = 'faufderhar/beluga';
 const APK = /^Beluga-(\d+\.\d+\.\d+)\.apk$/;
 
 export interface Release {

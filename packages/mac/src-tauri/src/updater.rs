@@ -309,17 +309,38 @@ pub fn kept_env() -> Vec<&'static str> {
     keep
 }
 
-fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
-    #[allow(unused_mut)]
-    let mut builder = app.updater_builder();
-    // Development only: try a release served from this computer (see docs/updates.md).
+fn configured_endpoint() -> String {
+    let from_conf = serde_json::from_str::<serde_json::Value>(include_str!("../tauri.conf.json"))
+        .ok()
+        .and_then(|c| {
+            c.pointer("/plugins/updater/endpoints/0")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        });
+    from_conf.unwrap_or_else(|| update_rules::release_endpoint(update_rules::RELEASE_REPO))
+}
+
+fn active_endpoint() -> String {
     #[cfg(debug_assertions)]
     if let Some(url) = env("UPDATE_ENDPOINT") {
-        let url = url
-            .parse()
-            .map_err(|e| format!("BELUGA_UPDATE_ENDPOINT: {e}"))?;
-        builder = builder.endpoints(vec![url]).map_err(|e| e.to_string())?;
+        return url;
     }
+    configured_endpoint()
+}
+
+fn manifest_allowed(raw: &serde_json::Value) -> bool {
+    update_rules::manifest_from_endpoint(raw, &active_endpoint())
+}
+
+fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let ep = active_endpoint();
+    let url = ep
+        .parse()
+        .map_err(|e| format!("updater endpoint ({ep}): {e}"))?;
+    let builder = app
+        .updater_builder()
+        .endpoints(vec![url])
+        .map_err(|e| e.to_string())?;
     builder.build().map_err(|e| e.to_string())
 }
 
@@ -328,8 +349,9 @@ async fn restore_pending(app: &AppHandle) {
     let Some(pending) = with(app, |i| i.saved.pending.clone()) else {
         return;
     };
-    let restored = updater(app)
-        .ok()
+    let restored = manifest_allowed(&pending.raw)
+        .then(|| updater(app).ok())
+        .flatten()
         .and_then(|u| u.restore_update(pending.raw.clone()).ok().flatten());
     let file = pending.file.clone();
     let ok = match restored.clone() {
@@ -430,6 +452,20 @@ pub async fn check(app: &AppHandle, manual: bool) {
             };
             save(app, &i.saved);
         }),
+        Ok(Some(update)) if !manifest_allowed(&update.raw_json) => {
+            let e = "Update manifest URL does not match configured release repository";
+            eprintln!("beluga: {e}");
+            change(app, |i| {
+                i.phase = if had_ready {
+                    Phase::Ready
+                } else if manual {
+                    Phase::Error
+                } else {
+                    Phase::Idle
+                };
+                i.error = manual.then(|| friendly(e));
+            });
+        }
         Ok(Some(update)) => {
             let same = with(app, |i| {
                 i.saved.last_check = Some(now_ms());
@@ -664,7 +700,7 @@ async fn install_if_idle(app: &AppHandle) {
 /// The update and its downloaded file, rebuilt from latest.json if needed.
 fn ready_update(app: &AppHandle) -> Option<(Update, Pending)> {
     let (update, pending) = with(app, |i| (i.update.clone(), i.saved.pending.clone()));
-    let pending = pending?;
+    let pending = pending.filter(|p| manifest_allowed(&p.raw))?;
     let update = match update {
         Some(u) => u,
         None => updater(app)

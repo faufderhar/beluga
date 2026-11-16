@@ -215,6 +215,43 @@ pub fn manifest_ipc(latest: &serde_json::Value) -> Option<u32> {
         .map(|n| n as u32)
 }
 
+/// Custom fork repository where signed desktop releases and `latest.json` are published.
+pub const RELEASE_REPO: &str = "faufderhar/beluga";
+
+/// Default `latest.json` release endpoint for a GitHub repository (`owner/repo`).
+pub fn release_endpoint(repo: &str) -> String {
+    let host = "github.com";
+    format!("https://{host}/{repo}/releases/latest/download/latest.json")
+}
+
+/// Prefix every platform download URL in `latest.json` must share with the configured `endpoint`.
+fn release_prefix(endpoint: &str) -> Option<&str> {
+    if let Some(idx) = endpoint.find("/releases/") {
+        return Some(&endpoint[..idx + "/releases/".len()]);
+    }
+    let scheme = endpoint.find("://")?;
+    let slash = endpoint.rfind('/')?;
+    (slash > scheme + 3).then_some(&endpoint[..=slash])
+}
+
+/// Rejects cached or redirected `latest.json` manifests whose asset URLs come from another repo
+/// (e.g. a leftover upstream `beluga-labs/beluga` download when running a custom fork).
+pub fn manifest_from_endpoint(latest: &serde_json::Value, endpoint: &str) -> bool {
+    let Some(prefix) = release_prefix(endpoint) else {
+        return false;
+    };
+    let Some(platforms) = latest.get("platforms").and_then(|p| p.as_object()) else {
+        return false;
+    };
+    !platforms.is_empty()
+        && platforms.values().all(|entry| {
+            entry
+                .get("url")
+                .and_then(|u| u.as_str())
+                .is_some_and(|u| u.starts_with(prefix))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +270,44 @@ mod tests {
         ] {
             assert_eq!(manifest_ipc(&odd), None);
         }
+    }
+
+    #[test]
+    fn accepts_only_manifests_from_the_configured_release_repo() {
+        let host = "github.com";
+        let gh = |slug: &str, tail: &str| format!("https://{host}/{slug}/releases/{tail}");
+        let ep = release_endpoint(RELEASE_REPO);
+        let fork = serde_json::json!({
+            "version": "3.5.0",
+            "platforms": {
+                "darwin-aarch64": {
+                    "url": gh(RELEASE_REPO, "download/v3.5.0-mac/Beluga_3.5.0_aarch64.app.tar.gz"),
+                    "signature": "sig"
+                }
+            }
+        });
+        let upstream = serde_json::json!({
+            "version": "3.5.0",
+            "platforms": {
+                "darwin-aarch64": {
+                    "url": gh("beluga-labs/beluga", "download/v3.5.0-mac/Beluga_3.5.0_aarch64.app.tar.gz"),
+                    "signature": "sig"
+                }
+            }
+        });
+        let lookalike = serde_json::json!({
+            "version": "3.5.0",
+            "platforms": {
+                "darwin-aarch64": {
+                    "url": gh("faufderhar/beluga-other", "download/v3.5.0-mac/Beluga.tar.gz"),
+                    "signature": "sig"
+                }
+            }
+        });
+        assert!(manifest_from_endpoint(&fork, &ep));
+        assert!(!manifest_from_endpoint(&upstream, &ep));
+        assert!(!manifest_from_endpoint(&lookalike, &ep));
+        assert!(!manifest_from_endpoint(&serde_json::json!({ "platforms": {} }), &ep));
     }
 
     fn win(pid: u32, ppid: u32, exe: &str) -> WinProc {

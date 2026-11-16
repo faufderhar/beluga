@@ -2,6 +2,7 @@ import { Linking, Platform } from 'react-native';
 import { phoneControl, type AdbPorts } from '../modules/phone-control';
 import type { PhoneControl as PhoneControlState, PhoneOp } from '../../../src/companion/protocol';
 import { kv } from './kv';
+import { RELEASE_REPO } from './release';
 
 /**
  * Your Mac using this phone (docs/companion.md, "Your phone, from your Mac", BLG-150). Off by
@@ -104,7 +105,7 @@ export const addonInstalled = (): boolean => phoneControlAvailable() && phoneCon
 /** Open Beluga Link (it goes to Accessibility), or where to download it. */
 export const openAddon = (): void => phoneControl.openAddon();
 /** Beluga Link's APK on the latest release (each release carries it under this name, BLG-390). */
-export const LINK_APK_URL = 'https://github.com/beluga-labs/beluga/releases/latest/download/Beluga-Link.apk';
+export const LINK_APK_URL = `https://github.com/${RELEASE_REPO}/releases/latest/download/Beluga-Link.apk`;
 export const downloadLink = (): void => void Linking.openURL(LINK_APK_URL);
 export const onAccessibilityChange = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onAccessibilityChange(fn) : () => {});
 /** The Stop button on the phone's notification: cut control at once. */

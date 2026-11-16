@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
-import { belugaEnv } from '../core/beluga-env.js';
+import { RELEASE_DOWNLOAD_BASE, belugaEnv } from '../core/beluga-env.js';
 import type { Exit, Io } from './io.js';
 
 /** The install script on the latest release: installing again is updating. */
-export const INSTALL_URL = 'https://github.com/beluga-labs/beluga/releases/latest/download/install.sh';
+export const INSTALL_URL = `${RELEASE_DOWNLOAD_BASE}/install.sh`;
 
 /** The line people paste to install or update Beluga on a server. */
 export const INSTALL_LINE = `curl -fsSL ${INSTALL_URL} | sh`;

@@ -35,8 +35,8 @@
   "plugins": {
     "deep-link": { "desktop": { "schemes": ["beluga", "klaud"] } },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBNTczOTFEMDA3MThFNDIKUldSQ2puRUFIVGxYYW1jeXhaT0tISG5CQXh3dWJibUJ0MVMvVm5TWDFNNzN4UXY4OHNHaENwR3kK",
-      "endpoints": ["https://github.com/beluga-labs/beluga/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAxMDAwMEEwMDZCMTRCRjAKUldUd1M3RUdvQUFBQVF4NzFzakNreGxyelB4c0lEUkRwbnRoaUtBOWxkQjhrb0JQSHIxWHc2SmsK",
+      "endpoints": [],
       "requireSignedVersion": true
     }
   },
