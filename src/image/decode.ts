@@ -51,11 +51,13 @@ function decodeGif(bytes: Uint8Array): Bitmap {
 
 /**
  * The SVG comes from someone else's computer. resvg never uses the network, but it
- * would load files from *this* disk named in an href, so only in-document (#id)
- * and inline data: references are kept.
+ * would load files from *this* disk named in an href (under any XML namespace prefix)
+ * or a CSS url(), so only in-document (#id) and inline data: references are kept.
  */
 export function sanitizeSvg(svg: string): string {
-  return svg.replace(/(\s(?:xlink:)?href\s*=\s*)(["'])(?!\s*(?:#|data:))[^"']*\2/gi, '$1$2$2');
+  return svg
+    .replace(/(\s(?:[\w.-]+:)?href\s*=\s*)(["'])(?!\s*(?:#|data:))[^"']*\2/gi, '$1$2$2')
+    .replace(/\burl\(\s*(?:(["'])(?!\s*(?:#|data:))[^"']*\1|(?![#"'\s]|data:)[^)]*)\)/gi, 'url()');
 }
 
 /**

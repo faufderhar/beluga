@@ -52,8 +52,10 @@ export function grokCalls(tool: string, raw: Record<string, unknown>, cwd: strin
       return [{ name: 'Edit', input: { file_path: file ?? '', ...(typeof raw.old_string === 'string' ? { old_string: raw.old_string } : {}), ...(typeof raw.new_string === 'string' ? { new_string: raw.new_string } : {}) } }];
     case 'run_terminal_command':
       return [{ name: 'Bash', input: { command: str(raw.command) ?? '', ...(str(raw.description) ? { description: raw.description } : {}) } }];
-    case 'grep':
-      return [{ name: 'Grep', input: { pattern: str(raw.pattern) ?? '', path: abs(cwd, str(raw.path)) ?? cwd, ...(str(raw.glob) ? { glob: raw.glob } : {}) } }];
+    case 'grep': {
+      const glob = str(raw.glob) ?? str(raw.include);
+      return [{ name: 'Grep', input: { pattern: str(raw.pattern) ?? '', path: file ?? cwd, ...(glob ? { glob } : {}) } }];
+    }
     case 'list_dir':
       return [{ name: 'LS', input: { path: file ?? cwd } }];
     case 'web_fetch':

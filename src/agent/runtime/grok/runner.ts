@@ -1,5 +1,6 @@
 import { claudeHome } from '../../../core/claude-code/launch.js';
 import { type RunEnd, RunFailedError, classifyRun } from '../../../shared/run-failure.js';
+import { isYourRun } from '../../policy.js';
 import { buildPrompt } from '../../prompt.js';
 import { runInstructions } from '../../run-instructions.js';
 import { runToolSuites } from '../../run-tools.js';
@@ -256,7 +257,7 @@ export function createGrokBackend(opts: GrokBackendOptions): AgentBackend {
       const autoEdit = !readOnly && (place?.autoEdit ?? opts.autoEdit);
       const fixup = place?.fixup;
       const syncMain = askOnly ? place?.syncMain : undefined;
-      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: readOnly, ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}), ...(place?.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
+      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, yourRun: isYourRun(input), askOnly: readOnly, ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}), ...(place?.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const shelf = new ViewShelf();
 

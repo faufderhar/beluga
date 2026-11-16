@@ -476,8 +476,8 @@ function openedSecrets(toolName: string, input: Record<string, unknown>, ctx: Po
     if (hit.kind === 'hard') hard = true;
     else dotenv = true;
   }
-  // No glob of its own: confineSearch narrows it (that glob leaves every named secret out).
-  const unsure = scan.truncated && searchSpec(toolName, input) !== undefined && searchIsBroad(toolName, input);
+  // Narrowed first (confineSearch), searchIsBroad is false; unnarrowed (LS, or a runtime that can't rewrite inputs), someone decides.
+  const unsure = scan.truncated && searchIsBroad(toolName, input);
   return hard || dotenv || unsure ? { hard, dotenv, unsure } : undefined;
 }
 

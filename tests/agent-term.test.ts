@@ -141,7 +141,12 @@ describe('launching the agent’s terminal', () => {
     const policy = { cwd, roots: [cwd], autoEdit: true, scope: 'full' as const, dotenv: true, askOnly: false };
     const hook = (tool_name: string, tool_input: Record<string, unknown>) => terminalHookAnswer({ hook_event_name: 'PreToolUse', tool_name, tool_input }, {}, policy);
     expect(hook('Write', { file_path: path.join(cwd, 'a.ts') })).toEqual({});
+    writeFileSync(path.join(cwd, '.env'), 'SECRET=1');
     expect(hook('Read', { file_path: path.join(cwd, '.env') })).toMatchObject({ hookSpecificOutput: { permissionDecision: 'ask' } });
+    // A broad search in the terminal is narrowed to leave .env out, matching the chat's PreToolUse hook.
+    const narrowed = hook('Grep', { pattern: 'SECRET', path: cwd }) as { hookSpecificOutput?: { permissionDecision?: string; updatedInput?: { glob?: string } } };
+    expect(narrowed.hookSpecificOutput?.permissionDecision).toBe('allow');
+    expect(narrowed.hookSpecificOutput?.updatedInput?.glob?.startsWith('!')).toBe(true);
     expect(hook('mcp__beluga_view__show', {})).toEqual({});
     expect(terminalHookAnswer({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} }, { vetTool: () => 'not for friends' }, policy)).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: 'not for friends' } });
     const main = terminalHookAnswer({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(cwd, 'x') } }, {}, { ...policy, autoEdit: false, askOnly: true });

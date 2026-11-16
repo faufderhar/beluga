@@ -1,12 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { attachmentsDir } from '../src/core/attachments.js';
+import type { ToolHost } from '../src/agent/tool-host.js';
 import { findGrok, writeGatePlugin } from '../src/agent/runtime/grok/connection.js';
 import { createGrokRuntime } from '../src/agent/runtime/grok/index.js';
 import { modelChoice, probeOf } from '../src/agent/runtime/grok/models.js';
-import { grokContextEvent, grokFailure, grokLiveContext, grokUsageEvent, mergeLiveContext } from '../src/agent/runtime/grok/runner.js';
+import { createGrokBackend, grokContextEvent, grokFailure, grokLiveContext, grokUsageEvent, mergeLiveContext } from '../src/agent/runtime/grok/runner.js';
 import { ScriptedGrok } from '../src/agent/runtime/grok/scripted.js';
 import { askGrokBtw, grokComplete } from '../src/agent/runtime/grok/side.js';
 import { GROK_MISSING, GROK_SIGN_IN, grokStatus } from '../src/agent/runtime/grok/status.js';
@@ -106,6 +108,8 @@ describe('what Grok says, as Beluga reads it', () => {
     expect(grokCalls('search_replace', { file_path: 'a.txt', old_string: 'a', new_string: 'b' }, cwd)).toEqual([{ name: 'Edit', input: { file_path: at('a.txt'), old_string: 'a', new_string: 'b' } }]);
     expect(grokCalls('run_terminal_command', { command: 'ls', description: 'List' }, cwd)).toEqual([{ name: 'Bash', input: { command: 'ls', description: 'List' } }]);
     expect(grokCalls('grep', { pattern: 'x', glob: '*.ts' }, cwd)).toEqual([{ name: 'Grep', input: { pattern: 'x', path: cwd, glob: '*.ts' } }]);
+    expect(grokCalls('grep', { pattern: 'x', target_directory: '../outside', include: '*.md' }, cwd)).toEqual([{ name: 'Grep', input: { pattern: 'x', path: at('../outside'), glob: '*.md' } }]);
+    expect(grokCalls('grep', { pattern: 'x', target_file: '.env' }, cwd)).toEqual([{ name: 'Grep', input: { pattern: 'x', path: at('.env') } }]);
     expect(grokCalls('spawn_subagent', { prompt: 'p', description: 'd' }, cwd)).toEqual([{ name: 'Task', input: { description: 'd', prompt: 'p' } }]);
     expect(grokCalls('use_tool', { tool_name: 'beluga_board__task_get', tool_input: { id: 1 } }, cwd)).toEqual([{ name: 'mcp__beluga_board__task_get', input: { id: 1 } }]);
   });
@@ -217,6 +221,28 @@ describe('a run', () => {
     expect(tools).toEqual([]);
     expect(verdicts(grok)).toEqual(['reject']);
     expect(said).toBe('denied: read .env');
+  });
+
+  it('lets your own run read an image you attached, and refuses a friend, guest or external agent', async () => {
+    const dir = attachmentsDir();
+    mkdirSync(dir, { recursive: true });
+    const shot = path.join(dir, 'grok-shot.png');
+    writeFileSync(shot, 'png');
+    const stubHost = { mount: async () => ({ token: '0'.repeat(64), servers: {}, http: {}, close: () => undefined }) } as unknown as ToolHost;
+    const grok = new ScriptedGrok();
+    const backend = createGrokBackend({ cwd, autoEdit: true, additionalDirectories: [], bridge: room, connect: grok.connect, toolHost: stubHost });
+    const asked: string[] = [];
+    const yours = await backend.run({ ...run(`read ${shot}`, { canUseSecret: async () => true, canUseTool: async (name: string) => (asked.push(name), true) } as Partial<AgentRunInput>), place: place() });
+    expect(yours).toBe(`read: ${shot}`);
+    expect(asked).toEqual([]);
+    expect(verdicts(grok)).toEqual(['once']);
+
+    for (const extra of [{}, { canUseSecret: async () => true, guest: true }, { canUseSecret: async () => true, asOwner: true }] as Array<Partial<AgentRunInput>>) {
+      grok.answers.length = 0;
+      const denied = await backend.run({ ...run(`read ${shot}`, extra), place: place() });
+      expect(verdicts(grok)).toEqual(['reject']);
+      expect(denied).toBe(`denied: read ${shot}`);
+    }
   });
 
   it('stops sending it back after too many denials, and says why', async () => {

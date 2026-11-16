@@ -173,3 +173,14 @@ export interface FiredEvent {
 export function addEvent(events: readonly FiredEvent[], name: string, detail: string, id: number, keep = 4): FiredEvent[] {
   return [{ id, name, detail }, ...events].slice(0, keep);
 }
+
+/** The origin a preview frame is served from (http or https), so messages go only there and come only from there. */
+export function previewOrigin(url: string | undefined, base?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = base ? new URL(url, base) : new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -313,6 +313,11 @@ describe('a directory search, judged on what it finds', () => {
       // A glob that can't pick a credential file runs as before.
       expect(decideTool('Grep', { pattern: 'KEY', path: dir, glob: '**/*.ts' }, ctx)).toBe('allow');
       expect(decideTool('Glob', { pattern: 'src/**/*.{ts,tsx}', path: dir }, ctx)).toBe('allow');
+      // Unnarrowed (LS, or an ACP runtime that cannot rewrite inputs): asks even with full trust.
+      expect(decideTool('Grep', { pattern: 'KEY', path: dir }, ctx)).toBe('ask');
+      expect(decideTool('Grep', { pattern: 'KEY', path: dir }, { ...ctx, scope: 'full' })).toBe('ask');
+      expect(decideTool('Glob', { pattern: '**/*', path: dir }, { ...ctx, scope: 'full' })).toBe('ask');
+      expect(decideTool('LS', { path: dir }, { ...ctx, scope: 'full' })).toBe('ask');
       // No glob of its own: narrowed to leave every named secret out, then allowed.
       const next = confineSearch('Grep', { pattern: 'KEY', path: dir }, ctx);
       expect(String(next?.glob).startsWith('!')).toBe(true);

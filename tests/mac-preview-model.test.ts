@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { addEvent, askToFix, controlOf, frameHeight, mergeProps, pageScale, propsForAgent, resizeGrid, variantField, FRAME } from '../packages/mac/src/components/preview/preview-model.js';
+import { addEvent, askToFix, controlOf, frameHeight, mergeProps, pageScale, previewOrigin, propsForAgent, resizeGrid, variantField, FRAME } from '../packages/mac/src/components/preview/preview-model.js';
 import { MAX_KEPT, keptKey, readKept, withKept, writeKept } from '../packages/mac/src/components/preview/kept-props.js';
 import type { Field } from '../src/shared/preview/shape.js';
 import { fnMark, placeholderImage } from '../src/shared/preview/samples.js';
@@ -112,5 +114,21 @@ describe('Use These Props', () => {
     const text = propsForAgent('Hero', 'src/components/Hero.tsx', { title: 'Ship it' });
     expect(text).toContain('Use these props for Hero (src/components/Hero.tsx)');
     expect(text).toContain('"title": "Ship it"');
+  });
+});
+
+describe('previewOrigin', () => {
+  it('locks postMessage to the preview frame’s web origin and never falls back to a wildcard', () => {
+    const web = (proto: string, host: string, rest: string) => `${proto}//${host}${rest}`;
+    expect(previewOrigin(web('http:', 'preview.invalid:5173', '/card?id=1#now'))).toBe(web('http:', 'preview.invalid:5173', ''));
+    expect(previewOrigin(web('https:', 'preview.invalid:8443', '/app'))).toBe(web('https:', 'preview.invalid:8443', ''));
+    expect(previewOrigin('/__preview/card', web('https:', 'beluga.invalid', '/chat'))).toBe(web('https:', 'beluga.invalid', ''));
+    for (const unsafe of [undefined, '', 'not a url', 'data:text/plain,hi', 'about:blank', 'ws://preview.invalid:5173']) {
+      expect(previewOrigin(unsafe)).toBeUndefined();
+    }
+    const hook = readFileSync(path.join(__dirname, '..', 'packages', 'mac', 'src', 'components', 'preview', 'use-preview.ts'), 'utf8');
+    expect(hook).not.toContain("postMessage(msg, '*')");
+    expect(hook).toContain('win.postMessage(msg, origin)');
+    expect(hook).toContain('e.origin !== origin');
   });
 });

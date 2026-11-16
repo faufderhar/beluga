@@ -5,7 +5,7 @@ import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { forwardedUrl } from '../../machines/forwarded-url.js';
 import { useClock } from '../../lib/window-active.js';
 import { keptKey, readKept, withKept, writeKept } from './kept-props.js';
-import { type FiredEvent, RETRYING, RETRY_MS, addEvent, mergeProps, variantField } from './preview-model.js';
+import { type FiredEvent, RETRYING, RETRY_MS, addEvent, mergeProps, previewOrigin, variantField } from './preview-model.js';
 
 /**
  * A live preview's state and its talk with the daemon (preview.open, preview.snapshot) and its
@@ -196,12 +196,17 @@ export function usePreview({ wsId, ref, pick, seen, framed }: { wsId: string; re
     return () => clearTimeout(t);
   }, [values, touched, kept, Boolean(ok)]);
 
-  const post = useCallback((msg: Record<string, unknown>): boolean => {
-    const win = frame.current?.contentWindow;
-    if (!win || !ready.current) return false;
-    win.postMessage(msg, '*');
-    return true;
-  }, []);
+  const origin = useMemo(() => previewOrigin(src?.url, typeof window === 'undefined' ? undefined : window.location.href), [src?.url]);
+
+  const post = useCallback(
+    (msg: Record<string, unknown>): boolean => {
+      const win = frame.current?.contentWindow;
+      if (!win || !ready.current || !origin) return false;
+      win.postMessage(msg, origin);
+      return true;
+    },
+    [origin],
+  );
 
   const send = useCallback(() => {
     if (page) return;
@@ -210,10 +215,10 @@ export function usePreview({ wsId, ref, pick, seen, framed }: { wsId: string; re
     post({ beluga: 'props', props: values, ...(every ? { variants: every } : {}), ...(all ? { gallery: all } : {}) });
   }, [page, gallery, ok, variants, variantOf, values, post]);
 
-  // The frame's messages (only from this frame).
+  // The frame's messages (only from this frame and its expected origin).
   useEffect(() => {
     const onMessage = (e: MessageEvent): void => {
-      if (!frame.current || e.source !== frame.current.contentWindow || !e.data || typeof e.data !== 'object') return;
+      if (!origin || e.origin !== origin || !frame.current || e.source !== frame.current.contentWindow || !e.data || typeof e.data !== 'object') return;
       const msg = e.data as { beluga?: string; height?: number; name?: string; detail?: string; message?: string; stack?: string; problem?: PreviewProblem; issues?: AuditIssue[]; png?: string; failed?: string };
       switch (msg.beluga) {
         case 'ready':
@@ -267,7 +272,7 @@ export function usePreview({ wsId, ref, pick, seen, framed }: { wsId: string; re
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [send, post, open, ok, title, canvas, pinned]);
+  }, [origin, send, post, open, ok, title, canvas, pinned]);
 
   // Every change of props goes straight to the frame.
   useEffect(() => send(), [send]);

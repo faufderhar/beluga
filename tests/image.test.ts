@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 import { describe, expect, it } from 'vitest';
@@ -86,11 +89,26 @@ describe('untrusted images', () => {
     expect(Date.now() - started).toBeLessThan(15_000);
   });
 
-  it('strips references to local files from SVGs, keeping #ids and data: URLs', () => {
+  it('strips references to local files from SVGs across any XML namespace prefix and CSS url(), keeping #ids and data: URLs', () => {
     expect(sanitizeSvg('<image href="/etc/secret.png"/>')).toBe('<image href=""/>');
     expect(sanitizeSvg("<image xlink:href='file:///Users/me/a.png'/>")).toBe("<image xlink:href=''/>");
-    expect(sanitizeSvg('<use href="#dot"/>')).toBe('<use href="#dot"/>');
+    expect(sanitizeSvg('<svg xmlns:a="http://www.w3.org/1999/xlink"><image a:href="/etc/secret.png"/></svg>')).toBe('<svg xmlns:a="http://www.w3.org/1999/xlink"><image a:href=""/></svg>');
+    expect(sanitizeSvg('<feImage ns-1.2:href="/etc/secret.png"/>')).toBe('<feImage ns-1.2:href=""/>');
+    expect(sanitizeSvg('<rect fill="url(/etc/secret.svg#p)" style="filter: url(\x27file:///a.svg#f\x27)"/>')).toBe('<rect fill="url()" style="filter: url()"/>');
+    expect(sanitizeSvg('<use href="#dot" xlink:href="#dot"/>')).toBe('<use href="#dot" xlink:href="#dot"/>');
+    expect(sanitizeSvg('<rect fill="url(#grad)" stroke="url(\x27#grad\x27)"/>')).toBe('<rect fill="url(#grad)" stroke="url(\x27#grad\x27)"/>');
     expect(sanitizeSvg('<image href="data:image/png;base64,AAAA"/>')).toBe('<image href="data:image/png;base64,AAAA"/>');
+
+    const dir = mkdtempSync(path.join(tmpdir(), 'beluga-svg-ns-'));
+    try {
+      const secret = path.join(dir, 'secret.png');
+      writeFileSync(secret, png(4, 4, [255, 0, 0, 255]));
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:a="http://www.w3.org/1999/xlink" width="4" height="4"><image a:href="${secret}" width="4" height="4"/></svg>`;
+      const bmp = decodeImage(Buffer.from(svg));
+      expect(Array.from(bmp.data.slice(0, 4))).toEqual([0, 0, 0, 0]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('keeps at most 800px on the longest side after decoding', () => {

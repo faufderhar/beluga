@@ -3,7 +3,7 @@ import path from 'node:path';
 import { belugaHome } from '../core/home.js';
 import { GRAPH_FENCE } from '../shared/graph-spec.js';
 import { VIEW_FENCE } from '../shared/view-spec.js';
-import { type PolicyContext, decideTool, denyReason } from './policy.js';
+import { type PolicyContext, confineSearch, decideTool, denyReason } from './policy.js';
 import type { AgentRunInput } from './types.js';
 
 /**
@@ -154,8 +154,11 @@ export function terminalHookAnswer(hook: Record<string, unknown>, input: Pick<Ag
   const toolInput = hook.tool_input && typeof hook.tool_input === 'object' && !Array.isArray(hook.tool_input) ? (hook.tool_input as Record<string, unknown>) : {};
   const veto = input.vetTool?.(tool, toolInput);
   if (veto) return verdict('deny', veto);
-  const decision = decideTool(tool, toolInput, policy);
-  if (decision === 'deny') return verdict('deny', denyReason(tool, toolInput, policy));
+  const confined = confineSearch(tool, toolInput, policy);
+  const judged = confined ?? toolInput;
+  const decision = decideTool(tool, judged, policy);
+  if (decision === 'deny') return verdict('deny', denyReason(tool, judged, policy));
   if (decision === 'secret') return verdict('ask', 'Beluga: this touches a secrets file (.env). Allow it only if you mean to.');
+  if (confined && decision === 'allow') return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Allowed by Beluga.', updatedInput: confined } };
   return {};
 }
