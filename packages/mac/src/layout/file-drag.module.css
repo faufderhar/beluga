@@ -43,3 +43,8 @@
 :root[data-motion='reduce'] .boxGlow {
   animation: none;
 }
+
+/* An embedded preview or MCP App frame must not swallow pointermove/pointerup mid-drag. */
+:global(html[data-arranging] iframe) {
+  pointer-events: none !important;
+}

@@ -75,6 +75,9 @@
   -webkit-user-select: none !important;
   user-select: none !important;
 }
+:global(html[data-arranging] iframe) {
+  pointer-events: none !important;
+}
 
 /* A project's triangle and icon sit in the same columns as a group's: at the top level they're
    siblings, side by side at the sidebar's edge; only a group's own projects step in. */

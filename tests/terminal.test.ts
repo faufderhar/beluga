@@ -15,6 +15,7 @@ import {
 import { lineWidth, type Line } from '../src/ui/text.js';
 import { waitFor } from './helpers.js';
 import { posixSh } from '../src/terminal/pty.js';
+import { BACKLOG_BYTES, PtyProcess } from '../src/terminal/pty-host.js';
 
 /** sh, or Git Bash on Windows (ConPTY then carries it). */
 const SH = posixSh() ?? '/bin/sh';
@@ -303,5 +304,29 @@ describe('helpers', () => {
   it.skipIf(process.platform === 'win32')('defaultShell prefers $SHELL when it exists', () => {
     expect(defaultShell({ SHELL: '/bin/sh' })).toBe('/bin/sh');
     expect(defaultShell({ SHELL: '/nope/zsh' })).not.toBe('/nope/zsh');
+  });
+});
+
+describe('PtyProcess backlog cap', () => {
+  it('caps a single oversized chunk to BACKLOG_BYTES without splitting a surrogate pair, while streaming the whole chunk live', () => {
+    const p = new PtyProcess({ id: 'cap', cwd: process.cwd(), cols: 80, rows: 24, shell: SH, args: ['-c', 'true'] });
+    try {
+      const live: string[] = [];
+      p.onData((d) => live.push(d));
+      const emit = (d: string) => (p as unknown as { emit: (s: string) => void }).emit(d);
+      const huge = 'a'.repeat(BACKLOG_BYTES * 2);
+      emit(huge);
+      expect(live.at(-1)?.length).toBe(BACKLOG_BYTES * 2);
+      expect(p.backlog().length).toBe(BACKLOG_BYTES);
+
+      // Put a surrogate pair ('🙂' = 2 UTF-16 code units) straddling the -BACKLOG_BYTES cut.
+      const straddling = `xxxx🙂${'b'.repeat(BACKLOG_BYTES - 1)}`;
+      emit(straddling);
+      const tail = p.backlog();
+      expect(tail.length).toBe(BACKLOG_BYTES - 1);
+      expect(/^[\uDC00-\uDFFF]/.test(tail)).toBe(false);
+    } finally {
+      p.dispose();
+    }
   });
 });

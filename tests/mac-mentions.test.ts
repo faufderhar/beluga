@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { chatsToMention } from '../src/core/chat-links/resolve.js';
 import { parseInput } from '../src/core/mentions.js';
@@ -181,5 +183,14 @@ describe('typing a mention', () => {
       ['@src/routes/', 'see @src/routes/'],
     ]);
     expect(suggest('@.e', ctx)).toEqual([]);
+  });
+});
+
+describe('dragging over embedded frames', () => {
+  it('turns pointer events off on iframes while data-arranging is set so pointerup is never swallowed', () => {
+    for (const rel of ['file-drag.module.css', 'project-groups.module.css']) {
+      const css = readFileSync(path.join(__dirname, '..', 'packages', 'mac', 'src', 'layout', rel), 'utf8');
+      expect(css, rel).toMatch(/:global\(html\[data-arranging\]\s+iframe\)\s*\{[^}]*pointer-events:\s*none\s*!important/);
+    }
   });
 });

@@ -104,8 +104,11 @@ export class PtyProcess {
   private emit(data: string): void {
     if (this.disposed) return;
     this.lastOut = Date.now();
-    this.chunks.push(data);
-    this.kept += data.length;
+    let slice = data.length > BACKLOG_BYTES ? data.slice(-BACKLOG_BYTES) : data;
+    // Never start a sliced chunk in the middle of a surrogate pair.
+    if (slice.length < data.length && /^[\uDC00-\uDFFF]/.test(slice)) slice = slice.slice(1);
+    this.chunks.push(slice);
+    this.kept += slice.length;
     while (this.kept > BACKLOG_BYTES && this.chunks.length > 1) this.kept -= this.chunks.shift()!.length;
     for (const l of [...this.dataListeners]) l(data);
   }

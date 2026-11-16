@@ -86,16 +86,40 @@ export class ToolHost {
   }
 
   private listen(): Promise<string> {
-    this.listening ??= new Promise((resolve, reject) => {
-      const server = http.createServer((req, res) => void this.handle(req, res));
-      server.once('error', reject);
+    if (this.listening) return this.listening;
+    const pending = new Promise<string>((resolve, reject) => {
+      const server = http.createServer((req, res) => void this.safeHandle(req, res));
+      const onError = (err: Error): void => {
+        if (this.listening === pending) this.listening = undefined;
+        server.close();
+        reject(err);
+      };
+      server.once('error', onError);
       server.listen(0, '127.0.0.1', () => {
+        server.off('error', onError);
+        // Keep a listener attached so a later server error never crashes the daemon.
+        server.on('error', () => undefined);
         server.unref();
+        if (this.listening !== pending) {
+          server.close();
+          reject(new Error('ToolHost closed'));
+          return;
+        }
         this.server = server;
         resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
       });
     });
-    return this.listening;
+    this.listening = pending;
+    return pending;
+  }
+
+  private async safeHandle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      await this.handle(req, res);
+    } catch {
+      if (!res.headersSent) res.writeHead(500).end();
+      else res.destroy();
+    }
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

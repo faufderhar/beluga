@@ -1,3 +1,5 @@
+import { EventEmitter } from 'node:events';
+import http from 'node:http';
 import path from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -111,5 +113,49 @@ describe("Beluga's tools over stdio (beluga mcp-serve)", () => {
     const post = (token: string) => fetch(`${url}/mcp/beluga`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
     expect((await post(run.token)).status).toBe(401);
     expect((await post('0'.repeat(64))).status).toBe(401);
+  });
+
+  it('recovers on the next mount after a transient listen error and keeps a runtime error listener attached', async () => {
+    const isolated = new ToolHost({ command: process.execPath, args: ['--import', 'tsx', path.join(ROOT, 'src/cli.ts')] });
+    let attempts = 0;
+    let liveServer: EventEmitter | undefined;
+    const spy = vi.spyOn(http, 'createServer').mockImplementation((() => {
+      attempts++;
+      const fake = new EventEmitter() as EventEmitter & {
+        listen: (_port: number, _host: string, cb?: () => void) => unknown;
+        close: (cb?: () => void) => unknown;
+        unref: () => unknown;
+        address: () => { port: number };
+      };
+      fake.unref = () => fake;
+      fake.address = () => ({ port: 54321 });
+      fake.close = (cb?: () => void) => (cb?.(), fake);
+      if (attempts === 1) {
+        fake.listen = () => {
+          queueMicrotask(() => fake.emit('error', Object.assign(new Error('listen EMFILE'), { code: 'EMFILE' })));
+          return fake;
+        };
+      } else {
+        liveServer = fake;
+        fake.listen = (_port: number, _host: string, cb?: () => void) => {
+          queueMicrotask(() => cb?.());
+          return fake;
+        };
+      }
+      return fake as unknown as http.Server;
+    }) as typeof http.createServer);
+    try {
+      await expect(isolated.mount(suites, async () => undefined)).rejects.toThrow('listen EMFILE');
+      // A second mount retries cleanly instead of replaying a cached rejection.
+      const mounted = await isolated.mount(suites, async () => undefined);
+      expect(attempts).toBe(2);
+      expect(mounted.http.beluga?.url).toMatch(/:54321\/mcp\/beluga$/);
+      expect(liveServer?.listenerCount('error')).toBe(1);
+      expect(() => liveServer?.emit('error', new Error('late socket error'))).not.toThrow();
+      mounted.close();
+    } finally {
+      spy.mockRestore();
+      await isolated.close();
+    }
   });
 });
