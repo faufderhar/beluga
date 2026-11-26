@@ -22,9 +22,13 @@ export interface MeterModel {
 /** Claude is at work on a card (not just waiting in the queue). */
 const WORKING = new Set(['started', 'text', 'tool', 'sub', 'awaiting_approval']);
 
-/** The meter for a conversation, from the shared state. Undefined: nothing to show yet. */
-export function meterModel(state: Pick<AppState, 'context' | 'log'>, channel: string): MeterModel | undefined {
-  const info = state.context[channel];
+/**
+ * The meter for a conversation, from the shared state. Undefined: nothing to show yet.
+ * `window`: the context window you set for this model, used instead of the one the run reported.
+ */
+export function meterModel(state: Pick<AppState, 'context' | 'log'>, channel: string, window?: number): MeterModel | undefined {
+  const raw = state.context[channel];
+  const info = raw && window && window > 0 && window !== raw.window ? { ...raw, window } : raw;
   let last: CompactItem | undefined;
   let busy = false;
   for (const l of state.log) {

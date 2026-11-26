@@ -11,6 +11,7 @@ import {
   compactEnv,
   contextPct,
   contextTokens,
+  parseTokenCount,
   contextTone,
   contextWindowFor,
   foldSessionCache,
@@ -66,6 +67,15 @@ describe('context accounting', () => {
     expect(formatTokenCount(1_000_000)).toBe('1M');
     expect(formatTokenCount(1_250_000)).toBe('1.3M');
     expect(formatTokenCount(-3)).toBe('0');
+    expect(parseTokenCount('128,000')).toBe(128_000);
+    expect(parseTokenCount('128k')).toBe(128_000);
+    expect(parseTokenCount('1.5M')).toBe(1_500_000);
+    expect(parseTokenCount(' 200000 ')).toBe(200_000);
+    expect(parseTokenCount('1k')).toBe(1_000);
+    expect(parseTokenCount('')).toBeUndefined();
+    expect(parseTokenCount('abc')).toBeUndefined();
+    expect(parseTokenCount('999')).toBeUndefined();
+    expect(parseTokenCount('11M')).toBeUndefined();
   });
 });
 
@@ -98,7 +108,8 @@ describe('auto-compact threshold', () => {
 
   it('is a saved setting: off by default (85% once on), a bad saved value falls back to 85', () => {
     expect(DEFAULT_PREFS).toMatchObject({ autoCompact: false, autoCompactAt: 85 });
-    expect(Settings.parse({})).toMatchObject({ autoCompact: false, autoCompactAt: 85 });
+    expect(Settings.parse({})).toMatchObject({ autoCompact: false, autoCompactAt: 85, modelWindows: {} });
+    expect(Settings.parse({ modelWindows: { 'claude|opus': 32_000, bad: 5, 'claude|haiku': 10, 'codex|gpt': 'nope' } }).modelWindows).toEqual({ 'claude|opus': 32_000 });
     expect(Settings.parse({ autoCompactAt: 400 }).autoCompactAt).toBe(85);
     expect(prefsFrom(Settings.parse({ autoCompact: false, autoCompactAt: 72 }))).toMatchObject({ autoCompact: false, autoCompactAt: 72 });
   });

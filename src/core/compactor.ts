@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentBackend, AgentPlace } from '../agent/types.js';
 import { COMPACT_INSTRUCTIONS, autoCompactDue, clampThreshold } from '../shared/context-usage.js';
+import { savedModelWindow } from '../shared/open-models.js';
 import type { Store } from './store.js';
 
 /** What the compactor needs from the agent host. */
@@ -60,9 +61,17 @@ export class Compactor {
 
   /** Is this conversation full enough that it should be compacted before anything else runs? */
   due(channel: string): boolean {
-    const prefs = this.deps.store.getState().prefs;
-    const info = this.seen.get(channel) ?? this.deps.store.getState().context[channel];
-    return autoCompactDue({ on: prefs.autoCompact, at: prefs.autoCompactAt, ...(info ? { info } : {}), triedSinceRun: this.tried.has(channel) });
+    const state = this.deps.store.getState();
+    const prefs = state.prefs;
+    const stored = state.context[channel];
+    const info = this.seen.get(channel) ?? stored;
+    const place = channel === 'room' ? undefined : this.deps.place(channel);
+    const runtime = place?.agent?.runtime ?? prefs.defaultAgent?.runtime ?? 'claude';
+    const picked = place?.model ?? place?.agent?.model ?? (runtime === 'claude' ? (prefs.model ?? '') : undefined);
+    const reported = stored?.model;
+    const over = savedModelWindow(prefs.modelWindows, runtime, picked) ?? (reported !== picked ? savedModelWindow(prefs.modelWindows, runtime, reported) : undefined);
+    const counted = info && over ? { used: info.used, window: over } : info;
+    return autoCompactDue({ on: prefs.autoCompact, at: prefs.autoCompactAt, ...(counted ? { info: counted } : {}), triedSinceRun: this.tried.has(channel) });
   }
 
   /** For a run: the threshold Claude Code's own auto-compact should use (nothing when it's off). */

@@ -216,6 +216,18 @@
   width: 64px;
   text-align: right;
 }
+/* A model's context window, in tokens. Muted until you set one of your own. */
+.contextWindow {
+  composes: text;
+  width: 96px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.contextWindow[data-custom='true'],
+.contextWindow:focus {
+  color: var(--text);
+}
 .slider {
   width: 180px;
   accent-color: var(--accent);

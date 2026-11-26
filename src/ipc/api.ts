@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EmojiSchema } from '../shared/reactions.js';
-import { ARCHIVE_SETTLED_DAYS_MAX, BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, NotifySettings, RUN_ON, SETTLE_IDLE_DAYS_MAX, THEMES, ThreadLimitsSchema, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { ARCHIVE_SETTLED_DAYS_MAX, BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, MODEL_WINDOWS_MAX, NotifySettings, RUN_ON, SETTLE_IDLE_DAYS_MAX, THEMES, ThreadLimitsSchema, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { NamingRules, PR_TITLE_RULE_MAX } from '../shared/naming.js';
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MODEL_WINDOW_MAX, MODEL_WINDOW_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
 import { CHAT_LIMIT_MAX } from '../shared/chat-limit.js';
 import { AUTO_CONTINUE_OFF_MAX } from '../shared/auto-continue.js';
@@ -106,8 +106,12 @@ export const PrefsPatch = z
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
-    // Which models the chat menu offers (`runtime|value`). Empty: every model.
+    // Which models the chat menu offers (`runtime|value`). Empty: every model. `none`: every model off.
     openModels: z.array(z.string().max(120)).max(80),
+    // Context window per model, in tokens (`runtime|value`). The whole map each time; empty: each model’s own.
+    modelWindows: z
+      .record(z.string().min(3).max(120).refine((k) => k.includes('|'), 'Key a model as runtime|value'), z.number().int().min(MODEL_WINDOW_MIN).max(MODEL_WINDOW_MAX))
+      .refine((m) => Object.keys(m).length <= MODEL_WINDOWS_MAX, 'Too many model windows'),
     // Who answers "@you" (null: back to Claude), and per-project ones by project name (BLG-444).
     defaultAgent: AgentRef.nullable().optional(),
     projectAgents: z.record(z.string().min(1).max(80), AgentRef),

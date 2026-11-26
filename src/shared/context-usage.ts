@@ -3,6 +3,9 @@
 
 /** Claude's context window when nothing better is known (older models). */
 export const DEFAULT_CONTEXT_WINDOW = 200_000;
+/** A context window you set for a model: at least 1k tokens, at most 10M. */
+export const MODEL_WINDOW_MIN = 1_000;
+export const MODEL_WINDOW_MAX = 10_000_000;
 /** The long-context window: the Claude 5 family, Opus 4.6+, Sonnet 4.6, and any `[1m]` pick. */
 export const LONG_CONTEXT_WINDOW = 1_000_000;
 
@@ -104,6 +107,21 @@ export function autoCompactDue(opts: { readonly on: boolean; readonly at: number
 
 /** Environment for Claude Code so its own auto-compact follows the same threshold. */
 export const compactEnv = (on: boolean, at: number): Record<string, string> => (on ? { CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: String(clampThreshold(at)) } : {});
+
+/**
+ * Tokens typed in Settings: "128000", "128,000", "128k", "1.5M".
+ * Undefined when it isn't a size, or it's outside the window you may set.
+ */
+export function parseTokenCount(text: string): number | undefined {
+  const m = /^(\d+(?:\.\d+)?)([kKmM])?$/.exec(text.trim().replace(/,/g, '').replace(/\s+/g, ''));
+  if (!m || !m[1]) return undefined;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return undefined;
+  const mult = !m[2] ? 1 : m[2].toLowerCase() === 'm' ? 1_000_000 : 1_000;
+  const tokens = Math.round(n * mult);
+  if (!Number.isInteger(tokens) || tokens < MODEL_WINDOW_MIN || tokens > MODEL_WINDOW_MAX) return undefined;
+  return tokens;
+}
 
 /** "128k", "1.2M", "940". */
 export function formatTokenCount(n: number): string {

@@ -89,4 +89,38 @@ describe('context facts', () => {
     expect(facts.window).toBe(1_000_000);
     expect(facts.autoCompact).toBe('Off');
   });
+
+  it('uses the context window set for the model the conversation picked, over a reported one', () => {
+    const facts = contextFacts(
+      state({
+        prefs: { ...prefs, modelWindows: { 'grok|grok-4.7': 128_000 } },
+        context: { 'ws:w1': { window: 256_000, model: 'grok-4' } },
+      }),
+      'ws:w1',
+    );
+    expect(facts.modelId).toBe('grok-4');
+    expect(facts.window).toBe(128_000);
+  });
+
+  it('uses a window set on the id a run reported when the pick has none', () => {
+    const facts = contextFacts(
+      state({
+        prefs: { ...prefs, modelWindows: { 'grok|grok-4': 64_000 } },
+        context: { 'ws:w1': { window: 256_000, model: 'grok-4' } },
+      }),
+      'ws:w1',
+    );
+    expect(facts.window).toBe(64_000);
+  });
+
+  it('uses a window you set for Claude when nothing has reported one', () => {
+    const facts = contextFacts(
+      state({
+        prefs: { autoCompact: false, autoCompactAt: 85, model: 'opus', modelWindows: { 'claude|opus': 32_000 } },
+        projects: [{ name: 'beluga', workspaces: [{ id: 'w1' }] }],
+      }),
+      'ws:w1',
+    );
+    expect(facts.window).toBe(32_000);
+  });
 });

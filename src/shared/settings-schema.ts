@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AgentRef } from '../protocol.js';
-import { AUTO_COMPACT_DEFAULT, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from './context-usage.js';
+import { AUTO_COMPACT_DEFAULT, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MODEL_WINDOW_MAX, MODEL_WINDOW_MIN } from './context-usage.js';
 import { PARALLEL_RUNS_DEFAULT, PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from './run-slots.js';
 import { CHAT_LIMIT_DEFAULT, CHAT_LIMIT_MAX } from './chat-limit.js';
 import { AUTO_CONTINUE_OFF_MAX } from './auto-continue.js';
@@ -96,6 +96,24 @@ export type MachineIcon = (typeof MACHINE_ICONS)[number];
 export const RUN_ON = /^(here|best|[0-9a-f]{16})$/;
 
 const threadLimit = (max: number) => z.number().int().min(1).max(max);
+
+/** How many model windows a settings file may keep. */
+export const MODEL_WINDOWS_MAX = 80;
+
+/** Drop keys and sizes that aren't a model window, and keep at most `MODEL_WINDOWS_MAX`. */
+export function coerceModelWindows(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (Object.keys(out).length >= MODEL_WINDOWS_MAX) break;
+    if (k.length < 3 || k.length > 120 || !k.includes('|')) continue;
+    const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+    if (!Number.isInteger(n) || n < MODEL_WINDOW_MIN || n > MODEL_WINDOW_MAX) continue;
+    out[k] = n;
+  }
+  return out;
+}
+
 /** How far your agents' threads go (shared/threads.ts). */
 export const ThreadLimitsSchema = z.object({
   depth: threadLimit(THREAD_LIMITS_MAX.depth),
@@ -133,6 +151,11 @@ export const Settings = z.object({
    * Empty: every model, including ones found later.
    */
   openModels: z.array(z.string().max(120)).max(80).catch([]).default([]),
+  /**
+   * Context window you set per model, in tokens, keyed `runtime|value` (shared/open-models.ts).
+   * Missing a model: its own window. A bad entry is dropped rather than failing the whole file.
+   */
+  modelWindows: z.preprocess(coerceModelWindows, z.record(z.string(), z.number().int())).catch({}).default({}),
   /** The agent that answers when someone addresses you plainly ("@kay"); published on your peer card. Unset: Claude. */
   defaultAgent: AgentRef.optional(),
   /** A project's own default agent (by project name), over `defaultAgent` for work in that project. */

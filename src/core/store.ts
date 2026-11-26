@@ -329,8 +329,10 @@ export interface Prefs {
   /** Default model for new conversations (undefined: Claude Code's default). */
   readonly model?: string;
   readonly effort?: Effort;
-  /** Models the chat menu offers (`runtime|value`). Empty: every model. */
+  /** Models the chat menu offers (`runtime|value`). Empty: every model. `none`: every model off. */
   readonly openModels: readonly string[];
+  /** Context window you set per model, in tokens, keyed `runtime|value`. Missing: the model’s own. */
+  readonly modelWindows: Readonly<Record<string, number>>;
   /** Who answers "@you" (core/settings.ts chosenAgent; undefined: Claude). */
   readonly defaultAgent?: AgentRef;
   /** Per-project defaults over `defaultAgent`, by project name. */
@@ -798,6 +800,7 @@ export const DEFAULT_PREFS: Prefs = {
   selfApproval: 'never',
   notify: NotifySchema.parse({}),
   openModels: [],
+  modelWindows: {},
   autoSetup: true,
   branchPrefix: BRANCH_PREFIX_DEFAULT,
   contextMeter: true,

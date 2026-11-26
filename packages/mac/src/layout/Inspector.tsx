@@ -190,6 +190,7 @@ function WorkspaceDetails({ id }: { id: string }) {
   const tokens = tokensOf(ws.usage);
   const cache = cacheHitFromContext(ctx) ?? cacheHitOf(ws.usage);
   const project = state.projects.find((p) => p.id === ws.projectId);
+  const contextNow = ctx ? contextPct(facts.window ? { used: ctx.used, window: facts.window } : ctx) : 0;
   return (
     <>
       <ThreadsSection id={id} />
@@ -207,10 +208,10 @@ function WorkspaceDetails({ id }: { id: string }) {
         {ctx && state.contextMeter ? (
           <Field label="Context">
             {/* The same numbers and colours as the meter in the box you type in, named for this agent. */}
-            <span className={s.meter} data-tone={contextTone(contextPct(ctx))} title={`${formatTokenCount(ctx.used)} of ${facts.window ? formatTokenCount(facts.window) : 'an unreported window'} · ${facts.modelLabel}`}>
-              <span style={{ width: `${contextPct(ctx)}%` }} />
+            <span className={s.meter} data-tone={contextTone(contextNow)} title={`${formatTokenCount(ctx.used)} of ${facts.window ? formatTokenCount(facts.window) : 'an unreported window'} · ${facts.modelLabel}`}>
+              <span style={{ width: `${contextNow}%` }} />
             </span>
-            {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${facts.window ? formatTokenCount(facts.window) : 'an unreported window'} · ${facts.modelLabel}`}
+            {ctx.compacting ? 'Compacting…' : `${contextNow}% · ${formatTokenCount(ctx.used)} of ${facts.window ? formatTokenCount(facts.window) : 'an unreported window'} · ${facts.modelLabel}`}
           </Field>
         ) : null}
         {cache ? (

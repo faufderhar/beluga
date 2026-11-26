@@ -31,7 +31,8 @@ function useMeter(channel: string): MeterModel | undefined {
   const on = useApp((st) => st.prefs.contextMeter);
   const context = useApp((st) => st.context);
   const log = useApp((st) => st.log);
-  return useMemo(() => (on ? meterModel({ context, log }, channel) : undefined), [on, context, log, channel]);
+  const window = useApp((st) => contextFacts(st, channel).window);
+  return useMemo(() => (on ? meterModel({ context, log }, channel, window) : undefined), [on, context, log, channel, window]);
 }
 
 /**

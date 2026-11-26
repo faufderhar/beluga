@@ -1,6 +1,7 @@
 import { type AgentRef, CLAUDE_AGENT } from '../protocol.js';
 import { RUNTIME_NAMES, modelName } from '../shared/agent-label.js';
 import { clampThreshold, contextWindowFor } from '../shared/context-usage.js';
+import { savedModelWindow } from '../shared/open-models.js';
 import { fallbackFor } from '../shared/runtime-fallbacks.js';
 
 /**
@@ -23,6 +24,8 @@ export interface ContextFactsState {
     readonly model?: string;
     readonly autoCompact: boolean;
     readonly autoCompactAt: number;
+    /** Context window set per model (`runtime|value`), in tokens. */
+    readonly modelWindows?: Readonly<Record<string, number>>;
     readonly defaultAgent?: AgentRef;
     readonly projectAgents?: Readonly<Record<string, AgentRef>>;
   };
@@ -93,12 +96,16 @@ export function contextFacts(state: ContextFactsState, channel: string): Context
   const info = state.context[channel];
   const modelId = info?.model || ws?.model || agent.model || (runtime === 'claude' ? state.prefs.model : undefined);
   const reported = info?.window && info.window > 0 ? info.window : undefined;
+  // The model the conversation picked shares a key with Settings. A run may report a different id.
+  const picked = ws?.model ?? agent.model ?? (runtime === 'claude' ? (state.prefs.model ?? '') : undefined);
+  const override = savedModelWindow(state.prefs.modelWindows, runtime, picked) ?? (modelId !== picked ? savedModelWindow(state.prefs.modelWindows, runtime, modelId) : undefined);
   const at = clampThreshold(state.prefs.autoCompactAt);
+  const window = override ?? (reported || runtime === 'claude' ? (reported ?? contextWindowFor(modelId)) : undefined);
   return {
     runtime,
     ...(modelId ? { modelId } : {}),
     modelLabel: labelOf(state, runtime, modelId),
-    ...(reported || runtime === 'claude' ? { window: reported ?? contextWindowFor(modelId) } : {}),
+    ...(window ? { window } : {}),
     threshold: at,
     ...compactOf(runtime, state.prefs.autoCompact, at),
   };

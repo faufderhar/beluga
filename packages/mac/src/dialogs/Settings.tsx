@@ -7,7 +7,8 @@ import { PR_TITLE_RULE_MAX } from '@beluga/shared/naming.js';
 import { FETCH_EVERY_CHOICES, FETCH_EVERY_DEFAULT, fetchEveryWords } from '@beluga/shared/background-fetch.js';
 import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { EFFORT_INFO, agentEntries, modelInfo, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
-import { openModelCatalog, toggleOpenModel } from '@beluga/shared/open-models.js';
+import { allModelsOpen, isModelOpen, modelKey, openModelCatalog, setAllOpenModels, toggleOpenModel } from '@beluga/shared/open-models.js';
+import { contextWindowFor, parseTokenCount } from '@beluga/shared/context-usage.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, cx } from '../components/ui.js';
@@ -397,9 +398,81 @@ function AgentsGroup({ mine }: { mine: string }) {
   );
 }
 
+const formatTokens = (n: number): string => n.toLocaleString('en-US');
+
+/**
+ * One model’s context window, in tokens. Empty, or the model’s own size, clears a window you set.
+ * What you set is what the meter and auto-compact count.
+ */
+function ModelWindowField({ runtime, value, label, fallback }: { runtime: string; value: string; label: string; fallback: number }) {
+  const api = useApi();
+  const { client } = useBeluga();
+  const key = modelKey(runtime, value);
+  const saved = useApp((st) => st.prefs.modelWindows?.[key]);
+  const shown = saved ?? fallback;
+  const [text, setText] = useState(() => formatTokens(shown));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(formatTokens(shown));
+  }, [shown, focused]);
+  const commit = (): void => {
+    setFocused(false);
+    const trimmed = text.trim();
+    const windows = { ...(client.store.getState().prefs.modelWindows ?? {}) };
+    const clear = (): void => {
+      if (windows[key] === undefined) {
+        setText(formatTokens(fallback));
+        return;
+      }
+      delete windows[key];
+      void api.session.setPrefs({ modelWindows: windows });
+    };
+    if (!trimmed) {
+      clear();
+      return;
+    }
+    const parsed = parseTokenCount(trimmed);
+    if (parsed === undefined) {
+      setText(formatTokens(saved ?? fallback));
+      return;
+    }
+    if (parsed === fallback) {
+      clear();
+      return;
+    }
+    if (parsed === saved) {
+      setText(formatTokens(parsed));
+      return;
+    }
+    void api.session.setPrefs({ modelWindows: { ...windows, [key]: parsed } });
+  };
+  return (
+    <input
+      className={s.contextWindow}
+      aria-label={`${label} context`}
+      title="Context window, in tokens. Clear it to use the model’s own."
+      inputMode="text"
+      spellCheck={false}
+      autoComplete="off"
+      value={text}
+      {...(saved !== undefined ? { 'data-custom': 'true' } : {})}
+      onChange={(e) => setText(e.target.value)}
+      onFocus={(e) => {
+        setFocused(true);
+        e.currentTarget.select();
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+    />
+  );
+}
+
 /**
  * Models the chat’s model menu offers. With every switch on, the list is empty and a model found
- * later is on too. The last one stays on, so the menu always has a choice.
+ * later is on too. All models turns every one on or off. The last one stays on when you flip them
+ * one at a time, so the menu always has a choice unless you turn them all off together.
  */
 function OpenModelsGroup() {
   const api = useApi();
@@ -408,21 +481,29 @@ function OpenModelsGroup() {
   const open = useApp((st) => st.prefs.openModels) ?? [];
   const catalog = openModelCatalog(runtimes, models);
   const known = catalog.map((m) => m.key);
-  const chosen = (key: string): boolean => open.length === 0 || open.includes(key);
+  const allOn = allModelsOpen(open, known);
+  const onCount = catalog.filter((m) => isModelOpen(open, m.key)).length;
   const toggle = (key: string): void => {
     const next = toggleOpenModel(open, key, known);
     if (next === undefined) return;
     void api.session.setPrefs({ openModels: [...next] });
   };
+  const detail = allOn ? 'Every model is in the menu, including ones found later.' : onCount === 0 ? 'None are in the menu.' : `${onCount} of ${catalog.length} on.`;
   return (
     <Group title="Models in chat">
-      <div className={s.note}>Only these appear in the chat’s model menu. With every one on, a model found later is on too.</div>
+      <div className={s.note}>Only these appear in the chat’s model menu. With every one on, a model found later is on too. The number is that model’s context window, in tokens.</div>
       {catalog.length ? (
-        catalog.map((m) => (
-          <Row key={m.key} label={m.label} detail={[m.runtimeLabel, m.description].filter(Boolean).join(' · ')}>
-            <Switch label={`${m.runtimeLabel} ${m.label}`} on={chosen(m.key)} onChange={() => toggle(m.key)} />
+        <>
+          <Row label="All models" detail={detail}>
+            <Switch label="All models" on={allOn} onChange={(v) => void api.session.setPrefs({ openModels: [...setAllOpenModels(v)] })} />
           </Row>
-        ))
+          {catalog.map((m) => (
+            <Row key={m.key} label={m.label} detail={[m.runtimeLabel, m.description].filter(Boolean).join(' · ')}>
+              <ModelWindowField runtime={m.runtime} value={m.value} label={`${m.runtimeLabel} ${m.label}`} fallback={contextWindowFor(m.value)} />
+              <Switch label={`${m.runtimeLabel} ${m.label}`} on={isModelOpen(open, m.key)} onChange={() => toggle(m.key)} />
+            </Row>
+          ))}
+        </>
       ) : (
         <Row label="None" detail={`No agent on ${thisComputer()} is ready with a model yet.`}>
           {null}

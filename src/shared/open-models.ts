@@ -1,4 +1,5 @@
 import type { RuntimeChoice, RuntimeModel } from './agent-runtimes.js';
+import { MODEL_WINDOW_MAX, MODEL_WINDOW_MIN } from './context-usage.js';
 
 /**
  * Which models the chat’s model menu offers (Settings › Agent › Models in chat).
@@ -8,6 +9,12 @@ import type { RuntimeChoice, RuntimeModel } from './agent-runtimes.js';
 
 /** How many keys a saved list may hold (Settings and the prefs patch). */
 export const OPEN_MODELS_MAX = 80;
+
+/**
+ * Stored alone in `openModels` when every model is off.
+ * Model keys are `runtime|value`, so this never matches one. An empty list still means every model.
+ */
+export const OPEN_NONE = 'none';
 
 /** Said on a runtime whose models are all turned off. */
 export const CLOSED_WHY = 'Turn a model on in Settings › Agent › Models in chat';
@@ -21,7 +28,35 @@ export function runtimeModels(runtime: RuntimeChoice, claudeModels: readonly Run
   return runtime.models ?? [{ value: '', label: 'Default', description: `${runtime.label}'s choice` }];
 }
 
-/** Models the menu may offer. No list (or an empty one): all of them. */
+/** Whether `key` is in the chat menu. An empty list is every model; `none` alone is none of them. */
+export function isModelOpen(open: readonly string[] | undefined, key: string): boolean {
+  if (!open?.length) return true;
+  return open.includes(key);
+}
+
+/** Every listed model is in the menu (an empty list counts: models found later are on too). */
+export function allModelsOpen(open: readonly string[] | undefined, known: readonly string[]): boolean {
+  if (!known.length) return false;
+  if (!open?.length) return true;
+  return known.every((k) => open.includes(k));
+}
+
+/** What to store for the All models switch. On: every model, including ones found later. Off: none. */
+export function setAllOpenModels(on: boolean): readonly string[] {
+  return on ? [] : [OPEN_NONE];
+}
+
+/**
+ * The context window you set for this model (`runtime|value`), in tokens.
+ * Undefined: nothing saved, so the model’s own window is used.
+ */
+export function savedModelWindow(windows: Readonly<Record<string, number>> | undefined, runtime: string, model: string | undefined): number | undefined {
+  if (!windows || model === undefined) return undefined;
+  const n = windows[modelKey(runtime, model)];
+  return typeof n === 'number' && Number.isInteger(n) && n >= MODEL_WINDOW_MIN && n <= MODEL_WINDOW_MAX ? n : undefined;
+}
+
+/** Models the menu may offer. No list (or an empty one): all of them. `none` alone: none. */
 export function modelsForChat<T extends { value: string }>(models: readonly T[], runtime: string, open: readonly string[] | undefined): T[] {
   if (!open?.length) return [...models];
   const allow = new Set(open);
@@ -65,7 +100,8 @@ export function openModelCatalog(runtimes: readonly RuntimeChoice[], claudeModel
 export function toggleOpenModel(open: readonly string[] | undefined, key: string, known: readonly string[]): readonly string[] | undefined {
   const knownSet = new Set(known);
   const on = open?.length ? new Set(open) : knownSet;
-  const unknowns = (open ?? []).filter((k) => !knownSet.has(k) && k !== key);
+  // `none` means every model was off. It is not a model, so turning one on must not keep it.
+  const unknowns = (open ?? []).filter((k) => !knownSet.has(k) && k !== key && k !== OPEN_NONE);
   if (on.has(key)) {
     const stay = known.filter((k) => k !== key && on.has(k));
     if (stay.length === 0 && knownSet.has(key)) return undefined;
