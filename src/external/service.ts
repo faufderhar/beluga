@@ -17,6 +17,7 @@ import { PairingCodes } from './adapters/oauth-codes.js';
 import { REMOTE_FULL_WARNING } from '../shared/remote-full.js';
 import type { AuditLog } from './ports/audit-log.js';
 import type { GrantStore } from './ports/grant-store.js';
+import { THE_COMPUTER, THIS_COMPUTER } from '../shared/assistant.js';
 
 export interface ExternalServiceOptions {
   readonly configFile?: string;
@@ -135,8 +136,8 @@ export class ExternalService {
   async localToken(name: string, spec: PairingSpec): Promise<{ readonly grant: Grant; readonly token: string }> {
     if (spec.remote) throw new Error('A local token is for this computer, and a remote agent signs in with a pairing code.');
     const agent = cleanAgentName(name);
-    const answer = await (this.opts.ask ?? (async () => 'no' as const))(`A program on this Mac wants a Beluga token for ${agent}`, `As an external agent, level ${spec.level}. Say no if you didn't just ask for this.`, true);
-    if (answer === 'no') throw new Error('Declined on the Mac');
+    const answer = await (this.opts.ask ?? (async () => 'no' as const))(`A program on ${THIS_COMPUTER} wants a Beluga token for ${agent}`, `As an external agent, level ${spec.level}. Say no if you didn't just ask for this.`, true);
+    if (answer === 'no') throw new Error(`Declined on ${THE_COMPUTER}`);
     const now = (this.opts.now ?? Date.now)();
     return this.grants.create({ name: agent, clientId: 'local-token', redirectHost: 'localhost', route: 'local', level: spec.level, projects: spec.projects, ...(spec.chats ? { chats: spec.chats } : {}), expiresAt: now + SIGN_IN_MS });
   }

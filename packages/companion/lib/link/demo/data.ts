@@ -698,19 +698,19 @@ export function makeWorld(now = Date.now()): DemoWorld {
     running: 2,
     milestones: [
       { id: 'm1', title: 'The contract', state: 'done', criteria: ['protocol.ts with frames, topics and views', 'coverage.ts classifies every API method'], tasks: [
-        { id: 'k1', title: 'Frames and topics', state: 'done' },
-        { id: 'k2', title: 'Views for every screen', state: 'done' },
-        { id: 'k3', title: 'Coverage of the API', state: 'done' },
+        { id: 'k1', title: 'Frames and topics', state: 'done', since: now - 50 * HOUR, updatedAt: now - 50 * HOUR },
+        { id: 'k2', title: 'Views for every screen', state: 'done', since: now - 30 * HOUR, updatedAt: now - 30 * HOUR },
+        { id: 'k3', title: 'Coverage of the API', state: 'done', since: now - 26 * HOUR, updatedAt: now - 26 * HOUR },
       ] },
       { id: 'm2', title: 'The Mac side', state: 'running', criteria: ['Pair a phone from Settings', 'Only paired link keys get through'], tasks: [
-        { id: 'k4', title: 'Pairing and the device certificate', state: 'done' },
-        { id: 'k5', title: 'CompanionHost and the firewall', state: 'running', topic: 'conv:beluga.push' },
-        { id: 'k6', title: 'The footer\'s phone mark', state: 'blocked', blockedBy: ['k5'], why: 'Waits on CompanionHost and the firewall' },
+        { id: 'k4', title: 'Pairing and the device certificate', state: 'done', since: now - 5 * HOUR, updatedAt: now - 5 * HOUR },
+        { id: 'k5', title: 'CompanionHost and the firewall', state: 'running', topic: 'conv:beluga.push', since: now - 3 * HOUR, updatedAt: now - 2 * MIN },
+        { id: 'k6', title: 'The footer\'s phone mark', state: 'blocked', blockedBy: ['k5'], why: 'Waits on CompanionHost and the firewall', since: now - 6 * HOUR, updatedAt: now - 6 * HOUR },
       ], dependsOn: ['m1'] },
       { id: 'm3', title: 'The app', state: 'running', criteria: ['Every screen against a demo Mac', 'Pairing feels like the Mac\'s onboarding'], tasks: [
-        { id: 'k7', title: 'Home, Work and a conversation', state: 'done' },
-        { id: 'k8', title: 'Make pairing feel like the Mac', state: 'running', mine: true, topic: 'conv:beluga.onboarding' },
-        { id: 'k9', title: 'Outputs viewer', state: 'review' },
+        { id: 'k7', title: 'Home, Work and a conversation', state: 'done', since: now - 20 * HOUR, updatedAt: now - 20 * HOUR },
+        { id: 'k8', title: 'Make pairing feel like the Mac', state: 'running', mine: true, topic: 'conv:beluga.onboarding', since: now - 90 * MIN, updatedAt: now - 1 * MIN },
+        { id: 'k9', title: 'Outputs viewer', state: 'review', since: now - 26 * HOUR, updatedAt: now - 26 * HOUR },
         { id: 'k10', title: 'The link worklet', state: 'ready', goal: 'hyperdht and the Noise link in a Bare worklet, so the app reaches the Mac on any network.', acceptance: ['Links over the LAN and over the internet', 'Closes 15 s after the app goes to the background'] },
       ], dependsOn: ['m1'] },
       { id: 'm4', title: 'Notifications', state: 'waiting', criteria: ['Beluga Push relay', 'Approve from the notification'], tasks: [

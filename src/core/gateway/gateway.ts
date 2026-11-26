@@ -18,6 +18,7 @@ import { isSecretPath } from '../shares.js';
 import { FileFetcher, mergeFiles, wantedFiles } from './transfer.js';
 import { Courier, type MeshPort, type RoomPort, type Via } from './transport.js';
 import { type Feature, cannotTake, featureForTask, shortVersion } from '../../net/mesh/features.js';
+import { THIS_COMPUTER, YOUR_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * The gateway: tasks between Claudes. Your Claude (or you) asks a friend's Claude to do
@@ -724,7 +725,7 @@ export class Gateway {
   /** A friend's task that ran here just ended (not one you stopped or they cancelled): you hear how it went, pointing at its chat. */
   private ranHere(task: TaskView): void {
     if (task.direction !== 'received' || !task.startedAt || (task.state !== 'done' && task.state !== 'failed')) return;
-    const what = task.kind === 'run' ? `${task.peerName}'s command on your Mac` : task.kind === 'file' ? `Sending a file to ${task.peerName}` : `Your agent's work for ${task.peerName}`;
+    const what = task.kind === 'run' ? `${task.peerName}'s command on ${YOUR_COMPUTER}` : task.kind === 'file' ? `Sending a file to ${task.peerName}` : `Your agent's work for ${task.peerName}`;
     this.deps.notify?.({
       kind: 'people',
       tag: 'task',
@@ -889,7 +890,7 @@ export class Gateway {
     const current = this.book.get(id);
     if (!current || isFinal(current.state)) return;
     const { incoming: _i, ...rest } = current;
-    const done = this.finishLocal(rest, 'failed', `${current.peerName} answered, but what came back couldn't be saved on this Mac: ${err instanceof Error ? err.message : String(err)}`);
+    const done = this.finishLocal(rest, 'failed', `${current.peerName} answered, but what came back couldn't be saved on ${THIS_COMPUTER}: ${err instanceof Error ? err.message : String(err)}`);
     this.announce(done);
     this.settle(done);
   }

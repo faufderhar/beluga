@@ -10,10 +10,11 @@ const repo = path.resolve(import.meta.dirname, '../../..');
 /** Each GIF and how far into it its still is (0 to 1): a moment where the story reads on its own. */
 const STILLS = {
   'scenes/parallel-dark': 0.3,
-  'scenes/agents-dark': 0.75,
+  'scenes/scratch-dark': 0.8,
+  'scenes/together-dark': 0.46,
   'scenes/tables-dark': 0.55,
   'scenes/friends-dark': 0.95,
-  'scenes/sentinel-dark': 0.3,
+  'scenes/sentinel-dark': 0.45,
   'scenes/machines-dark': 0.45,
   'scenes/earnings-dark': 0.75,
   'scenes/archive-dark': 0.95,

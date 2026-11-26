@@ -73,6 +73,53 @@ const FINDING = z.object({
   ids: z.array(z.string().max(40)).max(12).optional().describe('The task or milestone ids it is about'),
 });
 
+/** Words a checker may write for a verdict (any case): read as pass or fail. Anything else is refused, naming the field. */
+const PASS_WORDS = new Set(['pass', 'passed', 'passes', 'passing', 'ok', 'yes', 'true', 'approved', 'approve', 'success', 'succeeded', 'green', 'done']);
+const FAIL_WORDS = new Set(['fail', 'failed', 'fails', 'failing', 'no', 'false', 'rejected', 'reject', 'failure', 'red', 'blocked']);
+
+/** A verdict as a checker sent it ("PASS", "passed", true) → "pass" or "fail"; else as it came. */
+export function verdictOf(v: unknown): unknown {
+  if (typeof v === 'boolean') return v ? 'pass' : 'fail';
+  if (typeof v !== 'string') return v;
+  const word = v.trim().toLowerCase().replace(/[.!]+$/, '');
+  return PASS_WORDS.has(word) ? 'pass' : FAIL_WORDS.has(word) ? 'fail' : v;
+}
+
+/** At most this much of a gate's notes is kept (plans.ts recordCheck); longer notes are cut, not refused. */
+export const GATE_NOTES_MAX = 8000;
+
+/**
+ * Notes as a checker sent them, as text: a string; or one line per criterion, as a list (strings,
+ * or `{criterion, result, notes}`-like objects) or an object of criterion → finding. Codex checkers
+ * send the shapes "per criterion" suggests (BLG-1029).
+ */
+export function notesOf(v: unknown): unknown {
+  if (typeof v === 'string') return v;
+  const line = (x: unknown): string =>
+    typeof x === 'string'
+      ? x
+      : x && typeof x === 'object' && !Array.isArray(x)
+        ? Object.values(x as Record<string, unknown>)
+            .filter((p) => typeof p === 'string' || typeof p === 'number' || typeof p === 'boolean')
+            .map(String)
+            .join(': ')
+        : typeof x === 'number' || typeof x === 'boolean'
+          ? String(x)
+          : '';
+  if (Array.isArray(v)) return v.map((x) => `- ${line(x)}`).filter((l) => l.length > 2).join('\n');
+  if (v && typeof v === 'object')
+    return Object.entries(v as Record<string, unknown>)
+      .map(([k, x]) => `- ${k}: ${line(x)}`)
+      .join('\n');
+  return v;
+}
+
+const GATE = {
+  milestone: z.string().min(1).max(400).describe('The milestone’s id (or its title)'),
+  verdict: z.preprocess(verdictOf, z.enum(['pass', 'fail'])),
+  notes: z.preprocess(notesOf, z.string().trim().min(1).max(200_000)).describe('Per criterion: what you checked and what you found (one line each). Plain text'),
+};
+
 /** A tool's decision → the plan's. */
 const decisionInput = (d: z.infer<typeof DECISION>): DecisionInput => ({ text: d.text, ...(d.id ? { id: d.id } : {}), ...(d.terms ? { terms: d.terms } : {}), ...(d.retires ? { retires: d.retires } : {}), ...(d.supersedes ? { supersedes: d.supersedes } : {}) });
 
@@ -153,7 +200,7 @@ function guarded(fn: () => string | Promise<string>): Promise<{ content: Array<{
 
 export function createPlanToolDefs(plan: PlanTools) {
   const defs = [
-    tool('plan_get', 'The plan: its decisions, milestones with their pass criteria, tasks with ids, what waits on what, warnings about the draft, and (once approved) each task’s state: who’s working, in review, done.', {}, () => guarded(() => plan.get())),
+    tool('plan_get', 'The plan: its decisions, milestones with their pass criteria, tasks with ids, what waits on what, warnings about the draft, and (once approved) each task’s state: who’s working, in review, done, and since when (UTC times, with how long ago).', {}, () => guarded(() => plan.get()), { annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }),
     tool(
       'plan_write',
       'Write the whole plan (replaces the draft). Milestones in order, each with pass criteria and its tasks; milestones run side by side unless depends_on (or a task’s blocked_by) ties them to an earlier one. Keep ids you used before; two items with one id are refused. decisions: what the plan has decided (left out, they stay as they were). Nothing reaches the board until the user approves. The answer lists warnings to fix.',
@@ -169,8 +216,8 @@ export function createPlanToolDefs(plan: PlanTools) {
     tool(
       'plan_gate',
       'Record your check of a milestone whose tasks are finished: pass or fail, with notes saying per criterion what you checked and found.',
-      { milestone: z.string().min(1).max(200), verdict: z.enum(['pass', 'fail']), notes: z.string().min(1).max(8000) },
-      (a) => guarded(() => plan.gate(a.milestone, a.verdict, a.notes)),
+      GATE,
+      (a) => guarded(() => plan.gate(a.milestone, a.verdict, a.notes.length > GATE_NOTES_MAX ? `${a.notes.slice(0, GATE_NOTES_MAX - 20).trimEnd()}\n[notes cut short]` : a.notes)),
     ),
     tool(
       'plan_review',
@@ -178,7 +225,12 @@ export function createPlanToolDefs(plan: PlanTools) {
       { findings: z.array(FINDING).max(20) },
       (a) => guarded(() => (plan.review ? plan.review(a.findings.map((f) => ({ kind: f.kind, text: f.text, ...(f.ids?.length ? { ids: f.ids } : {}) }))) : 'Reviewing isn’t yours here')),
     ),
-    tool('plan_start_task', 'Start a ready task now (a worktree with Claude on it). Only when the user asks: Beluga starts ready tasks by itself unless the plan goes step by step.', { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') }, (a) => guarded(() => plan.start(a.task))),
+    tool(
+      'plan_start_task',
+      'Start a ready task now (a worktree with an agent on it). Call it only when the user asks you to start a task: Beluga starts every ready task by itself, as soon as what it waits on is done and the plan’s limit allows, unless the plan is paused or goes step by step. Don’t call it to check on a task or to move a plan along (plan_get says where each task stands). A task already started or finished, waiting on others, or over the plan’s limit isn’t an error: the answer says so, and it needs no second call.',
+      { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') },
+      (a) => guarded(() => plan.start(a.task)),
+    ),
     tool(
       'plan_message_task',
       'Tell the Claude working on a started task something: a decision, a heads-up about another task, a correction. mode "queue" (default) waits until its current turn ends (it may be behind a 15-minute test run); "steer" reaches it now: a long command or a stuck turn is interrupted, and Beluga delivers it again if it isn’t read within 2 minutes.',

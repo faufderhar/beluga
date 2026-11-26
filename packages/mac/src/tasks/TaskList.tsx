@@ -67,7 +67,7 @@ export function TaskList({ issues, statuses, projectId, repo, emptyGroups, archi
                 <span className={t.groupCount}>{g.items.length}</span>
               </button>
               {g.status === 'done' && !archived ? <ArchiveDoneButton projectId={projectId} /> : null}
-              {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />}
+              {archived ? null : <IconButton size="small" icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />}
             </header>
             {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} {...(outs?.has(issue.id) ? { out: outs.get(issue.id)! } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
             {!folded && !g.items.length ? <div className={t.groupEmpty}>Nothing here</div> : null}

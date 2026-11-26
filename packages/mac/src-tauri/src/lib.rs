@@ -6,10 +6,15 @@
 //! keeping Beluga's daemon running. Everything Beluga does happens in the daemon.
 
 mod daemon;
+#[cfg(target_os = "macos")]
+mod drag_inside;
+#[cfg(windows)]
+mod drop_paths;
 mod export;
 mod focus;
 mod i18n;
 mod menu;
+mod native_menu;
 mod call_float;
 mod call_overlay;
 mod shared_window;
@@ -295,6 +300,7 @@ pub fn run() {
             links_taken: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
+            native_menu::native_menu,
             daemon_endpoint,
             restart_daemon,
             set_menu_state,
@@ -352,6 +358,16 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
                 window_vibrancy(&window, true);
+                // A tab dragged inside the window lands where it's dropped (src/drag_inside.rs).
+                let _ = window.with_webview(|webview| {
+                    // SAFETY: with_webview runs this on the main thread with the window's live WKWebView.
+                    unsafe { drag_inside::install(webview.inner().cast()) }
+                });
+            }
+            // Files dropped on the window, with their paths (src/drop_paths.rs).
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                drop_paths::install(&window);
             }
             menu::tray(&handle)?;
             spout::start(&handle);

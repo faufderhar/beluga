@@ -16,7 +16,12 @@ export default defineConfig({
     // Ten worktrees testing at once leave the Mac usable: half the cores per run (KLAUD_TEST_WORKERS
     // overrides it), and a few runs at a time machine-wide (scripts/test-lock.mjs, KLAUD_TEST_SLOTS).
     maxWorkers: workerCount(),
-    globalSetup: ['scripts/test-lock.mjs'],
+    // Each run keeps its temp files in its own beluga-run-* folder, removed when it ends (and by the
+    // next run if it was killed), so a test that misses its cleanup leaves nothing behind.
+    // First of all, scripts/test-repo-guard.mjs: git's own variables (a run started from `git rebase -x`,
+    // an alias or a hook) are dropped, so no test's git lands in the repository the suite runs in, and
+    // the run fails if the worktree it runs in is gone at the end (BLG-867).
+    globalSetup: ['scripts/test-repo-guard.mjs', 'scripts/test-lock.mjs', 'scripts/test-temp-root.mjs'],
     // The whole suite passing on a Mac prints a "Tested-on: macOS <tree>" line for the commit, and CI
     // skips its macOS run for it (scripts/local-pass.mjs).
     reporters: ['default', './scripts/local-pass.mjs'],

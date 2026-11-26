@@ -16,7 +16,7 @@ import { agoText } from '../views/project/home-model.js';
 import { type FoldRow, type ThreadChild, THREAD_WORDS, agentFamilyRow, capFold, foldNoun, foldRows, foldRunning, foldSummary, openPath, threadNesting, threadStateOf, threadsShownUnder } from '../threads/threads-model.js';
 import { FamilyEnd, FamilyMark, FamilyTitle } from '../threads/FamilyRow.js';
 import { sameDeep } from '../lib/stable.js';
-import { Row } from './sidebar-parts.js';
+import { Row, type RowExtras } from './sidebar-parts.js';
 import { WorkspaceRow, type WorkspaceFold } from './workspace-row.js';
 import s from './subagents.module.css';
 
@@ -133,20 +133,13 @@ function useThreadChildren(id: string): readonly ThreadChild[] {
   return useApp((st) => threadsShownUnder(st, id).map((w) => ({ ws: w, state: threadStateOf(st, w) ?? 'queued' })), sameDeep);
 }
 
-/** A conversation's child threads under its row outside the project list (the sidebar's categories): the same rows, unfolded. */
-export function WorkspaceThreads({ ws, indent }: { ws: Workspace; indent: number }) {
-  const threads = useThreadChildren(ws.id);
-  const rows = useMemo(() => foldRows([], threads), [threads]);
-  return rows.length ? <FoldedRows ws={ws} list={rows} noun={foldNoun(rows)} indent={indent} /> : null;
-}
-
 /**
  * A worktree or chat in the sidebar with the sub-agents and child threads it started under it: its
  * row carries the arrow that folds them (and ← → do too), so there's no extra row saying how many
  * there are. Folded, only the way down to the chat you're in stays. `threadsOnly`: a list that shows
- * no sub-agents (the Chats section).
+ * no sub-agents (the Chats section, the categories). `extras`: what a list of conversations adds to its row.
  */
-export function WorkspaceWithAgents({ ws, indent, threadsOnly, inFamily }: { ws: Workspace; indent: number; threadsOnly?: boolean; inFamily?: boolean }) {
+export function WorkspaceWithAgents({ ws, indent, threadsOnly, inFamily, extras }: { ws: Workspace; indent: number; threadsOnly?: boolean; inFamily?: boolean; extras?: RowExtras }) {
   const { list: agents, folded, toggle } = useSubAgentFold(ws);
   const threads = useThreadChildren(ws.id);
   const open = useOpenThreads();
@@ -157,7 +150,7 @@ export function WorkspaceWithAgents({ ws, indent, threadsOnly, inFamily }: { ws:
   const shown = folded ? rows.filter((r) => r.kind === 'thread' && open.has(r.ws.id)) : rows;
   return (
     <>
-      <WorkspaceRow ws={ws} indent={indent} {...(fold ? { fold } : {})} {...(inFamily ? { inFamily } : {})} />
+      <WorkspaceRow ws={ws} indent={indent} {...(fold ? { fold } : {})} {...(inFamily ? { inFamily } : {})} {...(extras ? { extras } : {})} />
       {shown.length ? <FoldedRows ws={ws} list={shown} noun={foldNoun(rows)} indent={indent + 1} /> : null}
     </>
   );

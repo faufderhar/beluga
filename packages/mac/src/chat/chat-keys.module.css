@@ -1,0 +1,261 @@
+/* This chat's keys (BLG-965): a soft teal pill in the box's bar, and the panel it opens. */
+
+.button {
+  --keep: var(--worktree);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px 0 8px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--keep) 11%, transparent);
+  color: color-mix(in srgb, var(--keep) 82%, var(--text));
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background var(--dur-fast) ease;
+  animation: pillIn 420ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.button:hover,
+.on {
+  background: color-mix(in srgb, var(--keep) 19%, transparent);
+}
+@keyframes pillIn {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+.panel {
+  --keep: var(--worktree);
+  z-index: 60;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised) 97%, transparent);
+  backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  box-shadow:
+    var(--shadow-pop),
+    0 18px 50px rgba(0, 0, 0, 0.18);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: rise 220ms var(--ease-out);
+  outline: none;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+.inner {
+  padding: 12px 12px 10px;
+}
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--keep) 14%, transparent);
+  color: color-mix(in srgb, var(--keep) 80%, var(--text));
+}
+.titles {
+  min-width: 0;
+}
+.title {
+  font-weight: 600;
+}
+.sub,
+.loading,
+.hint {
+  color: var(--text-3);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.loading {
+  padding: 14px 4px 6px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 3px 4px 3px 6px;
+  border-radius: 8px;
+  animation: rowIn 260ms var(--ease-out) both;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 7px 0 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--keep) 13%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--keep) 32%, transparent);
+  color: color-mix(in srgb, var(--keep) 82%, var(--text));
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.masked {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acts {
+  display: inline-flex;
+  flex: none;
+  gap: 1px;
+  opacity: 0.35;
+  transition: opacity var(--dur-fast) ease;
+}
+.row:hover .acts,
+.row:focus-within .acts {
+  opacity: 1;
+}
+.act {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-2);
+}
+.act:hover {
+  background: var(--bg-press);
+  color: var(--text);
+}
+.danger:hover {
+  color: var(--error);
+}
+
+/* A key being changed: its name and a new key, in place of its row. */
+.editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+.editing:hover {
+  background: var(--bg-sunken);
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fieldLabel {
+  flex: none;
+  width: 38px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+.input {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+.input:focus-within {
+  box-shadow:
+    inset 0 0 0 0.5px var(--hairline-strong),
+    0 0 0 2px color-mix(in srgb, var(--keep) 40%, transparent);
+}
+.input.bad {
+  box-shadow: inset 0 0 0 1px var(--error);
+}
+.input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.dollar {
+  color: color-mix(in srgb, var(--keep) 75%, var(--text));
+  font-weight: 600;
+}
+.editFoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.problem {
+  flex: 1;
+  color: var(--error);
+  font-size: 0.8rem;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 0.5px solid var(--hairline);
+}
+.link {
+  color: var(--accent);
+  font-size: 0.86rem;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .panel,
+  .row {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .button,
+:root[data-motion='reduce'] .panel,
+:root[data-motion='reduce'] .row {
+  animation: none;
+}

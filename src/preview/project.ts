@@ -77,6 +77,9 @@ function pathsOf(file: string, depth = 0): { base: string; paths: Record<string,
   return parent ? pathsOf(parent, depth + 1) : undefined;
 }
 
+/** A SvelteKit app's config files: the folder with one is the app. */
+export const SVELTE_CONFIGS = ['svelte.config.js', 'svelte.config.mjs', 'svelte.config.ts', 'svelte.config.cjs'] as const;
+
 /** The project's import aliases (tsconfig compilerOptions.paths), each as a prefix and where it points. */
 export function aliasesOf(root: string): Array<{ readonly prefix: string; readonly to: string }> {
   for (const name of ['tsconfig.json', 'jsconfig.json', 'tsconfig.app.json']) {
@@ -88,8 +91,10 @@ export function aliasesOf(root: string): Array<{ readonly prefix: string; readon
       return [{ prefix: key.replace(/\*$/, ''), to: path.resolve(found.base, to.replace(/\*$/, '')) }];
     });
   }
-  // The common default when nothing says: @/ is src/.
-  return existsSync(path.join(root, 'src')) ? [{ prefix: '@/', to: path.join(root, 'src') }] : [];
+  // The common defaults when nothing says: @/ is src/, and a SvelteKit app's $lib is src/lib
+  // (its own paths are in .svelte-kit/tsconfig.json, which only Kit's sync writes).
+  const kit = SVELTE_CONFIGS.some((c) => existsSync(path.join(root, c))) && existsSync(path.join(root, 'src', 'lib'));
+  return [...(existsSync(path.join(root, 'src')) ? [{ prefix: '@/', to: path.join(root, 'src') }] : []), ...(kit ? [{ prefix: '$lib/', to: path.join(root, 'src', 'lib') }] : [])];
 }
 
 /** Where `spec`, imported from `from`, is: a file of the worktree, or nothing (a package, or outside). */

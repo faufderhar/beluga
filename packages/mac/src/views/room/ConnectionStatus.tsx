@@ -34,7 +34,7 @@ export function ConnectionStatus() {
           <span className={s.lead}>{line.lead}</span> · {line.detail}
         </span>
         {line.canRetry ? (
-          <Button variant="plain" className={s.button} onClick={() => void api.session.retryConnection()}>
+          <Button size="small" variant="plain" className={s.button} onClick={() => void api.session.retryConnection()}>
             Retry Now
           </Button>
         ) : null}

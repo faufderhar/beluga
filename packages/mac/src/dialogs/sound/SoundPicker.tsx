@@ -13,6 +13,7 @@ const FAMILIES = familiesHere(keyPlatform() === 'mac');
 const FAMILY_HINTS: Readonly<Record<SoundFamily, string>> = {
   chip: 'Short 8-bit sounds, made by Beluga',
   gen: 'Soft sounds generated just for you',
+  // computer-wording: mac (this family is offered only on a Mac)
   mac: 'The sounds that come with your Mac',
   none: 'Notifications stay silent',
 };

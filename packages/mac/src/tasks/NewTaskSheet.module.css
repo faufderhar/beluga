@@ -55,14 +55,14 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
+  height: var(--control-h);
   padding: 0 9px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--control-radius);
   background: none;
   color: var(--text-2);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--control-text);
   cursor: default;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
@@ -193,4 +193,30 @@
   bottom: auto;
   left: 0;
   right: 0;
+}
+
+/* Liquid Glass: the scale follows its steps' shape (a capsule round capsules, with the Round shape);
+   the chosen step's ring is a real 0.5px border (WebKit breaks a 0.5px shadow up round a capsule's ends). */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .scale {
+  position: relative;
+  padding: 2px;
+  border-radius: calc(var(--control-radius) + 2px);
+  box-shadow: none;
+}
+/* Its ring on its own layer, taking no room, so a step sits as far from the top as from the bottom. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .scale::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 0.5px solid var(--hairline-strong);
+  border-radius: inherit;
+  pointer-events: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .step {
+  border: 0.5px solid transparent;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .stepOn {
+  border-color: var(--hairline-strong);
+  /* Even all round: a drop below would fill the gap under it, and the step would look pushed up. */
+  box-shadow: 0 0 1.5px rgba(0, 0, 0, 0.14);
 }

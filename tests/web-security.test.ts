@@ -65,7 +65,7 @@ describe('a browser can use Beluga but not decide who gets in', () => {
     for (const [i, method] of [...WEB_ADMIN].entries()) send({ t: 'call', id: `admin${i}`, method, args: method === 'web.sessions.revoke' ? ['x'] : [] });
     await expect.poll(() => frames.filter((f) => f.t === 'result').length).toBe(1 + WEB_ADMIN.size);
     expect(resultOf(frames, 'list')).toMatchObject({ ok: true });
-    for (let i = 0; i < WEB_ADMIN.size; i++) expect(resultOf(frames, `admin${i}`)).toMatchObject({ ok: false, error: expect.stringMatching(/Mac app or `beluga web`/) });
+    for (let i = 0; i < WEB_ADMIN.size; i++) expect(resultOf(frames, `admin${i}`)).toMatchObject({ ok: false, error: expect.stringMatching(/Beluga app or `beluga web`/) });
     ws.close();
   });
 

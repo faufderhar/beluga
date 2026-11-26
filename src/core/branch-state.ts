@@ -1,7 +1,8 @@
 import type { DomainState } from './store.js';
 import type { PrCheck, PullRequest } from './work-store.js';
 import type { ForkOf } from '../workspaces/github.js';
-import type { Workspace } from '../workspaces/types.js';
+import type { ProjectSync, Workspace } from '../workspaces/types.js';
+import { THIS_COMPUTER } from '../shared/assistant.js';
 
 /**
  * Where a worktree's branch stands, in one word you can see at the top (Merged, Ready to merge,
@@ -56,6 +57,10 @@ export type BranchStepId =
   | 'pr_own'
   | 'merge'
   | 'merge_base'
+  | 'land'
+  | 'land_on'
+  | 'land_off'
+  | 'push_main'
   | 'continue_after_merge'
   | 'archive'
   | 'delete';
@@ -165,6 +170,17 @@ export function prOnOriginal(fork: ForkOf | undefined, pr: Pick<PullRequest, 'ur
   return fork && pr && pr.url.toLowerCase().startsWith(`${fork.url.toLowerCase()}/pull/`) ? fork : undefined;
 }
 
+/**
+ * Push main (Straight to main's next step): the main folder's `into` has commits its remote doesn't.
+ * Undefined: nothing to push, no remote, or `into` isn't the branch the project tracks.
+ */
+export function pushMainStep(sync: ProjectSync | undefined, into: string): { readonly step: BranchStep; readonly count: number; readonly upstream: string } | undefined {
+  if (!sync?.upstream || !sync.local || sync.branch !== into || sync.ahead <= 0) return undefined;
+  const remote = sync.remote ?? 'origin';
+  const count = sync.ahead;
+  return { count, upstream: sync.upstream, step: { id: 'push_main', label: `Push ${into} to ${remote}`, hint: `Sends the ${plural(count, 'commit')} on ${into} that ${sync.upstream} doesn’t have yet, on top of anything new there (never forced)` } };
+}
+
 /** A worktree's branch, or undefined for what has none (chats, the main folder, archived ones, a detached HEAD). */
 export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' | 'conflicts'>, ws: Workspace, opts: BranchOptions = {}): BranchState | undefined {
   if (ws.kind !== 'worktree' || ws.archived || ws.pending || !ws.branch) return undefined;
@@ -219,6 +235,22 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   // Continued after its PR merged: the commits already in the base are that PR's, so nothing new is here yet (not Merged again).
   if (ws.prDone !== undefined && st?.landed && !pr && !changed) {
     return at('clean', 'No changes', 'muted', `PR #${ws.prDone} went into ${into}: nothing new on ${ws.branch} yet, and the next change gets a new PR`, []);
+  }
+  // Straight to main (no open PR): its work lands in the main folder as its agent finishes (core/land-on-base.ts).
+  if (ws.landOnBase && pr?.state !== 'OPEN' && !planned) {
+    const ahead = st?.ahead ?? 0;
+    const off: BranchStep = { id: 'land_off', label: 'Keep on Its Branch', hint: `Stop landing on ${into}: what’s next stays on ${ws.branch}, for a PR or a merge` };
+    const push = pushMainStep(project?.sync, into);
+    if (!changed && !ahead) {
+      if (push) return at('not_pushed', `${plural(push.count, 'commit')} not pushed`, 'info', `Everything here is on ${into} in the main folder, and ${plural(push.count, 'commit')} on ${into} ${push.count === 1 ? 'isn’t' : 'aren’t'} on ${push.upstream} yet`, [push.step, archive, off]);
+      return at('clean', `On ${into}`, 'ok', `Everything here is on ${into} in the main folder: what your agent does next lands there too`, [archive, off]);
+    }
+    const what = [changed && plural(changed, 'change'), ahead && plural(ahead, 'commit')].filter(Boolean).join(' and ');
+    return at('unshipped', `Lands on ${into}`, 'info', `${what} land${changed + ahead === 1 ? 's' : ''} on ${into} in the main folder when your agent finishes`, [
+      { id: 'land', label: `Land on ${into} Now`, hint: `${changed ? 'Commits what’s left and puts' : 'Puts'} it on ${into} in the main folder (no PR, not pushed yet)` },
+      push && push.step,
+      off,
+    ]);
   }
   // Merged outside Beluga (on GitHub with no PR it knows of, squashed, or by hand).
   if (st?.landed && pr?.state !== 'OPEN' && !changed) {
@@ -324,7 +356,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   const ahead = st?.ahead ?? 0;
   const ship: BranchStep | false = !planned && (github
     ? { id: 'pr', label: 'Create PR', hint: `${changed ? 'Commits what’s left, pushes' : 'Pushes'} ${ws.branch} and opens a pull request into ${into}, titled from its commits` }
-    : { id: 'merge', label: `Merge into ${into}…`, hint: `Shows what would merge into ${into} on this Mac and checks it first` });
+    : { id: 'merge', label: `Merge into ${into}…`, hint: `Shows what would merge into ${into} on ${THIS_COMPUTER} and checks it first` });
   // Create PR's other ways, under its chevron.
   const prWays: BranchStep[] =
     !planned && github
@@ -336,9 +368,11 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
           { id: 'merge_base', label: `Merge into ${into}…`, hint: `No pull request: ${changed ? 'commits what’s left, ' : ''}merges ${ws.branch} into origin/${into} and pushes it there` },
         ]
       : [];
+  // The small-change path (core/land-on-base.ts), last in the menu: on from now, and what's here lands at once.
+  const landOn: BranchStep | false = !planned && { id: 'land_on', label: `Straight to ${into}`, hint: `Commits its work to ${into} in your main folder now and each time your agent finishes. No PR; you push when you’re ready` };
   if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : [archive, remove]);
   // Work in progress, not a problem: a quiet grey pill, never a warning (Kayra: a small thing stays small).
-  if (changed) return at('uncommitted', plural(changed, 'change'), 'muted', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, github ? [ship, ...prWays, commit] : [commit, ship]);
-  if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship, ...prWays]);
+  if (changed) return at('uncommitted', plural(changed, 'change'), 'muted', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, github ? [ship, ...prWays, commit, landOn] : [commit, ship, landOn]);
+  if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship, ...prWays, landOn]);
   return at('clean', 'No changes', 'muted', `Nothing on ${ws.branch} that isn’t in ${into}`, []);
 }

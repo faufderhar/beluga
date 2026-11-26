@@ -135,6 +135,12 @@ describe('detectNotices: needs you', () => {
     expect(detectNotices(s2, apply(s2, { type: 'approval_remove', id: 'a1' }))).toEqual([]);
   });
 
+  it("an approval's notice opens the chat that asked, where it's answered", () => {
+    const s0 = initialState('me');
+    const s1 = apply(s0, { type: 'approval_add', approval: { id: 'a1', kind: 'tool', title: 'Run npm test?', detail: '', channel: 'ws:auth' } });
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', tag: 'approval', ref: 'a1', title: 'Run npm test?', body: '', channel: 'ws:auth' }]);
+  });
+
   it('tells questions and plans apart', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'question_add', question: question('q1', 'question') });

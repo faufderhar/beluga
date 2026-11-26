@@ -31,3 +31,9 @@
   text-align: center;
   text-wrap: pretty;
 }
+/* Settings › Usage statistics › Install ID: the id itself, selectable. */
+.installId {
+  display: block;
+  font-family: var(--font-mono);
+  user-select: text;
+}

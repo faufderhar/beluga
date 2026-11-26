@@ -2653,3 +2653,24 @@
   font-size: 11.5px;
   color: var(--text-3);
 }
+
+/* A phone (BLG-6): the bar's filters and actions wrap onto as many rows as they need, none squeezed;
+   the task's title and brief first, its properties (status, who, estimate) after them. */
+@media (max-width: 700px) {
+  .bar,
+  .barGroup {
+    flex-wrap: wrap;
+  }
+  .barGroup > .find {
+    width: 44px;
+  }
+  .barGroup > .find:focus-within,
+  .barGroup > .find:has(input:not(:placeholder-shown)) {
+    width: 180px;
+  }
+  .props {
+    order: 1;
+    border-bottom: 0;
+    border-top: 1px solid var(--hairline);
+  }
+}

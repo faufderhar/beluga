@@ -47,6 +47,40 @@ test('Open in Worktree on a pull request shows its worktree at once, before the 
   await expect(sidebar(page).getByRole('button', { name: /pr-51/ })).toHaveCount(1);
 });
 
+test('you can write to a pull request’s worktree while it is being made, and its agent gets it once it is', async ({ page }) => {
+  const daemon = await holdBack(page, ['issues.openPull', 'session.submit']);
+  await openHome(page);
+  const row = page.locator('main').getByRole('region', { name: 'Pull Requests' }).locator('[data-pull="49"]');
+  await row.scrollIntoViewIfNeeded();
+  await row.hover();
+  await row.getByRole('button', { name: 'Open #49 in a worktree' }).click();
+
+  // Its page has the message box from the start, focused: no waiting for git.
+  await expect(page.getByText('Making pr-49…')).toBeVisible();
+  const box = page.locator('main textarea:not(.xterm-helper-textarea)');
+  await expect(box).toBeFocused();
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: '../../.beluga/scratch/making-pr-49-with-box.png' });
+  await box.fill('Review this pull request');
+  await box.press('Enter');
+  await expect.poll(daemon.held).toBe(2);
+
+  daemon.release();
+  const main = page.locator('main');
+  await expect(main.locator('[data-mine="true"]').getByText('Review this pull request')).toBeVisible({ timeout: 15_000 });
+  await page.screenshot({ path: '../../.beluga/scratch/pr-49-card-making.png' });
+  await expect(page.getByText(/Pull request #49 “Read-only API keys”, checked out on feat\/read-only-keys/)).toBeVisible({ timeout: 15_000 });
+  // Said once, and its agent answers it there.
+  await expect(main.locator('[data-mine="true"]').getByText('Review this pull request')).toHaveCount(1);
+  await expect(main.getByRole('button', { name: 'Show Steps' }).first()).toBeVisible({ timeout: 15_000 });
+  // Its card's first step made the worktree; its agent's work followed on the same card.
+  await expect(main.locator('[data-turn]')).toHaveCount(1);
+  await main.getByRole('button', { name: 'Show Steps' }).first().click();
+  await main.getByRole('button', { name: /earlier steps/ }).first().click();
+  await expect(main.getByText('Made the worktree pr-49')).toBeVisible();
+  await page.screenshot({ path: '../../.beluga/scratch/pr-49-after-made.png' });
+});
+
 test('a new worktree from the home shows at once with what you asked, before the daemon answers', async ({ page }) => {
   const daemon = await holdBack(page, ['workspaces.startWorktree']);
   await openHome(page);

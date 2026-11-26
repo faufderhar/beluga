@@ -11,6 +11,7 @@ import { deriveKeys, generateSecret } from '../src/net/crypto.js';
 import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
 import { expandPath, handoffNotePrompt, handoffProblem } from '../src/core/remote-work.js';
+import { HANDOFF_FILE } from '../src/core/handoff-note.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { waitFor, attach } from './helpers.js';
@@ -284,6 +285,9 @@ describe('handoff', () => {
     expect(readFileSync(path.join(theirs!.path, 'auth.ts'), 'utf8')).toContain('requireUser');
     expect(readFileSync(path.join(theirs!.path, 'wip.ts'), 'utf8')).toContain('half done');
     expect(bob.workspaces!.loadHistory<{ text: string }>(theirs!.id).some((l) => l.text.includes('Their note'))).toBe(true);
+    // The note comes as a file in their Scratch too (BLG-967), never in the branch.
+    expect(readFileSync(path.join(theirs!.path, HANDOFF_FILE), 'utf8')).toMatch(/^# Handoff: add-auth\n\n_From kay for bob, \d{4}-\d\d-\d\d_\n\n## Handoff\n- \[x\] session check/);
+    expect(git(theirs!.path, 'ls-files')).not.toContain('HANDOFF.md');
     // bob doesn't fully trust kay: his .env stays out of her branch, setup waits for him, and her
     // note runs with what kay may do on bob's computer (not as bob himself).
     expect(existsSync(path.join(theirs!.path, '.env'))).toBe(false);
@@ -400,5 +404,33 @@ describe('handoff', () => {
     expect(handoffProblem(undefined, 'they turned off work from friends', what)).toMatch(/turned off work from friends/);
     expect(handoffProblem(undefined, 'declined', what)).toBe('bob said no to taking it over');
     expect(handoffProblem(undefined, 'disk full', what)).toBe("bob's Beluga couldn't set it up: disk full");
+  });
+
+  it('shares with a handoff note: written by your agent, in the chat and as HANDOFF.md in Scratch (BLG-967)', async () => {
+    hub = await startHub({ keys });
+    const dirs = repos('kay', 'bob');
+    const note = '## Goal\nLog in with sessions.\n## Next steps\n- [ ] expired sessions test';
+    const kay = await person('kay', { repo: dirs.kay, script: async (input) => (input.prompt.includes('handoff note') ? note : 'ok') });
+    const bob = await person('bob', { repo: dirs.bob });
+    await together(kay, bob);
+    const ws = await kay.workspaces!.createWorktree(kay.workspaces!.list.find((p) => p.root)!.id, 'add-auth');
+    await kay.session.workspaces!.refresh();
+
+    expect(await kay.session.remote.handoffNote(ws.id, bob.id())).toBe(HANDOFF_FILE);
+    // Joining here, not taking over: the prompt says so, and asks for the facts and the sections.
+    expect(kay.runs[0]?.prompt).toBe(handoffNotePrompt('bob', 'share'));
+    expect(kay.runs[0]?.prompt).toContain('bob is joining this work');
+    const saved = readFileSync(path.join(ws.path, HANDOFF_FILE), 'utf8');
+    expect(saved).toMatch(/^# Handoff: add-auth\n\n_From kay for bob, /);
+    expect(saved).toContain('- [ ] expired sessions test');
+    expect(git(ws.path, 'status', '--porcelain')).not.toContain('HANDOFF.md');
+    expect(kay.state().log.some((l) => l.type === 'system' && l.text === `Handoff note for bob saved as ${HANDOFF_FILE}.`)).toBe(true);
+  });
+
+  it('asks for a note built from the facts, in sections, without secrets', () => {
+    const takeover = handoffNotePrompt('bob');
+    expect(takeover).toMatch(/^bob is taking over this work on their own computer/);
+    for (const part of ['git status', 'Do not change, create, commit or delete any files', '## Goal', '## Where it stands', '## Next steps', '## Decisions', '## Watch out', 'Never include secrets']) expect(takeover).toContain(part);
+    expect(handoffNotePrompt('bob', 'share')).not.toContain('taking over');
   });
 });

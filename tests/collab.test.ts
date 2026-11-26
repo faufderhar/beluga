@@ -122,12 +122,27 @@ describe("Claude's questions and plans", () => {
     await waitFor(() => agentDone(kay.state(), 'approved and done'));
   });
 
-  it('carries on without an answer after the timeout, so nobody is stuck', async () => {
+  it("a friend's Claude carries on without your answer after the timeout, so its run isn't stuck on you", async () => {
     hub = await startHub({ keys });
-    const kay = peer('kay', { approvalTimeoutMs: 80, script: async (input) => ((await input.askUser!({ kind: 'plan', plan: 'x' })).kind) });
+    const bob = peer('bob', { approvalTimeoutMs: 80, script: async (input) => (await input.askUser!({ kind: 'plan', plan: 'x' })).kind });
+    const kay = peer('kay');
+    await room(bob, kay);
+    bob.session.store.dispatch({ type: 'trust', peerId: kay.session.selfId, trusted: true });
+    kay.session.submit('@claude:bob go');
+    await waitFor(() => agentDone(kay.state(), 'skip'));
+  });
+
+  it('your own Claude waits for your answer to its plan, however long it takes', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { approvalTimeoutMs: 80, script: async (input) => (await input.askUser!({ kind: 'plan', plan: 'x' })).kind });
     await room(kay);
     kay.session.submit('@claude go');
-    await waitFor(() => agentDone(kay.state(), 'skip'));
+    const q = await waitFor(() => kay.state().questions[0]);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(kay.state().questions.map((x) => x.qid)).toEqual([q.qid]);
+    expect(agentDone(kay.state())).toBe(false);
+    kay.session.questions.answer(q.qid, { kind: 'plan', approve: true, feedback: '' });
+    await waitFor(() => agentDone(kay.state(), 'plan'));
   });
 
   it('sends plan mode with the request when it is on for that conversation', async () => {

@@ -68,6 +68,24 @@ describe('McpAppTracker', () => {
     expect(records.get('t1')).toMatchObject({ status: 'done', output: '{"time":"now"}', app: { server: 'basic', tool: 'get-time', resourceUri: 'ui://get-time/app.html', structuredContent: { time: 'now' } } });
   });
 
+  it('keeps the result’s _meta beside its structured content, for the view, and out of the step’s output', async () => {
+    const { records, observe } = rig(async () => SERVERS);
+    const meta = { 'sh.ratel/view': { kind: 'session_chat', steps: 36 } };
+    observe(toolUse('t1', 'mcp__basic__get-time'));
+    await flush();
+    observe(toolResult('t1', '{"ok":true}', { content: '{"ok":true}', structuredContent: { ok: true }, _meta: meta }));
+    expect(records.get('t1')?.app).toEqual({ server: 'basic', tool: 'get-time', resourceUri: 'ui://get-time/app.html', structuredContent: { ok: true }, resultMeta: meta });
+    expect(records.get('t1')?.output).toBe('{"ok":true}');
+  });
+
+  it('keeps a _meta that came without structured content', async () => {
+    const { records, observe } = rig(async () => SERVERS);
+    observe(toolUse('t1', 'mcp__basic__get-time'));
+    await flush();
+    observe(toolResult('t1', 'now', { content: 'now', _meta: { view: 1 } }));
+    expect(records.get('t1')?.app).toEqual({ server: 'basic', tool: 'get-time', resourceUri: 'ui://get-time/app.html', resultMeta: { view: 1 } });
+  });
+
   it('adds the app to a step that ended before the lookup came back', async () => {
     let answer!: (s: readonly CatalogServer[]) => void;
     const { records, observe } = rig(() => new Promise((r) => (answer = r)));

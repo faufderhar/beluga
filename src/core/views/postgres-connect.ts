@@ -11,6 +11,7 @@ import {
   scrubbed,
   withPassword,
 } from './database-url.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Reaching a Postgres database (BLG-302): the connection string, then its fallbacks; for Supabase,
@@ -32,7 +33,7 @@ export interface PgMemory {
 export const pgMemory: PgMemory = { reached: new Map(), poolers: new Map() };
 
 /** psql isn't there at all: said once, as it is. */
-export const PSQL_MISSING = 'psql isn’t on this Mac: install it with “brew install libpq” (or Postgres.app)';
+export const PSQL_MISSING = `psql isn’t on ${THIS_COMPUTER}: install it with “brew install libpq” (or Postgres.app)`;
 /** Poolers asked at once while looking for the project's. */
 const AT_ONCE = 8;
 const PROBE = 'SELECT 1';
@@ -166,7 +167,7 @@ export function pgFailure(found: FoundDatabase, tried: readonly Tried[], pooler?
     const poolers = tried.filter((t) => /\.pooler\.supabase\.com$/i.test(hostOf(t.url)));
     const dead = poolers.filter((t) => t.problem === 'unreachable');
     const example = hidePassword(poolerUrl(found.url, ref, `aws-0-${found.supabase?.region ?? '<region>'}.pooler.supabase.com`));
-    if (poolers.length && dead.length === poolers.length) return `Neither Supabase’s direct address nor its session poolers answered: is this Mac online?${via}`;
+    if (poolers.length && dead.length === poolers.length) return `Neither Supabase’s direct address nor its session poolers answered: is ${THIS_COMPUTER} online?${via}`;
     const why = direct ? `Supabase’s direct address (db.${ref}.supabase.co) answers only over IPv6, and this network has none. ` : '';
     const poolerWords = poolers.length ? `None of Supabase’s session poolers (${poolers.length} tried) knows project ${ref}: the wrong region, or aws-0 for aws-1.` : 'No session pooler was tried.';
     return `${why}${poolerWords} Put the Session pooler connection string from Supabase › Connect in ${target}, like ${example}${via}`;

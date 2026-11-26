@@ -21,7 +21,7 @@ export function ConvoSwitch({ wsId, iconOnly }: { readonly wsId: string; readonl
   if (!capable || !prefs.termView) return null;
   const mode = convoModeOf(prefs.convoModes, prefs.convoDefault, wsId);
   return (
-    <Segmented
+    <Segmented size="large"
       label="Show the conversation as"
       value={mode}
       iconOnly={iconOnly}

@@ -1,0 +1,125 @@
+/*
+ * Keys marked in the chat box (BLG-977): a soft teal wash sweeps in under a key the card asks
+ * about, left to right, as if Beluga ran a finger along it. Only maybe a key: a dotted underline
+ * draws in instead, with a fainter wash. No glow.
+ */
+.layer {
+  --keep: var(--worktree);
+  transition: opacity 320ms ease;
+}
+.fading {
+  opacity: 0;
+}
+
+.mark {
+  border-radius: 4px;
+  color: transparent;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--keep) 20%, transparent), color-mix(in srgb, var(--keep) 20%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--keep) 70%, transparent), color-mix(in srgb, var(--keep) 70%, transparent));
+  background-position:
+    0 0,
+    0 100%;
+  background-size:
+    100% 100%,
+    100% 1.5px;
+  background-repeat: no-repeat;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  animation: sweep 560ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+}
+.mark.soft {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--keep) 9%, transparent), color-mix(in srgb, var(--keep) 9%, transparent)),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--keep) 75%, transparent) 0 3px, transparent 3px 6px);
+}
+@keyframes sweep {
+  from {
+    background-size:
+      0% 100%,
+      0% 1.5px;
+  }
+}
+
+/* The picked word: no mark of its own (the box's selection shows), only somewhere to measure from. */
+.pickRoom {
+  color: transparent;
+}
+
+/*
+ * Keep as Key: a small pill over a picked word, pointing down at it. It rises out of a blur with a
+ * little spring, and goes the moment the pick does.
+ */
+.pill {
+  --keep: var(--worktree);
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--keep) 45%, var(--hairline-strong)),
+    0 6px 16px -8px rgba(0, 0, 0, 0.28);
+  color: color-mix(in srgb, var(--keep) 82%, var(--text));
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 7px));
+  transform-origin: 50% 100%;
+  animation: pillIn 300ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  transition:
+    background var(--dur-fast) ease,
+    box-shadow var(--dur-fast) ease;
+}
+.pill::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  box-shadow: 0.5px 0.5px 0 0 color-mix(in srgb, var(--keep) 45%, var(--hairline-strong));
+  transform: translateX(-50%) rotate(45deg);
+}
+.pill:hover {
+  background: color-mix(in srgb, var(--keep) 9%, var(--bg-raised));
+}
+.pill:active {
+  transform: translate(-50%, calc(-100% - 7px)) scale(0.96);
+}
+.pill :global(svg) {
+  flex: none;
+}
+.pill :global(kbd) {
+  margin-left: 2px;
+  color: var(--text-3);
+}
+@keyframes pillIn {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translate(-50%, calc(-100% - 2px)) scale(0.88);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark,
+  .pill {
+    animation: none;
+  }
+  .layer {
+    transition: none;
+  }
+}
+:root[data-motion='reduce'] .mark,
+:root[data-motion='reduce'] .pill {
+  animation: none;
+}
+:root[data-motion='reduce'] .layer {
+  transition: none;
+}

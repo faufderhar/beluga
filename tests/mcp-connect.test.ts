@@ -160,11 +160,8 @@ describe('McpConnect app calls (MCP Apps: apps.call, apps.read)', () => {
     const f = fake([[st('figma', 'pending')], [st('figma', 'connected', tools)]]);
     const mcp = new McpConnect(f.open, { home: dir, env: {}, settleMs: 60_000, pollMs: 1 });
     expect(await mcp.appTools([dir], 'figma')).toEqual(tools);
-    expect(await mcp.appTools([dir], 'linear')).toEqual([]);
-    // linear is not up: its session is not kept.
-    expect(f.closed()).toBe(1);
     mcp.close();
-    expect(f.closed()).toBe(2);
+    expect(f.closed()).toBe(1);
   });
 
   it('calls a tool with mcp_call over the session’s control channel', async () => {
@@ -204,6 +201,65 @@ describe('McpConnect app calls (MCP Apps: apps.call, apps.read)', () => {
     });
     const mcp = new McpConnect(open, { home: dir, env: {}, pollMs: 1 });
     expect(await mcp.appRead([dir], 'figma', 'ui://figma/x.png')).toEqual({ contents: [{ uri: 'ui://figma/x.png', blob: 'AA==' }] });
+  });
+});
+
+describe('McpConnect: an MCP App of a claude.ai connector', () => {
+  const ratel = 'claude.ai Ratel Cloud';
+  const st = (name: string, status: McpServerStatus['status'], tools?: unknown[]): McpServerStatus => ({ name, status, scope: 'claudeai', ...(tools ? { tools } : {}) }) as McpServerStatus;
+
+  /** Claude Code whose statuses come in turn, recording what it was asked to read. */
+  function claude(statuses: McpServerStatus[][]): { open: OpenMcpSession; read: Array<[string, string]>; closed: () => number } {
+    const f = fake(statuses);
+    const read: Array<[string, string]> = [];
+    const open: OpenMcpSession = (cwd, servers) => ({
+      ...f.open(cwd, servers),
+      readMcpResource: async (server: string, uri: string) => {
+        read.push([server, uri]);
+        return { contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: '<p>health</p>' }] };
+      },
+    });
+    return { open, read, closed: f.closed };
+  }
+
+  it('waits for Claude Code to list the connector (it comes from your claude.ai account, after the session opens), then reads its page', async () => {
+    const { home: dir } = home();
+    // Your own server is up at once; the claude.ai connectors are not listed yet, then start, then connect.
+    const c = claude([[st('figma', 'connected')], [st('figma', 'connected'), st(ratel, 'pending')], [st('figma', 'connected'), st(ratel, 'connected')]]);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, settleMs: 60_000, pollMs: 1 });
+    expect(await mcp.readUiResource([dir], ratel, 'ui://ratel/health.html')).toEqual({ html: '<p>health</p>' });
+    expect(c.read).toEqual([[ratel, 'ui://ratel/health.html']]);
+    // Connected: the session is kept for the app's calls.
+    expect(c.closed()).toBe(0);
+    mcp.close();
+  });
+
+  it('gives the app the connector’s tools once it is listed, for the tool gate', async () => {
+    const { home: dir } = home();
+    const tools = [{ name: 'get_agent_health', annotations: { readOnly: true } }];
+    const c = claude([[], [st(ratel, 'connected', tools)]]);
+    const mcp = new McpConnect(c.open, { home: dir, env: {}, settleMs: 60_000, pollMs: 1 });
+    expect(await mcp.appTools([dir], ratel)).toEqual(tools);
+    mcp.close();
+  });
+
+  it('says what to check when Claude Code never lists the connector, and reads nothing', async () => {
+    const { home: dir } = home();
+    const c = claude([[st('figma', 'connected')]]);
+    const mcp = new McpConnect(c.open, { ...quick, home: dir, env: {} });
+    await expect(mcp.readUiResource([dir], ratel, 'ui://ratel/health.html')).rejects.toThrow(/didn’t load Ratel Cloud, your claude\.ai connector.*connected on claude\.ai/);
+    await expect(mcp.appTools([dir], ratel)).rejects.toThrow(/your claude\.ai connector/);
+    expect(c.read).toEqual([]);
+    // A session without the server is never kept.
+    expect(c.closed()).toBe(2);
+  });
+
+  it('says so for a server of yours Claude Code never lists, too', async () => {
+    const { home: dir } = home();
+    const c = claude([[]]);
+    const mcp = new McpConnect(c.open, { ...quick, home: dir, env: {} });
+    await expect(mcp.appRead([dir], 'linear', 'ui://linear/a.html')).rejects.toThrow(/didn’t load linear.*Settings › Claude/);
+    expect(c.read).toEqual([]);
   });
 });
 

@@ -15,14 +15,14 @@ test('the welcome finds your agents, picks the first ready one, and lets you pic
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await expect(welcome).toBeVisible();
-  await expect(welcome.getByText('Claude Code, Codex, OpenCode, GitHub Copilot, Grok Build or a model of your own')).toBeVisible();
+  await expect(welcome.getByText('Claude Code, Codex, OpenCode, GitHub Copilot, Grok Build, Antigravity or a local model')).toBeVisible();
   await expect(welcome.getByText('starting with Claude')).toHaveCount(0);
   if (shots) {
     // Once the welcome has drawn itself in (about three seconds).
     await page.waitForTimeout(3500);
     await page.screenshot({ path: `${shots}/01-hello.png` });
   }
-  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await welcome.getByRole('button', { name: /Set Up Beluga/ }).click();
 
   await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
   const yours = welcome.getByRole('radiogroup', { name: 'Your agent' });
@@ -30,6 +30,8 @@ test('the welcome finds your agents, picks the first ready one, and lets you pic
   await expect(welcome.getByTestId('agent-state-codex')).toHaveText('Ready', { timeout: 15_000 });
   await expect(welcome.getByTestId('agent-state-opencode')).toHaveText('Ready', { timeout: 15_000 });
   await expect(welcome.getByTestId('agent-state-copilot')).toHaveText('Ready', { timeout: 15_000 });
+  // Antigravity is one of your ACP agents: added in Settings › Agent › ACP agents, not a row here.
+  await expect(welcome.getByTestId('agent-state-antigravity')).toHaveCount(0);
   await expect(welcome.getByTestId('agent-state-local')).toHaveText('No endpoint');
   await expect(welcome.getByText('Change it any time in Settings › Agent.')).toBeVisible();
   // The first ready one is yours already; a local model with no endpoint can't be picked.
@@ -67,5 +69,5 @@ test('the welcome finds your agents, picks the first ready one, and lets you pic
 
   // Back on the welcome: Continue goes on to the tour.
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(welcome.getByRole('heading', { name: 'Work on everything at once.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Run several tasks at the same time.' })).toBeVisible();
 });

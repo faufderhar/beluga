@@ -30,13 +30,16 @@ const THEMES = { dark: '#0d1117' };
  */
 const SCENES = {
   parallel: { w: 720, h: 460, loop: true, from: 13_500, ms: 13_500 },
-  agents: { w: 720, h: 460, loop: true, from: 8800, ms: 8800 },
+  // A request of three: files land in Scratch while the agent is still working (beats: 0.8 + 3 × 1.4 + 3.2 s).
+  scratch: { w: 720, h: 480, loop: true, from: 8200, ms: 8200 },
   // The answer, then a pointer sorting, paging, filtering and searching it (showcase/TablesTour).
   tables: { w: 800, h: 680, ms: 14_500 },
   // One errand of three, the next one blended in.
-  friends: { w: 780, h: 470, loop: true, from: 10_100, ms: 10_100 },
+  friends: { w: 780, h: 500, loop: true, from: 11_400, ms: 11_400 },
+  // A friend invited to Work here, then to Follow.
+  together: { w: 720, h: 440, loop: true, from: 19_400, ms: 19_400 },
   // Two sentinels of five: Fix the build, then Failed payments.
-  sentinel: { w: 840, h: 540, loop: true, from: 7090, ms: 14_800 },
+  sentinel: { w: 760, h: 440, loop: true, from: 6700, ms: 13_400 },
   // One task: Runs on flips to AWS, it runs there, the lid closes and the phone keeps up.
   machines: { w: 720, h: 460, loop: true, from: 10_300, ms: 10_300 },
   earnings: { w: 640, h: 420, loop: true, from: 5400, ms: 5400 },

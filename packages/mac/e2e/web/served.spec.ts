@@ -1,3 +1,6 @@
+import { readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { type Page, expect, test } from '@playwright/test';
 import { type Served, startServed } from './served.js';
 
@@ -68,8 +71,11 @@ test('joins by a link, chats, uses a terminal, and locks at once when revoked', 
   const term = page.getByRole('complementary', { name: 'Panel' }).getByRole('region', { name: 'Terminal' });
   await expect(term).toBeVisible();
   await term.locator('.xterm').click();
-  await page.keyboard.type('echo web-$((6*7))\n');
-  await expect(term.getByText('web-42').last()).toBeVisible({ timeout: 15_000 });
+  // Terminals draw with the GPU (BLG-963): no text in the page, so the shell's answer goes to a file.
+  const out = path.join(os.tmpdir(), `beluga-web-term-${process.pid}-${Date.now()}.txt`);
+  await page.keyboard.type(`echo web-$((6*7)) > '${out}'\n`);
+  await expect.poll(() => readFile(out, 'utf8').catch(() => ''), { timeout: 15_000 }).toContain('web-42');
+  await rm(out, { force: true });
 
   // The main screens, with nothing wrong in the console since joining (BLG-672).
   for (const screen of ['Overview', 'Work', 'Sentinel', 'Files', 'Group chat']) {

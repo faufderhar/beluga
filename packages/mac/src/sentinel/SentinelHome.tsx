@@ -1,3 +1,4 @@
+import { usePhoneLayout } from '../lib/phone-layout.js';
 import { RemoteList } from '../machines/RemoteList.js';
 import { remoteDashboards, remoteSentinels } from '../machines/remote-work.js';
 import { useRemoteSources } from '../machines/use-remote.js';
@@ -54,6 +55,7 @@ export function SentinelHome() {
   const active = useApp((st) => st.sentinel.chats?.active ?? FIRST_SENTINEL_CHAT);
   // Ask Sentinel stays docked on the right (it opens with the page) until you close it.
   const docked = useAskDocked();
+  const phone = usePhoneLayout();
   const any = state.items.length > 0;
   // The last sentinel just went (deleted, with the chat docked beside the list): back to the first
   // visit, not into a conversation that was only open beside the page.
@@ -63,8 +65,9 @@ export function SentinelHome() {
     hadAny.current = any;
     if (emptied && asking) return void actions.run({ type: 'view', view: { kind: 'sentinel' } });
     if (asking) setAskDocked(true);
-    else if (docked && any && (view.kind === 'sentinel' || view.kind === 'dashboard')) actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: active } });
-  }, [view, docked, any]);
+    // Not on a phone (BLG-8): there it would cover the page you came to see; it opens when you ask.
+    else if (docked && !phone && any && (view.kind === 'sentinel' || view.kind === 'dashboard')) actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: active } });
+  }, [view, docked, any, phone]);
   const close = (): void => {
     setAskDocked(false);
     actions.run({ type: 'view', view: { kind: 'sentinel', ...(scope ? { projectId: scope } : {}) } });
@@ -218,7 +221,7 @@ function Lived({ state, scope, setScope, board, setBoard }: { state: SentinelSta
         </label>
         <span className={s.grow} />
         <ActionsDropdown items={more}>
-          <IconButton icon="more" label="More for Sentinel" />
+          <IconButton size="small" icon="more" label="More for Sentinel" />
         </ActionsDropdown>
         {asking ? null : (
           <Tip label="Say what you want watched; your agent sets it up beside this page">
@@ -365,7 +368,7 @@ const WatchRow = memo(function WatchRow({ item, state, now, a }: { item: Sentine
         <span className={s.next}>{row.last && !item.paused ? (row.next ?? (item.trigger.kind === 'manual' ? 'by hand' : 'on its event')) : item.paused ? '' : (row.next ?? '')}</span>
         <span className={s.rowMore} onClick={(e) => e.stopPropagation()}>
           <ActionsDropdown items={menu()}>
-            <IconButton icon="more" label={`What to do with ${item.name}`} />
+            <IconButton size="small" icon="more" label={`What to do with ${item.name}`} />
           </ActionsDropdown>
         </span>
       </div>
@@ -499,7 +502,7 @@ function FirstVisit() {
         <div className={s.composerRow}>
           <span className={s.composerHint}>Your agent asks before anything new can run</span>
           <span className={s.grow} />
-          <IconButton icon="send" label="Ask Your Agent" className={s.send} disabled={!words.trim()} onClick={send} />
+          <IconButton size="small" icon="send" label="Ask Your Agent" className={s.send} disabled={!words.trim()} onClick={send} />
         </div>
       </div>
       <div className={s.ideas} role="list" aria-label="Ideas">

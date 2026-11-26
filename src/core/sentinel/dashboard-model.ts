@@ -1,5 +1,6 @@
 import type { Compare } from './metrics.js';
 import type { MetricSeries, OutputFormat, SentinelState, StepOutput, StepKind } from './model.js';
+import { knownOr } from '../../shared/known-or.js';
 
 /**
  * Sentinel's dashboard (docs/sentinel.md §10): your own selection of tiles from any sentinel, in a
@@ -113,14 +114,14 @@ export const MAX_TILES = 60;
 /** The width a new tile of a kind gets. */
 export const DEFAULT_WIDTH: Readonly<Record<TileKind, TileWidth>> = { number: 1, series: 3, table: 3, output: 3, text: 2, divider: 6 };
 
-export const TILE_INFO: Readonly<Record<TileKind, { readonly label: string; readonly hint: string }>> = {
+export const TILE_INFO: Readonly<Record<TileKind, { readonly label: string; readonly hint: string }>> = knownOr({
   number: { label: 'A number', hint: 'Its value and its change against the last one, with a sparkline' },
   series: { label: 'A series', hint: 'Numbers over time, or an array a sentinel kept, as lines, areas or bars' },
   table: { label: 'A table', hint: 'The rows a sentinel kept last' },
   output: { label: 'An output', hint: 'A step’s latest export: what the agent wrote, or a service’s answer' },
   text: { label: 'Text', hint: 'A sentinel’s last headline or report' },
   divider: { label: 'A divider', hint: 'A title across the grid' },
-};
+}, (v) => ({ label: v, hint: '' }));
 
 export const WIDTH_WORDS: Readonly<Record<TileWidth, string>> = { 1: 'Narrow (1 of 6)', 2: 'Small (2 of 6)', 3: 'Half (3 of 6)', 4: 'Wide (4 of 6)', 6: 'Full width' };
 

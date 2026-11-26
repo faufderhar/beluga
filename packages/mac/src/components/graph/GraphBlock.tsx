@@ -117,7 +117,7 @@ function FullWindow({ graph, code, localImages, onClose, onCopy, shapeKey }: { g
             {graph.summary ? <span className={g.blockSummary}>{graph.summary}</span> : null}
             <span className={g.grow} />
             <Dialog.Close asChild>
-              <IconButton icon="x" label="Close" keys="esc" />
+              <IconButton size="small" icon="x" label="Close" keys="esc" />
             </Dialog.Close>
           </header>
           <div className={g.fullFrame}>

@@ -48,6 +48,10 @@
 .logEmpty {
   flex: 1;
   display: flex;
+  /* Shorter than what it says (a phone with its keyboard up: BLG-7), it scrolls in its place
+     rather than spilling under the banner and the message box. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .message {
@@ -510,21 +514,32 @@
 :global([data-theme='dark']) .shiki :global(.shiki span) {
   color: var(--shiki-dark) !important;
 }
-.copyCode {
+.codeTools {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.codeBlock:hover .codeTools,
+.codeTools:focus-within {
+  opacity: 1;
+}
+.copyCode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 1px 7px;
   border-radius: 4px;
   background: var(--bg-raised);
   box-shadow: 0 0 0 0.5px var(--hairline-strong);
   color: var(--text-2);
   font-size: 0.82rem;
-  opacity: 0;
-  transition: opacity var(--dur-fast);
 }
-.codeBlock:hover .copyCode {
-  opacity: 1;
+.copyCode:hover {
+  color: var(--text);
 }
 .tableWrap {
   max-width: 100%;

@@ -3,6 +3,7 @@ import { autoContinueFor, limitResumeAt } from '../../shared/auto-continue.js';
 import { decodeFailure } from '../../shared/run-failure.js';
 import { planById } from '../plans/model.js';
 import { planConversations } from '../plans/owner.js';
+import { chatsWithThreadsWorking } from '../threads/model.js';
 import { type ChatTriage, type HandSource, type TriageFacts, type TriageSource, handRaisedOf, triageKey } from './model.js';
 
 /**
@@ -10,7 +11,7 @@ import { type ChatTriage, type HandSource, type TriageFacts, type TriageSource, 
  * `ws:<id>`, or `plan:<id>`, which stands for all the plan's conversations. Browser-safe.
  */
 
-export type FactSource = Pick<DomainState, 'log' | 'approvals' | 'questions' | 'claudeCode' | 'plans' | 'board' | 'prefs'>;
+export type FactSource = Pick<DomainState, 'log' | 'projects' | 'approvals' | 'questions' | 'claudeCode' | 'plans' | 'board' | 'prefs'>;
 
 interface RunFacts {
   readonly running: boolean;
@@ -45,8 +46,9 @@ export function handSourceOf(state: FactSource, key: string): HandSource {
   };
 }
 
+/** A chat works while its own turn runs, a thread under it works, or a Claude Code session there does. */
 export function workingIn(state: FactSource, key: string): boolean {
-  return channelsOf(state, key).some((c) => runsOf(state.log).get(c)?.running || state.claudeCode.sessions.some((x) => !x.own && `ws:${x.workspaceId}` === c && x.status === 'working'));
+  return channelsOf(state, key).some((c) => runsOf(state.log).get(c)?.running || chatsWithThreadsWorking(state).has(c) || state.claudeCode.sessions.some((x) => !x.own && `ws:${x.workspaceId}` === c && x.status === 'working'));
 }
 
 export function triageFacts(state: FactSource & Pick<DomainState, 'triage'>, key: string): TriageFacts {

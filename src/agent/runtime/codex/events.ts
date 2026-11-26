@@ -51,13 +51,13 @@ export function toolCallOf(item: ThreadItem, cwd: string): { readonly name: stri
 }
 
 /** What a finished tool call gave back, as a tool_result's content, and whether it failed. */
-export function toolResultOf(item: ThreadItem): { readonly content: unknown; readonly isError: boolean } {
+export function toolResultOf(item: ThreadItem): { readonly content: unknown; readonly isError: boolean; readonly exitCode?: number } {
   switch (item.type) {
     case 'commandExecution': {
       const it = item as Extract<ThreadItem, { type: 'commandExecution' }>;
       const failed = it.status === 'failed' || it.status === 'declined' || (it.exitCode !== null && it.exitCode !== 0);
       const out = it.aggregatedOutput ?? '';
-      return { content: it.status === 'declined' ? out || 'Declined.' : it.exitCode && !out ? `Exited with code ${it.exitCode}` : out, isError: failed };
+      return { content: it.status === 'declined' ? out || 'Declined.' : it.exitCode && !out ? `Exited with code ${it.exitCode}` : out, isError: failed, ...(typeof it.exitCode === 'number' ? { exitCode: it.exitCode } : {}) };
     }
     case 'fileChange': {
       const it = item as Extract<ThreadItem, { type: 'fileChange' }>;
@@ -81,9 +81,22 @@ export function unwrapShell(command: string): string {
   return m ? m[2]! : command;
 }
 
-/** Tokens a turn used, in the shape Beluga's usage events carry (Claude's usageOf). */
-export function usageEvent(last: TokenUsageBreakdown, session: string): string {
-  return JSON.stringify({ input: Math.max(0, last.inputTokens - last.cachedInputTokens), output: last.outputTokens, cacheRead: last.cachedInputTokens, cacheWrite: 0, cost: 0, session });
+/**
+ * Tokens a turn used, in the shape Beluga's usage events carry (Claude's usageOf). Codex reports no
+ * cost (0: not known). For usage statistics only: the tokens it spent reasoning (part of `output`)
+ * and how many times the turn compacted the conversation.
+ */
+export function usageEvent(last: TokenUsageBreakdown, session: string, more: { readonly compactions?: number } = {}): string {
+  return JSON.stringify({
+    input: Math.max(0, last.inputTokens - last.cachedInputTokens),
+    output: last.outputTokens,
+    cacheRead: last.cachedInputTokens,
+    cacheWrite: 0,
+    cost: 0,
+    session,
+    ...(last.reasoningOutputTokens > 0 ? { thinking: last.reasoningOutputTokens } : {}),
+    ...(more.compactions ? { compactions: more.compactions } : {}),
+  });
 }
 
 /**
@@ -92,10 +105,26 @@ export function usageEvent(last: TokenUsageBreakdown, session: string): string {
  * model's window, as Codex reported it (else Beluga's guess for `model`). Undefined: nothing used yet.
  */
 export function contextEvent(usage: ThreadTokenUsage | undefined, model?: string): string | undefined {
-  const used = usage?.last ? usage.last.totalTokens || usage.last.inputTokens + usage.last.outputTokens : 0;
+  const used = usedOf(usage);
   if (!(used > 0)) return undefined;
   const window = contextWindowFor(model, usage?.modelContextWindow ?? undefined);
   return JSON.stringify({ used, window, ...(model ? { model } : {}) });
+}
+
+/** What's in the window after the last response, as Codex counts it (0: nothing yet). */
+export function usedOf(usage: ThreadTokenUsage | undefined): number {
+  return usage?.last ? usage.last.totalTokens || usage.last.inputTokens + usage.last.outputTokens : 0;
+}
+
+/**
+ * The divider's event for a compaction (as ContextReport sends Claude's): how full the window was
+ * before and after. `post` is Codex's first count after it (it counts the new history right away);
+ * none came: unknown, left out. `trigger`: Beluga asked (manual) or Codex did it by itself (auto).
+ */
+export function compactEvent(pre: number, after: ThreadTokenUsage | undefined, trigger: 'manual' | 'auto', model?: string): string {
+  const post = usedOf(after);
+  const window = after ? contextWindowFor(model, after.modelContextWindow ?? undefined) : undefined;
+  return JSON.stringify({ pre, ...(after && post > 0 ? { post } : {}), trigger, ...(window ? { window } : {}) });
 }
 
 /** Follows one run's notifications: events and steps to the current turn's sink. */
@@ -109,6 +138,18 @@ export class CodexEvents {
   /** The agent's messages this turn, in order: the last is its answer. */
   private texts: string[] = [];
   private usage?: TokenUsageBreakdown;
+  /**
+   * Compactions this turn, as Codex says them: a contextCompaction item and, still, the deprecated
+   * thread/compacted for the same one (either alone on another version). The turn's count is the larger.
+   */
+  private compactItems = 0;
+  private compactNotes = 0;
+  /** A compaction waiting for Codex's next count (its divider's "after"): how full it was before. */
+  private compactedFrom?: number;
+  /** Beluga asked for this compaction (/compact): its divider says manual, else Codex did it (auto). */
+  private compactAsked = false;
+  /** What's in the window as Codex last counted it (across turns: a compaction's "before"). */
+  private used = 0;
   lastEventAt = Date.now();
   thinking = false;
 
@@ -121,6 +162,8 @@ export class CodexEvents {
       readonly now?: () => number;
       /** Each token update (the context meter). */
       readonly onTokens?: (usage: ThreadTokenUsage) => void;
+      /** The model the thread runs on (a divider's window when Codex didn't say it). */
+      readonly model?: () => string | undefined;
       /** Codex's sub-agents (subagents.ts): sees each notification first; what it takes is theirs, not the lead's. */
       readonly subAgents?: { handle(method: string, params: Record<string, unknown>): boolean };
     } = {},
@@ -134,15 +177,46 @@ export class CodexEvents {
     this.sink = sink;
     this.texts = [];
     this.usage = undefined;
+    this.compactItems = 0;
+    this.compactNotes = 0;
+    this.compactedFrom = undefined;
+    this.compactAsked = false;
     this.recorder.begin();
   }
 
-  /** What the turn said last (its answer), and the tokens it used. Steps it left open end with it. */
-  endTurn(completed = true): { readonly text: string; readonly usage?: TokenUsageBreakdown } {
+  /** This turn is a compaction Beluga asked for (thread/compact/start): its divider comes when it's done. */
+  compactionAsked(): void {
+    this.compactAsked = true;
+    this.compactedFrom = this.used;
+  }
+
+  /** What the turn said last (its answer), the tokens it used and how often it compacted. Steps it left open end with it. */
+  endTurn(completed = true): { readonly text: string; readonly usage?: TokenUsageBreakdown; readonly compactions: number } {
     this.recorder.finish(!completed);
     this.tools.clear();
     this.thinking = false;
-    return { text: this.texts.at(-1) ?? '', ...(this.usage ? { usage: this.usage } : {}) };
+    const compactions = Math.max(this.compactItems, this.compactNotes);
+    // No count came after it: the divider without its "after". One asked for that never happened (stopped, failed): none.
+    if (completed || compactions > 0) this.compacted(undefined);
+    this.compactedFrom = undefined;
+    this.compactAsked = false;
+    return { text: this.texts.at(-1) ?? '', ...(this.usage ? { usage: this.usage } : {}), compactions };
+  }
+
+  /** Codex said it compacted (`item`: its contextCompaction item; else thread/compacted): only one of a pair waits for the count. */
+  private compaction(item: boolean): void {
+    if (item) this.compactItems++;
+    else this.compactNotes++;
+    const unpaired = item ? this.compactItems > this.compactNotes : this.compactNotes > this.compactItems;
+    if (unpaired) this.compactedFrom ??= this.used;
+  }
+
+  /** A compaction waiting for its count: its divider, with `after` (Codex's count of the new history) when it came. */
+  private compacted(after: ThreadTokenUsage | undefined): void {
+    if (this.compactedFrom === undefined) return;
+    const pre = this.compactedFrom;
+    this.compactedFrom = undefined;
+    this.sink.onEvent('compact', compactEvent(pre, after, this.compactAsked ? 'manual' : 'auto', this.opts.model?.()));
   }
 
   /** The run ended: steps still open end with it. */
@@ -160,9 +234,14 @@ export class CodexEvents {
     if (method === 'thread/tokenUsage/updated') {
       const tokens = params.tokenUsage as ThreadTokenUsage | undefined;
       this.usage = tokens?.last;
-      if (tokens) this.opts.onTokens?.(tokens);
+      if (tokens) {
+        this.compacted(tokens);
+        this.used = usedOf(tokens) || this.used;
+        this.opts.onTokens?.(tokens);
+      }
     }
-    if (method === 'thread/compacted') this.sink.onEvent('progress', 'Compacted the conversation');
+    // Compacted (asked for, or by itself when the window filled): a divider in the chat, as Claude's.
+    if (method === 'thread/compacted') this.compaction(false);
     if (method === 'error' && params.willRetry) this.sink.onEvent('progress', 'Codex is retrying');
   }
 
@@ -175,11 +254,12 @@ export class CodexEvents {
     const label = summarizeTool(call.name, call.input, this.cwd);
     this.tools.set(item.id, { label: call.name === 'Bash' ? String(call.input.command).split('\n')[0]!.slice(0, 80) : label, since: Date.now() });
     this.sink.onEvent('tool', label);
-    this.recorder.observe({ type: 'assistant', message: { content: [{ type: 'tool_use', id: item.id, name: call.name, input: call.input }] } });
+    this.recorder.observe({ type: 'assistant', message: { content: [{ type: 'tool_use', id: item.id, name: call.name, input: call.input, native: item.type }] } });
   }
 
   private completed(item: ThreadItem): void {
     if (!item?.id) return;
+    if (item.type === 'contextCompaction') return this.compaction(true);
     if (item.type === 'agentMessage') {
       const text = (item as Extract<ThreadItem, { type: 'agentMessage' }>).text.trim();
       if (!text) return;
@@ -201,8 +281,8 @@ export class CodexEvents {
     // An item that only completes (no started first) still gets its step.
     if (!this.tools.has(item.id)) this.started(item);
     this.tools.delete(item.id);
-    const { content, isError } = toolResultOf(item);
-    this.recorder.observe({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: item.id, content, is_error: isError }] } });
+    const { content, isError, exitCode } = toolResultOf(item);
+    this.recorder.observe({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: item.id, content, is_error: isError, ...(exitCode !== undefined ? { exit_code: exitCode } : {}) }] } });
     if (!this.tools.size) this.sink.onEvent('progress', '');
   }
 }

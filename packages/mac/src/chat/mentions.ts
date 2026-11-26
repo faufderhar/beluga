@@ -9,8 +9,8 @@ import { type TaskMention, taskByKey } from '../../../../src/shared/task-refs.js
  * conversation) and does something when clicked; anything else stays text. Plain data.
  */
 
-/** 'image' only marks "[image N]" in the message box (an image waiting to be sent), 'worktree' a pasted "worktree:wt-…" (BLG-878). */
-export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'chat' | 'image' | 'worktree';
+/** 'image' only marks "[image N]" in the message box (an image waiting to be sent), 'worktree' a pasted "worktree:wt-…" (BLG-878), 'key' a `$NAME` this chat keeps (BLG-965). */
+export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'chat' | 'image' | 'worktree' | 'key';
 
 export interface MentionRef {
   readonly kind: MentionKind;

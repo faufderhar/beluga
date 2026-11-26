@@ -179,4 +179,10 @@ describe.skipIf(!EXT)('built with Tailwind, Vue and Svelte (BELUGA_PREVIEW_EXT)'
     expect(out.component?.framework).toBe('svelte');
     expect(out.props).toMatchObject({ label: expect.any(String) });
   });
+
+  it('builds a SvelteKit component that uses $app and $lib (#641)', async () => {
+    const out = await manager.open(EXT!, { target: { kind: 'component', file: 'src/KitNav.svelte' } });
+    if (!out.ok) throw new Error(`${out.title}\n${out.forClaude}`);
+    expect(out.component?.framework).toBe('svelte');
+  });
 });

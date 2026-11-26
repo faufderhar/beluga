@@ -24,6 +24,8 @@ export interface MainLine {
   readonly elsewhere?: string;
   /** Update main can do something: new commits on the remote (or the branch only exists there). */
   readonly canUpdate?: boolean;
+  /** Push main can do something: commits of its own the remote doesn't have (Straight to main's). */
+  readonly canPush?: boolean;
 }
 
 export interface HomeModel {
@@ -43,6 +45,15 @@ export interface HomeModel {
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
+ * main against origin in plain words: commits of its own are "not pushed" (Straight to main puts
+ * them there, and Push main sends them), new ones there are "behind".
+ */
+function aheadBehind(ahead: number, behind: number, up: string): string {
+  if (ahead && behind) return `${plural(ahead, 'commit')} not pushed · ${behind} behind ${up}`;
+  return ahead ? `${plural(ahead, 'commit')} not pushed to ${up}` : `${behind} behind ${up}`;
+}
+
+/**
  * How the project's default branch (main or master) compares with its remote, as of the last
  * fetch, and where the main folder is when it's on another branch.
  */
@@ -54,8 +65,7 @@ export function defaultLineOf(sync: ProjectSync): MainLine {
   if (!up) return { label: 'Not tracking a remote branch', tone: 'muted', ...extra };
   if (!sync.local) return { label: `Only on ${up} so far`, tone: 'info', canUpdate: true, ...extra };
   if (!sync.ahead && !sync.behind) return { label: `Up to date with ${up}`, tone: 'ok', ...extra };
-  const label = sync.ahead && sync.behind ? `${sync.ahead} ahead, ${sync.behind} behind ${up}` : sync.ahead ? `${sync.ahead} ahead of ${up}` : `${sync.behind} behind ${up}`;
-  return { label, tone: sync.ahead ? 'warn' : 'info', ...(sync.behind ? { canUpdate: true } : {}), ...extra };
+  return { label: aheadBehind(sync.ahead, sync.behind, up), tone: 'info', ...(sync.behind ? { canUpdate: true } : {}), ...(sync.ahead ? { canPush: true } : {}), ...extra };
 }
 
 /** How the main checkout compares with the branch it tracks (as of the last fetch). */
@@ -68,9 +78,7 @@ export function mainLineOf(main: Workspace | undefined, sync?: ProjectSync): Mai
   if (!st) return { label: 'Main folder', tone: 'muted', ...extra };
   if (!up) return { label: 'Not tracking a remote branch', tone: 'muted', ...extra };
   if (!up.ahead && !up.behind) return { label: `Up to date with ${up.name}`, tone: 'ok', ...extra };
-  const label = up.ahead && up.behind ? `${up.ahead} ahead, ${up.behind} behind ${up.name}` : up.ahead ? `${up.ahead} ahead of ${up.name}` : `${up.behind} behind ${up.name}`;
-  // Commits on main that aren't on origin are unusual here (work happens in worktrees): worth a look.
-  return { label, tone: up.ahead ? 'warn' : 'info', ...extra };
+  return { label: aheadBehind(up.ahead, up.behind, up.name), tone: 'info', ...extra };
 }
 
 /** When something last happened in a workspace: its last message, else when it was made. */

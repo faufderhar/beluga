@@ -85,6 +85,17 @@ test('a chain at the hop limit asks you, one time, and Stop answers it', async (
   await expect(card).toContainText('Agents sent');
   await expect(card.getByRole('button', { name: 'Continue' })).toBeVisible();
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/04-question.png` });
+  // The other chat never offers its Continue / Stop: one line names the chat waiting, and opens it (BLG-966).
+  const other = named.find((w) => w !== at && named.indexOf(w) < 2)!;
+  await openChat(page, other.name);
+  await expect(card).toHaveCount(0);
+  const line = page.getByTestId('waiting-elsewhere');
+  await expect(line).toContainText(`${at.name}`);
+  await expect(line).toContainText('Waiting for you in');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/05-waiting-elsewhere.png` });
+  await line.getByRole('button', { name: 'Open Chat' }).click();
+  await expect(box(page)).toHaveAttribute('placeholder', new RegExp(at.name));
+  await expect(line).toHaveCount(0);
   await card.getByRole('button', { name: 'Stop' }).click();
   await expect(card).toHaveCount(0);
 });

@@ -1,8 +1,10 @@
 import type { BoardState } from '../../../../src/core/board/model.js';
 import type { Actor } from '../../../../src/core/board/model.js';
-import { AUTONOMY_INFO, type Autonomy, type Plan, type PlanBody, type PlanEvent, type PlanPr, type PlansState, diffBodies, milestoneDeps, planTitle, reviewState, shownBody } from '../../../../src/core/plans/model.js';
+import { AUTONOMY_INFO, type Autonomy, type Plan, type PlanBody, type PlanEvent, type PlanPr, type PlansState, diffBodies, milestoneDeps, planTitle, reviewState, shownBody, startsByItself } from '../../../../src/core/plans/model.js';
 import { type MilestoneState, type MilestoneView, type NextStep, type PlanView, type TaskState, type TaskView, agentNowWords } from '../../../../src/core/plans/progress.js';
 import { pulseWords } from '../../../../src/core/plans/watchdog.js';
+import { taskTimes } from '../../../../src/core/plans/times.js';
+import { ago } from '../tasks/tasks-model.js';
 
 /**
  * The Plans screens' pure parts (no DOM): words and tones for states, what a plan waits for as a
@@ -88,7 +90,15 @@ export function planStatus(view: Pick<PlanView, 'plan' | 'next'>): { readonly la
  */
 export function taskWords(t: TaskView, now: number): { readonly label: string; readonly tone: Tone; readonly sub?: string } {
   const base = TASK_STATE[t.state];
-  if (!t.pulse || t.combining) return { ...base, ...(t.state === 'running' && t.step ? { sub: t.step } : t.state === 'blocked' || t.state === 'later' ? (t.why ? { sub: t.why } : {}) : {}) };
+  if (!t.pulse || t.combining) {
+    const said = t.state === 'running' && t.step ? t.step : t.state === 'blocked' || t.state === 'later' ? t.why : undefined;
+    // Every task on the board says when it last changed, not only the ones at work now.
+    // `now` 0: the caller has no clock (a label only): no time rather than a wrong "just now".
+    const at = t.issue && t.state !== 'later' && now > 0 ? taskTimes(t.issue) : undefined;
+    const when = at ? `Updated ${ago(at.updated, now)}` : undefined;
+    const sub = [said, when].filter(Boolean).join(' · ');
+    return { ...base, ...(sub ? { sub } : {}) };
+  }
   const w = pulseWords(t.pulse, now);
   // Woken: the card says so while it works again.
   const sub = t.watch && !t.watch.needsYou && t.pulse.kind !== 'stopped' && t.pulse.kind !== 'waiting' ? `${w.sub ?? ''}${w.sub ? ' · ' : ''}${t.watch.line}` : w.sub;
@@ -310,6 +320,7 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
     case 'ready':
       if (t.forYou) return { who: 'you', text: 'Yours: answer it in the plan’s conversation (no worktree)' };
       if (t.queued) return { who: 'claude', text: 'Next for this milestone’s agent, in its worktree' };
+      if (m.autonomy !== 'step' && view.plan.held) return { who: 'you', text: 'Ready: press Start, then the plan runs by itself' };
       return m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':
@@ -328,7 +339,7 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   const others = m.tasks.filter((x) => x !== t && !['review', 'done', 'canceled', 'missing', 'planned'].includes(x.state)).length;
   if (m.state === 'running') return { who: 'beluga', text: `Done. Waiting for ${count(others, 'other task')} of ${quoted(m)}, then the milestone check; ${into}` };
   if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return { who: 'claude', text: `Done. The agent is checking ${quoted(m)}; ${into}` };
-  if (m.state === 'gate') return m.autonomy === 'autopilot' ? { who: 'beluga', text: `Done. ${quoted(m)} passes by itself; ${into}` } : { who: 'you', text: `Done. Pass ${quoted(m)} in the plan; ${into}` };
+  if (m.state === 'gate') return m.autonomy === 'autopilot' && !view.plan.held ? { who: 'beluga', text: `Done. ${quoted(m)} passes by itself; ${into}` } : { who: 'you', text: `Done. Pass ${quoted(m)} in the plan; ${into}` };
   if (m.state === 'failed') return { who: 'you', text: `Done, but ${quoted(m)} didn’t pass the agent’s check` };
   return { who: 'beluga', text: `Done. Waiting for the milestone check; ${into}` };
 }
@@ -346,11 +357,14 @@ export function modeChange(view: PlanView, to: Autonomy): { readonly title: stri
   }[to];
   const open = view.open;
   const nowBits: string[] = [];
-  if (to === 'autopilot') {
+  // Leaving Step by Step only changes how it runs: nothing starts (or passes) until you press Start.
+  const held = to !== 'step' && (view.plan.held || view.milestones.some((m) => m.autonomy === 'step'));
+  if (to === 'autopilot' && !held) {
     const passing = open.filter((m) => m.state === 'gate' && (m.run.check?.verdict === 'pass' || !m.milestone.criteria.length));
     if (passing.length) nowBits.push(`${passing.map(quoted).join(' and ')} ${passing.length === 1 ? 'passes' : 'pass'} now`);
   }
-  if (to !== 'step') {
+  if (held) nowBits.push('nothing starts until you press Start');
+  else if (to !== 'step') {
     const ready = view.ready.filter((t) => !t.forYou).length;
     const room = Math.max(0, view.plan.maxParallel - view.active.length);
     const starts = Math.min(ready, room);
@@ -567,7 +581,7 @@ export function startingMilestones(view: Pick<PlanView, 'plan' | 'open'>): reado
   return view.open.filter(
     (m) =>
       m.state === 'running' &&
-      m.autonomy !== 'step' &&
+      startsByItself(view.plan, m.autonomy) &&
       !m.run.agent &&
       m.tasks.some((t) => t.state === 'ready' && !t.forYou && !t.queued) &&
       !m.tasks.some((t) => t.worktree || t.state === 'running' || t.state === 'asking' || t.state === 'idle' || t.state === 'review'),

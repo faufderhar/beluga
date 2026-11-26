@@ -28,12 +28,14 @@ describe('runtime fallbacks', () => {
     expect(fallbackFor('local', 'fork')).toBeUndefined();
   });
 
-  it('greys Compact with its reason on Codex, and leaves it on for Claude', () => {
+  it('leaves Compact on for Codex and Claude, and greys it with its reason on an ACP agent', () => {
     expect(button(stateWith(), ws(), 'compact')?.disabled).toBeUndefined();
-    expect(button(stateWith(), ws({ runtime: 'codex', label: 'Codex' }), 'compact')).toMatchObject({ disabled: true, hint: fallbackFor('codex', 'compact') });
+    expect(fallbackFor('codex', 'compact')).toBeUndefined();
+    expect(button(stateWith(), ws({ runtime: 'codex', label: 'Codex' }), 'compact')?.disabled).toBeUndefined();
     // Your default is Codex and this worktree didn't pick another.
     const codexSelf = { id: 'me', name: 'kay', defaultAgent: { runtime: 'codex', label: 'Codex' } } as unknown as AppState['self'];
-    expect(button(stateWith(codexSelf), ws(), 'compact')?.disabled).toBe(true);
+    expect(button(stateWith(codexSelf), ws(), 'compact')?.disabled).toBeUndefined();
+    expect(button(stateWith(), ws({ runtime: 'cursor', label: 'Cursor' }), 'compact')).toMatchObject({ disabled: true, hint: fallbackFor('cursor', 'compact') });
   });
 
   it("says what a fork on Codex brings along", () => {

@@ -100,7 +100,7 @@ function Header({ issue }: { issue: Issue }) {
   return (
     <>
       <nav className={t.crumbs} aria-label="Where this task is">
-        <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={() => back(boardOf(issue))} />
+        <IconButton size="small" icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={() => back(boardOf(issue))} />
         <button type="button" className={t.crumb} onClick={() => openList(boardOf(issue))}>
           Tasks
         </button>
@@ -119,7 +119,7 @@ function Header({ issue }: { issue: Issue }) {
         <span className={t.grow} />
         <span className={t.pageKey}>{issue.key}</span>
         <ActionsDropdown items={menu(issue).filter((i) => i.label !== 'Open')}>
-          <IconButton icon="more" label="More" />
+          <IconButton size="small" icon="more" label="More" />
         </ActionsDropdown>
       </nav>
       <header className={t.pageHead}>
@@ -551,7 +551,7 @@ function Properties({ issue }: { issue: Issue }) {
                 {parent.key} {parent.title}
               </span>
             </button>
-            <IconButton icon="x" label="Make It a Task of Its Own" onClick={() => void act(() => api.update(issue.id, { parent: null }))} />
+            <IconButton size="small" icon="x" label="Make It a Task of Its Own" onClick={() => void act(() => api.update(issue.id, { parent: null }))} />
           </div>
         ) : (
           <TaskPicker label="Parent" candidates={parents} onPick={(p) => void act(() => api.update(issue.id, { parent: p.id }))} align="end">
@@ -640,7 +640,7 @@ function DuePicker({ issue, late, text }: { issue: Issue; late: boolean; text: s
         <Icon name="calendar" size={12} />
         {issue.due ? `${new Date(`${issue.due}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} · ${text ?? ''}` : 'Set Due Date'}
       </button>
-      {issue.due ? <IconButton icon="x" label="Remove the Due Date" onClick={() => void act(() => api.update(issue.id, { due: null }))} /> : null}
+      {issue.due ? <IconButton size="small" icon="x" label="Remove the Due Date" onClick={() => void act(() => api.update(issue.id, { due: null }))} /> : null}
       <input ref={input} type="date" className={t.dateHidden} tabIndex={-1} aria-hidden="true" value={issue.due ?? ''} onChange={(e) => void act(() => api.update(issue.id, { due: e.target.value || null }))} />
     </div>
   );

@@ -1,3 +1,4 @@
+import { namingFor } from '../../shared/naming.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,6 +29,8 @@ import { PlansWork } from '../plans/work.js';
 import { attachPlans, detachPlans } from '../plans/registry.js';
 import { seedDemoPlan } from '../plans/demo.js';
 import { PlanDecisions } from '../plans/decisions.js';
+import { roleAgent } from '../plans/model.js';
+import { AutopilotStandIn } from '../autopilot/stand-in.js';
 import { launchTeam } from '../team/launch.js';
 import { BRAKE_WINDOW_MS, TeamBoardSync } from '../team/board-sync.js';
 import { TeamAssign } from '../team/assign.js';
@@ -94,7 +97,8 @@ export function launchBoard(host: BoardHost): () => void {
     askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     prPrompt: (ws) => {
       const project = projectOf(ws.projectId);
-      return buildPrPrompt({ branch: ws.branch ?? ws.name, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', ...(project?.scripts?.prPrompt ? { projectPrompt: project.scripts.prPrompt } : {}) });
+      const titleRule = namingFor(store.getState().prefs, project).prTitle?.value;
+      return buildPrPrompt({ branch: ws.branch ?? ws.name, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', ...(project?.scripts?.prPrompt ? { projectPrompt: project.scripts.prPrompt } : {}), ...(titleRule ? { titleRule } : {}) });
     },
   });
   attachIssues(session, issues);
@@ -152,6 +156,16 @@ export function launchBoard(host: BoardHost): () => void {
     askClaude: (prompt, channel) => void session.askOwnClaude(prompt, channel, false, false),
     schedule: () => planWork.pilot.schedule(),
   });
+  // Full Autopilot (BLG-981): a stand-in agent (a plan's planner, else your default) answers what would wait on you.
+  const standIn = new AutopilotStandIn({
+    store,
+    selfId: () => session.selfId,
+    ask: ({ prompt, system, plan }) => session.standIn({ prompt, system }, plan ? roleAgent(plan, 'planner') : undefined),
+    answerQuestion: (qid, answer) => session.questions.answer(qid, answer),
+    answerApproval: (id, answer) => void session.answerApproval(answer, id),
+    approvePlan: (planId) => void planWork.approve(planId),
+    tell: (channel, text) => void session.askOwnClaude(text, channel, false, false),
+  });
   // Team boards: friends on the same GitHub repository keep one board (core/team), once both say yes.
   const stopTeam = launchTeam({
     session,
@@ -201,6 +215,7 @@ export function launchBoard(host: BoardHost): () => void {
     stopSeed();
     stopTeam();
     decisions?.stop();
+    standIn.stop();
     detachPlans(session);
     planWork.stop();
     detachIssues(session);

@@ -3,6 +3,7 @@ import type { ArchivePreview } from '@beluga/workspaces/archive.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import type { EnvChange } from '@beluga/workspaces/env.js';
 import type { DeletePlan } from '@beluga/workspaces/types.js';
+import { archiveOptionId } from '@beluga/ui/menus.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Alert, Checkbox } from '../../components/Alert.js';
 import { useApi, useApp } from '../../lib/beluga.js';
@@ -92,6 +93,8 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   const api = useApi();
   const threads = useThreadsChoice(menu.id, menu.action);
   const pick = usePick(threads.children ? { ...menu, children: threads.children } : menu);
+  // Archive Instead picks from the archive menu: the delete menu has no archive options, so picking there did nothing.
+  const pickArchive = usePick({ kind: 'confirm', action: 'archive', id: menu.id, ...(threads.children ? { children: threads.children } : {}) });
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const env = useApp((st) => st.envChanges[menu.id] ?? NO_ENV);
   // Variables set for this worktree alone (BLG-924): carried to the project unless you untick it.
@@ -134,10 +137,11 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   const withEnv = copyEnv && env.length > 0;
   const all = withEnv && removeToo && removed.length ? '-all' : '';
   /** Carry its variables and save in Beluga first (it reads the worktree's files, so before they go), then the option. */
-  const go = (option: string): void => {
+  const go = (option: string, from = pick): void => {
     const first = [...(carry && ownVars.length ? [api.env.carryWorktree(menu.id)] : []), ...(saveEnv && env.length ? [api.workspaces.saveEnvInBeluga(menu.id)] : [])];
-    void Promise.allSettled(first).then(() => pick(option));
+    void Promise.allSettled(first).then(() => from(option));
   };
+  const archiveOption = archiveOptionId(withEnv, Boolean(all));
 
   if (menu.action === 'delete') {
     const worktree = ws.kind === 'worktree' && !ws.external;
@@ -146,7 +150,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
     const asking = lose === undefined;
     // No answer in time: Delete is yours to choose, with Archive (which keeps everything) beside it.
     const late = lose === 'late';
-    const archiveInstead = (): void => go(withEnv ? `confirm-archive-env${all}` : 'confirm-archive');
+    const archiveInstead = (): void => go(archiveOption, pickArchive);
     // Commits pushed nowhere (BLG-617): say how many, and Archive (which keeps them) is the main button.
     if (lose && lose !== 'late') {
       const it = lose.unpushed === 1 ? 'it' : 'them';
@@ -231,7 +235,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
     </>
   );
   // With env changes, "copy them first" goes before whichever way you archive.
-  const archive = (): void => go(withEnv ? `confirm-archive-env${all}` : 'confirm-archive');
+  const archive = (): void => go(archiveOption);
   const commitAndArchive = (): void => {
     if (withEnv) void api.workspaces.applyEnvBack(menu.id, Boolean(all)).then(() => go('confirm-commit-archive'));
     else go('confirm-commit-archive');

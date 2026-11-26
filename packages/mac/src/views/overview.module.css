@@ -119,9 +119,9 @@
 .more {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 24px;
-  border-radius: var(--radius-s);
+  width: var(--control-h-small);
+  height: var(--control-h-small);
+  border-radius: var(--control-radius-small);
   color: var(--text-2);
 }
 .more:hover,
@@ -183,5 +183,56 @@
 @media (prefers-reduced-motion: reduce) {
   .hoverActions {
     transition: none;
+  }
+}
+
+/* Picked to delete together (⌘-click, Shift-click, ⌘A): a soft accent tint, a touch deeper than the focused row's. */
+.row.picked,
+.row.picked:nth-child(odd) {
+  --row-tint: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: var(--row-tint);
+}
+.row.picked:hover {
+  --row-tint: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+/* Picked rows touching one another read as one box, like Finder's. */
+.row.picked:has(+ .row.picked) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.row.picked + .row.picked {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+/* What's picked, and the one thing to do with it: solid, at the bottom while you scroll. */
+.bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 72rem;
+  margin: 12px auto 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.barText {
+  flex: 1;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A phone (BLG-6): a row is its kind, its name and where it stands (the branch, the PR and when are on its page). */
+@media (max-width: 700px) {
+  .row {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    height: 44px;
+  }
+  .row > .branch,
+  .row > .extra,
+  .row > .when {
+    display: none;
   }
 }

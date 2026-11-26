@@ -66,9 +66,9 @@ function labelOf(state: ContextFactsState, runtime: string, modelId: string | un
 }
 
 function compactOf(runtime: string, on: boolean, at: number): Pick<ContextFacts, 'autoCompact' | 'autoCompactTitle' | 'autoCompactMark'> {
-  // A runtime with its own compact (Codex) is left to do that. Beluga's percent is not its threshold.
+  // A runtime without Beluga compact (e.g. a generic ACP agent) is left to do that itself. Beluga's percent is not its threshold.
   if (fallbackFor(runtime, 'compact')) {
-    return { autoCompact: runtime === 'codex' ? 'Codex compacts this chat itself' : 'This agent compacts this chat itself', autoCompactMark: false };
+    return { autoCompact: 'This agent compacts this chat itself', autoCompactMark: false };
   }
   if (runtime === 'grok') {
     if (!on) {

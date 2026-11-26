@@ -187,7 +187,7 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
         </div>
       </header>
       <div className={o.tabs}>
-        <Segmented
+        <Segmented size="small"
           label="Show"
           value={view}
           onChange={setView}

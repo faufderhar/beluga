@@ -164,7 +164,7 @@ export function TasksView() {
             </button>
           </PickMenu>
         ) : null}
-        <Segmented<Scope>
+        <Segmented<Scope> size="small"
           label="Show"
           value={prefs.scope}
           onChange={(scope) => setTasksPrefs({ scope })}
@@ -223,7 +223,7 @@ export function TasksView() {
             </Button>
           ) : null
         ) : (
-          <Segmented<Display>
+          <Segmented<Display> size="small"
             label="Display"
             iconOnly
             value={prefs.display}
@@ -248,7 +248,7 @@ export function TasksView() {
             ...(here.own ? [{ label: 'Delete Board…', icon: 'trash' as const, separate: true, danger: true, onSelect: () => deleteBoard(here.id) }] : []),
           ]}
         >
-          <IconButton icon="more" label="Tasks Options" />
+          <IconButton size="small" icon="more" label="Tasks Options" />
         </ActionsDropdown>
         <Button variant="primary" size="small" icon="plus" className={t.newTask} aria-label="New Task" onClick={() => openSheet({ kind: 'new_task', ...newTask })} title={`New Task${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
           New Task
@@ -265,7 +265,7 @@ export function TasksView() {
             detail={several ? `Tasks here run in ${repos.map((r) => repoName(r)).join(', ')}: each in the repo you pick. Write down what needs doing.` : 'Every new worktree opens a task here, and its pull request moves it along. Or write down what needs doing.'}
             action={
               <EmptyActions>
-                <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_task', ...newTask })}>
+                <Button size="small" variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_task', ...newTask })}>
                   New Task
                 </Button>
               </EmptyActions>

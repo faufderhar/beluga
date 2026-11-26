@@ -80,7 +80,7 @@ export function ProofPreview({ proof, onClose }: { proof: Proof & { path: string
               </>
             )}
             <Dialog.Close asChild>
-              <IconButton icon="x" label="Close" keys="Esc" />
+              <IconButton size="small" icon="x" label="Close" keys="Esc" />
             </Dialog.Close>
           </header>
           <div className={cx(s.body, 'selectable')} tabIndex={0} role="region" aria-label={proof.title} {...{ [SCROLL_ROOT]: '' }}>

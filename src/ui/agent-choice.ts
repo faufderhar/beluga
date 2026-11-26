@@ -1,6 +1,7 @@
 import type { AgentRef } from '../protocol.js';
 import type { RuntimeChoice, RuntimeModel } from '../shared/agent-runtimes.js';
 import { type AgentMark, runtimeMark } from '../shared/agent-marks.js';
+import { modelName } from '../shared/agent-label.js';
 
 /** protocol.ts's CLAUDE_AGENT, repeated so the phone bundles this file without the daemon's protocol (types only from there). */
 // agent-wording: claude (the Claude runtime's own name)
@@ -52,4 +53,17 @@ export function agentForChoice(value: string, runtimes: readonly RuntimeChoice[]
 /** The pop-up value for an agent you chose (undefined: Claude with its default model). */
 export function choiceForAgent(ref: AgentRef | undefined): string {
   return `${ref?.runtime ?? CLAUDE_AGENT.runtime}${SEP}${ref?.model ?? ''}`;
+}
+
+/**
+ * An agent as its pop-up names it ("Claude · Opus 5.5", "Codex"), so a menu that shows who does
+ * a part says what the picker said. A model no longer listed: its id in words ("Claude · Opus").
+ */
+export function agentChoiceLabel(ref: AgentRef | undefined, runtimes: readonly RuntimeChoice[], claudeModels: readonly RuntimeModel[]): string {
+  const r = ref ?? CLAUDE_AGENT;
+  const value = choiceForAgent(r);
+  const known = agentChoices(runtimes, claudeModels).find((o) => o.value === value);
+  if (known) return known.label;
+  const runtime = runtimes.find((x) => x.id === r.runtime)?.label ?? r.label;
+  return r.model ? `${runtime} · ${modelName(r.model)}` : runtime;
 }

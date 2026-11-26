@@ -12,7 +12,7 @@
 //   --skip-build       reuse what the last `npm run app:build` made
 //   --dry-run          build and write latest.json, but don't touch GitHub
 //   --force            release even if GitHub's latest release isn't older
-//   --no-telemetry     release without usage statistics (otherwise it needs BELUGA_TELEMETRY_URL/KEY or ~/.tauri/beluga-telemetry.json)
+//   --no-telemetry     release without usage statistics (otherwise it needs BELUGA_TELEMETRY_URL/KEY/PRODUCT_KEY or ~/.tauri/beluga-telemetry.json)
 //   --ad-hoc           sign the app ad hoc instead of with the "Beluga Self-Signed" certificate
 //                      ($APPLE_SIGNING_IDENTITY picks another); updates then lose Screen Recording
 //   --key <file>       the updater's private key (default ~/.tauri/beluga-updater.key, else
@@ -128,22 +128,25 @@ function signingEnv(opts) {
   return { TAURI_SIGNING_PRIVATE_KEY: readFileSync(key, 'utf8').trim(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password };
 }
 
-/** Where the maintainer keeps the release's usage-statistics config (beside the updater key): { "url", "key" }. */
+/** Where the maintainer keeps the release's usage-statistics config (beside the updater key): { "url", "key", "productKey" }. */
 export const telemetryFile = () => path.join(os.homedir(), '.tauri/beluga-telemetry.json');
 
 /**
- * Usage statistics for the release: BELUGA_TELEMETRY_URL and BELUGA_TELEMETRY_KEY, else the file
- * above. A release without them would quietly stop asking and sending, so it stops here instead,
- * unless --no-telemetry says that's meant.
+ * Usage statistics for the release: BELUGA_TELEMETRY_URL, BELUGA_TELEMETRY_KEY (the agents project)
+ * and BELUGA_TELEMETRY_PRODUCT_KEY (Beluga's own project), else the file above. A release without a
+ * url and key would quietly stop asking and sending, so it stops here instead, unless
+ * --no-telemetry says that's meant. Without a product key, everything goes to the one project.
  */
 export function telemetryEnv(opts, file = telemetryFile()) {
-  if (opts.flags.has('no-telemetry')) return { BELUGA_TELEMETRY_URL: '', BELUGA_TELEMETRY_KEY: '' };
+  if (opts.flags.has('no-telemetry')) return { BELUGA_TELEMETRY_URL: '', BELUGA_TELEMETRY_KEY: '', BELUGA_TELEMETRY_PRODUCT_KEY: '' };
   if (process.env.BELUGA_TELEMETRY_URL && process.env.BELUGA_TELEMETRY_KEY) return {};
-  if (!existsSync(file)) throw new Error(`No usage-statistics config: set BELUGA_TELEMETRY_URL and BELUGA_TELEMETRY_KEY, or put { "url", "key" } in ${file} (a Ratel ingest-only key). --no-telemetry releases without it.`);
-  const { url, key } = JSON.parse(readFileSync(file, 'utf8'));
+  if (!existsSync(file)) throw new Error(`No usage-statistics config: set BELUGA_TELEMETRY_URL, BELUGA_TELEMETRY_KEY and BELUGA_TELEMETRY_PRODUCT_KEY, or put { "url", "key", "productKey" } in ${file} (Ratel ingest-only keys). --no-telemetry releases without it.`);
+  const { url, key, productKey } = JSON.parse(readFileSync(file, 'utf8'));
   if (!url || !key) throw new Error(`${file} needs "url" and "key".`);
-  if (!/^rtl_pub_/.test(key)) console.warn(`Warning: the key in ${file} doesn't look like an ingest-only key (rtl_pub_…). Only ship one that can't read anything.`);
-  return { BELUGA_TELEMETRY_URL: url, BELUGA_TELEMETRY_KEY: key };
+  for (const [name, k] of [['key', key], ['productKey', productKey]])
+    if (k && !/^rtl_pub_/.test(k)) console.warn(`Warning: "${name}" in ${file} doesn't look like an ingest-only key (rtl_pub_…). Only ship one that can't read anything.`);
+  if (!productKey) console.warn(`Warning: no "productKey" in ${file}: Beluga's own statistics go to the agents project too.`);
+  return { BELUGA_TELEMETRY_URL: url, BELUGA_TELEMETRY_KEY: key, BELUGA_TELEMETRY_PRODUCT_KEY: productKey ?? '' };
 }
 
 /** The certificate releases are signed with when $APPLE_SIGNING_IDENTITY doesn't name another. */

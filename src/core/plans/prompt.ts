@@ -1,7 +1,8 @@
 import { type Criterion, criteria, criterionLine } from '../board/criteria.js';
 import { type BoardState, STATUS_INFO, filterIssues } from '../board/model.js';
-import { AUTONOMY_INFO, type Plan, type PlanBody, type ReviewFinding, TESTS_AT_INFO, diffBodies, milestoneDeps, shownBody } from './model.js';
+import { AUTONOMY_INFO, type Plan, type PlanBody, type ReviewFinding, TESTS_AT_INFO, diffBodies, planAutonomy, milestoneDeps, shownBody } from './model.js';
 import { coherenceWarnings } from './coherence.js';
+import { milestoneTimeFacts, planTimeLine, taskTimeFacts } from './times.js';
 import { type MilestoneView, type PlanView, type TaskView, agentTasks, overlaps } from './progress.js';
 
 /**
@@ -171,7 +172,7 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
     'plan_get to see it. Nothing of the plan reaches the task board until the user approves the plan; you can\'t approve it yourself.',
     'The board tools (mcp__beluga_board__*) are for work outside this plan. Use them to read the board, or when the user asks for a separate task.',
     'Put work that belongs to this plan in the plan. Do not open tasks unasked here.',
-    plan.body && plan.autonomy === 'autopilot' ? 'This plan runs on autopilot: changes you make to it now apply at once and can start work, so change only what the plan needs.' : '',
+    plan.body && planAutonomy(plan) === 'autopilot' ? 'This plan runs on autopilot: changes you make to it now apply at once and can start work, so change only what the plan needs.' : '',
     'This conversation is the plan\'s own: don\'t move it to a worktree. You can change files here when it\'s quick and the',
     'user asks (a note, a config value); real code changes are the plan\'s tasks, each in its own worktree.',
     body?.milestones.length ? 'The plan already has content: revise it with plan_update unless the user wants it rewritten.' : 'The plan is empty: understand what the user wants (ask only what you can\'t find out), read the code, then plan_write.',
@@ -231,9 +232,11 @@ export function headBrief(view: PlanView): string {
     '  unless the plan runs on autopilot.',
     `Tests: ${TESTS_AT_INFO[plan.testsAt].hint.toLowerCase()}. Don't ask a task to run the full suite.`,
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
-    (m?.autonomy ?? plan.autonomy) === 'autopilot'
-      ? 'The plan runs on Autopilot: never end a turn waiting for the user to say how to go on. Decide, act with your tools and say in a line what you did; only a task assigned to the user, a secret or an account needs them.'
-      : '',
+    plan.fullAuto
+      ? 'The plan runs on Full Autopilot: nobody is watching. Never end a turn waiting for the user; decide, act with your tools and say in a line what you did. A question you do ask is answered by a stand-in agent for the user, from the plan; only a secret or an account still needs the user.'
+      : (m?.autonomy ?? plan.autonomy) === 'autopilot'
+        ? 'The plan runs on Autopilot: never end a turn waiting for the user to say how to go on. Decide, act with your tools and say in a line what you did; only a task assigned to the user, a secret or an account needs them.'
+        : '',
     'Each milestone is checked by a checker of its own (a separate Claude): its verdict comes to you here, and a failed one with what to fix.',
     WAIT_IN_TURN,
     now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
@@ -244,13 +247,17 @@ export function headBrief(view: PlanView): string {
     .join('\n');
 }
 
-/** A plan as plan_get shows it: milestones, tasks with ids and states, and what changed if a draft waits. */
-export function describePlan(view: PlanView): string {
+/**
+ * A plan as plan_get shows it: milestones, tasks with ids and states, and what changed if a draft
+ * waits; with when each thing happened (UTC, and how long ago from `now`), so a stuck task reads
+ * differently from one that just started and two read-backs can be put in order.
+ */
+export function describePlan(view: PlanView, now = Date.now()): string {
   const plan = view.plan;
   const body = shownBody(plan);
   if (!body) return 'The plan is empty.';
   const live = new Map(view.milestones.flatMap((m) => m.tasks.map((t) => [t.task.id, t] as const)));
-  const lines = [`# ${body.title}`, body.goal ? `\n${body.goal}` : '', `\nStatus: ${plan.status}${plan.paused ? ' (paused)' : ''} · autonomy ${plan.autonomy} · up to ${plan.maxParallel} milestones at work at once · tests ${plan.testsAt === 'end' ? 'only at the end' : 'each milestone'}`];
+  const lines = [`# ${body.title}`, body.goal ? `\n${body.goal}` : '', `\nStatus: ${plan.status}${plan.paused ? ' (paused)' : ''} · autonomy ${plan.autonomy} · up to ${plan.maxParallel} milestones at work at once · tests ${plan.testsAt === 'end' ? 'only at the end' : 'each milestone'}`, planTimeLine(plan, now)];
   if (plan.draft && plan.body) {
     const d = diffBodies(plan.body, plan.draft);
     lines.push(`Changes waiting for the user's approval: ${d.added.length} new, ${d.changed.length} changed, ${d.removed.length} removed (shown below as proposed).`);
@@ -262,6 +269,8 @@ export function describePlan(view: PlanView): string {
     const mv = view.milestones.find((x) => x.milestone.id === m.id);
     lines.push('', `## ${i + 1}. ${m.title} [id ${m.id}]${mv && plan.body ? ` — ${MILESTONE_WORDS[mv.state]}` : ''}${m.autonomy ? ` · ${m.autonomy}` : ''}`);
     lines.push(runsWith(body, m.id, titleOf));
+    const when = plan.body ? milestoneTimeFacts(mv?.run, now) : [];
+    if (when.length) lines.push(`Times: ${when.join(' · ')}`);
     if (m.goal) lines.push(m.goal);
     if (m.criteria.length) lines.push('Pass criteria:', ...m.criteria.map((c) => `- ${c}`));
     if (mv?.run.check) lines.push(`Last check (${mv.run.check.verdict}): ${mv.run.check.notes.slice(0, 600)}`);
@@ -270,6 +279,7 @@ export function describePlan(view: PlanView): string {
       const facts = [
         tv ? STATE_WORDS[tv.state] : undefined,
         tv?.issue?.key,
+        ...(tv ? taskTimeFacts(tv.issue, tv.pulse, now) : []),
         t.estimate ? `${t.estimate} pts` : undefined,
         t.blockedBy.length ? `waits on ${t.blockedBy.join(', ')}` : undefined,
         t.parent ? `sub-task of ${t.parent}` : undefined,

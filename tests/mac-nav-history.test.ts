@@ -21,7 +21,7 @@ import { type AliveState, pageAlive, restorePatch } from '../packages/mac/src/li
 
 /** Back and forward between pages (Mac): a browser's history, with each page's panels kept. */
 
-const PANELS: PanelSnapshot = { sidebar: true, inspector: true, bottomOpen: true, drawer: false, topTab: 'info', bottomTab: 'terminal' };
+const PANELS: PanelSnapshot = { sidebar: true, inspector: true, bottomOpen: true, drawer: false, shown: ['terminal', 'info'] };
 const ws = (id: string): View => ({ kind: 'workspace', id, tab: 'chat' });
 const at = (view: View, panels: Partial<PanelSnapshot> = {}): NavEntry => ({ view, panels: { ...PANELS, ...panels } });
 const overview: View = { kind: 'overview' };
@@ -73,9 +73,9 @@ describe('going somewhere', () => {
   });
 
   it('a new page puts the one you left (and its panels) on the back stack', () => {
-    const h = visit(visit(EMPTY_HISTORY, at(overview, { topTab: 'scratch' })), at(tasks));
+    const h = visit(visit(EMPTY_HISTORY, at(overview, { shown: ['scratch'] })), at(tasks));
     expect(kinds(h.back)).toEqual([pageKey(overview)]);
-    expect(h.back[0]!.panels.topTab).toBe('scratch');
+    expect(h.back[0]!.panels.shown).toEqual(['scratch']);
     expect(h.current?.view).toEqual(tasks);
     expect(canGoBack(h, alive)).toBe(true);
   });
@@ -170,14 +170,14 @@ describe('back and forward', () => {
   });
 
   it('a page’s panels are what it had when you left it, and come back with it', () => {
-    const h = walk(at(overview, { sidebar: false, topTab: 'scratch' }), at(ws('w1'), { inspector: true, topTab: 'info' }));
-    const b = goBack(h, alive, { ...PANELS, inspector: false, topTab: 'files', drawer: true });
-    expect(b.to?.panels).toMatchObject({ sidebar: false, topTab: 'scratch' });
+    const h = walk(at(overview, { sidebar: false, shown: ['scratch'] }), at(ws('w1'), { inspector: true, shown: ['info'] }));
+    const b = goBack(h, alive, { ...PANELS, inspector: false, shown: ['files'], drawer: true });
+    expect(b.to?.panels).toMatchObject({ sidebar: false, shown: ['scratch'] });
     // What w1 had when you left it (not what it had when you first came).
-    expect(b.history.forward[0]!.panels).toMatchObject({ inspector: false, topTab: 'files', drawer: true });
-    const f = goForward(b.history, alive, { ...PANELS, sidebar: true, bottomTab: 'background' });
-    expect(f.to?.panels).toMatchObject({ inspector: false, topTab: 'files', drawer: true });
-    expect(f.history.back[0]!.panels).toMatchObject({ sidebar: true, bottomTab: 'background' });
+    expect(b.history.forward[0]!.panels).toMatchObject({ inspector: false, shown: ['files'], drawer: true });
+    const f = goForward(b.history, alive, { ...PANELS, sidebar: true, shown: ['background'] });
+    expect(f.to?.panels).toMatchObject({ inspector: false, shown: ['files'], drawer: true });
+    expect(f.history.back[0]!.panels).toMatchObject({ sidebar: true, shown: ['background'] });
   });
 
   it('updateCurrent keeps the page’s latest panels (the same history when nothing changed)', () => {
@@ -321,29 +321,29 @@ describe('whether a page is still there', () => {
 });
 
 describe('putting a page’s panels back', () => {
-  const prefs = { sidebar: true, inspector: true, bottomOpen: true, drawer: false, panelTabs: { 'ws:other': 'files' as const, app: 'info' as const } };
+  const prefs = { sidebar: true, inspector: true, bottomOpen: true, drawer: false, panelShown: { 'ws:other': ['files' as const], app: ['info' as const] } };
 
   it('the sidebar, the panel, its bottom pane, the drawer and the tabs (scratch, info…) for that page', () => {
-    const patch = restorePatch(prefs, ws('w1'), { sidebar: false, inspector: false, bottomOpen: false, drawer: true, topTab: 'scratch', bottomTab: 'background' });
+    const patch = restorePatch(prefs, ws('w1'), { sidebar: false, inspector: false, bottomOpen: false, drawer: true, shown: ['background', 'scratch'] });
     expect(patch).toEqual({
       sidebar: false,
       inspector: false,
       bottomOpen: false,
       drawer: true,
-      panelTabs: { 'ws:other': 'files', app: 'info', 'ws:w1': 'scratch', 'ws:w1|bottom': 'background' },
+      panelShown: { 'ws:other': ['files'], app: ['info'], 'ws:w1': ['background', 'scratch'] },
     });
     // Nothing written into the prefs it was given.
-    expect(prefs.panelTabs).toEqual({ 'ws:other': 'files', app: 'info' });
+    expect(prefs.panelShown).toEqual({ 'ws:other': ['files'], app: ['info'] });
   });
 
   it('a page without a panel or a drawer leaves those as they are', () => {
     // Tasks has the whole window (no panel), but the drawer under it.
-    const patch = restorePatch(prefs, tasks, { sidebar: false, inspector: false, bottomOpen: false, drawer: true, topTab: 'scratch' });
+    const patch = restorePatch(prefs, tasks, { sidebar: false, inspector: false, bottomOpen: false, drawer: true, shown: ['scratch'] });
     expect(patch).toEqual({ sidebar: false, drawer: true });
     expect(restorePatch(prefs, { kind: 'terminal' }, { ...PANELS, drawer: true })).not.toHaveProperty('drawer');
   });
 
   it('nothing to change, nothing in the patch', () => {
-    expect(restorePatch(prefs, overview, { sidebar: true, inspector: true, bottomOpen: true, drawer: false, topTab: 'info' })).toEqual({});
+    expect(restorePatch(prefs, overview, { sidebar: true, inspector: true, bottomOpen: true, drawer: false, shown: ['info'] })).toEqual({});
   });
 });

@@ -109,7 +109,7 @@ function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: str
   }, [sessionId, agentId, item.path, item.mtime]);
   const { name, dir } = placeOf(item.path, places);
   const openIt = (
-    <Button icon="external" onClick={() => void openWithDefaultApp(client, item.path)}>
+    <Button size="small" icon="external" onClick={() => void openWithDefaultApp(client, item.path)}>
       Open With Its App
     </Button>
   );
@@ -125,9 +125,9 @@ function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: str
           {howLabel(item.how)} · {timeAgo(item.mtime, Math.max(now, Date.now()))}
         </span>
         <span className={s.flex} />
-        <IconButton icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, item.path)} />
-        <IconButton icon="folder" label={revealFile} onClick={() => void revealInFinder(client, item.path)} />
-        <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
+        <IconButton size="small" icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, item.path)} />
+        <IconButton size="small" icon="folder" label={revealFile} onClick={() => void revealInFinder(client, item.path)} />
+        <IconButton size="small" icon="x" label="Close" keys="Esc" onClick={onClose} />
       </div>
       {dir ? <div className={cx(s.previewPath, 'selectable')} title={item.path}>{dir}</div> : null}
       <div className={cx(s.previewBody, 'selectable')} tabIndex={0}>
@@ -145,7 +145,7 @@ function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: str
             detail={`${formatBytes(item.size)}. Open it with its app to look at it.`}
             action={
               <EmptyActions>
-                <Button icon="external" onClick={() => void openWithDefaultApp(client, item.path)}>
+                <Button size="small" icon="external" onClick={() => void openWithDefaultApp(client, item.path)}>
                   Open With Its App
                 </Button>
               </EmptyActions>
@@ -212,7 +212,7 @@ export function AgentOutputs({ sessionId, agentId, list, cwd }: { sessionId: str
             ? {
                 action: (
                   <EmptyActions>
-                    <Button icon="folder" title={list.scratch} onClick={() => void revealInFinder(client, list.scratch!)}>
+                    <Button size="small" icon="folder" title={list.scratch} onClick={() => void revealInFinder(client, list.scratch!)}>
                       {machine ? revealThereLabel('folder') : 'Show Its Folder'}
                     </Button>
                   </EmptyActions>
@@ -231,7 +231,7 @@ export function AgentOutputs({ sessionId, agentId, list, cwd }: { sessionId: str
             {files.length} file{files.length === 1 ? '' : 's'}
           </span>
           <span className={s.flex} />
-          <Segmented
+          <Segmented size="small"
             label="Preview"
             value={follow ? 'follow' : 'pinned'}
             onChange={(v) => {
@@ -243,7 +243,7 @@ export function AgentOutputs({ sessionId, agentId, list, cwd }: { sessionId: str
               { value: 'pinned', label: 'Picked', hint: 'Stay on the file you picked' },
             ]}
           />
-          {list.scratch ? <IconButton icon="folder" label={revealFolder} onClick={() => void revealInFinder(client, list.scratch!)} /> : null}
+          {list.scratch ? <IconButton size="small" icon="folder" label={revealFolder} onClick={() => void revealInFinder(client, list.scratch!)} /> : null}
         </div>
         <div ref={listRef} className={s.list} role="listbox" aria-label="Outputs" tabIndex={0} onKeyDown={onKey}>
           {files.map((f) => {

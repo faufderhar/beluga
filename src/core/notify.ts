@@ -417,10 +417,10 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     const quiet = presenceQuiet(next);
     for (const a of next.approvals) {
       if (seen.has(a.id)) continue;
-      // An approval a plan's task asks for opens the plan there.
-      // One in a friends' chat (a request that came from there, your Claude working there) opens that chat.
-      const inPlan = a.channel !== undefined && (planOfChannel(next, a.channel) || /^(dm|group):/.test(a.channel)) ? { channel: a.channel } : {};
-      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.once ? { once: true } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
+      // It opens the conversation it holds up, where its card is (a plan's task opens the plan there,
+      // a friends' chat that chat): never answered from another chat (BLG-966).
+      const where = a.channel !== undefined ? { channel: a.channel } : {};
+      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...where, ...(a.task ? { task: a.task } : {}), ...(a.once ? { once: true } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
     }
   }
   if (prev.questions !== next.questions) {

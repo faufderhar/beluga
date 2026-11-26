@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, utimesSync, writeFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isSecretPath } from '../src/core/shares.js';
 import { normalizeRemote } from '../src/workspaces/manager.js';
 import { prNews } from '../src/core/workbench.js';
@@ -109,6 +109,44 @@ describe('Claude questions per conversation', () => {
     expect(there).toBeUndefined();
     expect(store.getState().questions.map((q) => q.channel)).toEqual(['ws:x']);
     broker.cancelAll();
+  });
+
+  it("your own agent's plan waits for you; a friend's question still times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new Store(initialState('r'));
+      const broker = new QuestionBroker({ store, selfId: () => 'me', send: () => true, timeoutMs: () => 60_000, toast: () => undefined });
+      let mine: unknown;
+      let theirs: unknown;
+      void broker.ask('me', 'r1', 'ws:a', { kind: 'plan', plan: 'do it' }).then((a) => (mine = a));
+      void broker.ask('friend', 'r2', 'ws:b', { kind: 'plan', plan: 'do it' }).then((a) => (theirs = a));
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(theirs).toEqual({ kind: 'skip' });
+      expect(mine).toBeUndefined();
+      // Still on your screen an hour later, and approving it then goes through.
+      const [q] = store.getState().questions;
+      expect(q?.channel).toBe('ws:a');
+      broker.answer(q!.qid, { kind: 'plan', approve: true, feedback: '' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mine).toEqual({ kind: 'plan', approve: true, feedback: '' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('approving your own plan in a chat that builds with another agent: the planner hears the handoff instead', async () => {
+    const store = new Store(initialState('r'));
+    const handed: string[] = [];
+    const told = { kind: 'plan', approve: false, feedback: 'handed over' } as const;
+    const broker = new QuestionBroker({ store, selfId: () => 'me', send: () => true, timeoutMs: () => 60_000, toast: () => undefined, handOff: (channel, plan) => (handed.push(`${channel}:${plan}`), channel === 'ws:a' ? told : undefined) });
+    const a = broker.ask('me', 'r1', 'ws:a', { kind: 'plan', plan: 'do it' });
+    const b = broker.ask('me', 'r2', 'ws:b', { kind: 'plan', plan: 'do that' });
+    const [qa, qb] = store.getState().questions;
+    broker.answer(qa!.qid, { kind: 'plan', approve: true, feedback: '' });
+    broker.answer(qb!.qid, { kind: 'plan', approve: true, feedback: '' });
+    expect(await a).toEqual(told);
+    expect(await b).toEqual({ kind: 'plan', approve: true, feedback: '' });
+    expect(handed).toEqual(['ws:a:do it', 'ws:b:do that']);
   });
 
   it('approving a plan turns plan mode off in that conversation; asking for changes keeps it on', async () => {

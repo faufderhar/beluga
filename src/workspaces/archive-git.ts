@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { GIT_IN_ENGLISH } from './git.js';
 
 /**
  * The git side of a smart archive (archive.ts): running git and tar, the checks that keep it
@@ -27,7 +28,7 @@ export const RAW_ARGS = ['-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false
 
 export function run(cmd: string, args: readonly string[], opts: { cwd: string; env?: Partial<NodeJS.ProcessEnv>; timeoutMs?: number; input?: string }): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = execFile(cmd, [...args], { cwd: opts.cwd, timeout: opts.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...opts.env } }, (err, stdout, stderr) => {
+    const child = execFile(cmd, [...args], { cwd: opts.cwd, timeout: opts.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, ...GIT_IN_ENGLISH, GIT_TERMINAL_PROMPT: '0', ...opts.env } }, (err, stdout, stderr) => {
       if (err) reject(new Error((stderr || err.message).trim()));
       else resolve(stdout);
     });

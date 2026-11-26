@@ -26,6 +26,8 @@ export const GIT_API = {
   'git.fetchIfStale': { args: z.tuple([id]) },
   // Update main: fetch and fast-forward the default branch → what happened (updated, dirty, diverged…).
   'git.updateMain': { args: z.tuple([id]) },
+  // Push main: the default branch's own commits (Straight to main's) go to its remote, on top of anything new there, never forced → PushMainOutcome. A project id or one of its worktrees'.
+  'git.pushMain': { args: z.tuple([id]) },
   // Uncommitted changes in the way: stash, update, put them back → the outcome, plus restored / conflicts.
   'git.stashAndUpdate': { args: z.tuple([id]) },
   // Or move them to a new worktree first, then update → { wsId, outcome }.

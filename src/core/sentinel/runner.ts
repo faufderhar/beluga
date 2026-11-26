@@ -16,6 +16,7 @@ import {
   type HttpStep,
   type MeasureStep,
   type MergeStep,
+  type ChatStep,
   type MessageStep,
   type NotifyStep,
   type PrStep,
@@ -162,6 +163,21 @@ export interface SentinelChat {
   readonly me: () => string;
 }
 
+/** Your own chats, woken by a Wake one of your chats step (BLG-397). */
+export interface SentinelWake {
+  /** Why a sentinel may not wake this chat (it is not yours alone), in words; undefined when it may. */
+  readonly refusal: (to: string) => string | undefined;
+  /** Send the prompt into the chat → its message id. A run's step delivers once. Throws in words. */
+  deliver(input: { readonly sentinel: { readonly id: string; readonly name: string }; readonly run: string; readonly step: string; readonly to: string; readonly text: string }): Promise<string>;
+  /** Until the turn it started ends, `ms` pass, or `signal` aborts: its state, and its answer once it ended. */
+  wait(messageId: string, ms: number, signal: AbortSignal): Promise<ChatOutcome>;
+}
+
+export interface ChatOutcome {
+  readonly state: 'queued' | 'working' | 'answered' | 'failed' | 'lost';
+  readonly answer?: string;
+}
+
 /** A friend's Claude through the gateway, as you (their trust applies). */
 export interface FriendAnswer {
   readonly state: string;
@@ -206,6 +222,9 @@ export interface RunnerDeps {
   readonly fetch?: typeof fetch;
   readonly github?: SentinelGitHub;
   readonly chat?: SentinelChat;
+  readonly wake?: SentinelWake;
+  /** Pause the sentinel, with why (a chat step's chat that is not yours alone). */
+  readonly pause?: (sentinelId: string, why: string) => void;
   readonly friends?: SentinelFriends;
   /** Run another sentinel (Run another sentinel) with this run's last output → its name; throws in words. */
   readonly startOther?: (sentinelId: string, from: ActiveRun, output: string | undefined) => string;
@@ -236,6 +255,8 @@ export type SourceFetch = (
 ) => Promise<{ readonly rows: readonly Row[]; readonly columns: readonly string[] } | { readonly needsYes: string } | string>;
 
 const CANCEL_GRACE_MS = 10_000;
+/** Why a chat step does not run where nothing can wake a chat (a Beluga without chats wired). */
+export const NO_CHAT_WAKE = 'waking a chat isn’t available here';
 const POLL_MS = 15_000;
 /** A service's answer kept at most (the step fails above it). */
 const MAX_ANSWER = 4 * 1024 * 1024;
@@ -393,7 +414,7 @@ export class SentinelRunner {
         case 'done':
           setStep(i, { state: 'done', endedAt, ...kept, ...channel });
           if (step.kind === 'claude') report = output;
-          if (step.kind === 'measure' && output) keptLine = firstLine(output);
+          if ((step.kind === 'measure' || step.kind === 'chat') && output) keptLine = firstLine(output);
           break;
         case 'skip':
           setStep(i, { state: 'done', endedAt, ...kept, ...channel, why: result.reason });
@@ -467,6 +488,8 @@ export class SentinelRunner {
         return this.mergeStep(active, step, live);
       case 'message':
         return Promise.resolve(this.messageStep(active, step, outputs));
+      case 'chat':
+        return this.chatStep(active, step, outputs);
       case 'friend':
         return this.friendStep(active, step, outputs);
       case 'trigger':
@@ -731,6 +754,37 @@ export class SentinelRunner {
       }
     }
     return { kind: 'done', output: `Sent to ${name ?? step.to}: ${firstLine(text, 200)}${told.length ? ` · tagged ${told.join(', ')}` : ''}` };
+  }
+
+  // ---------------------------------------------------------------- Wake one of your chats (BLG-397)
+
+  /**
+   * The prompt goes into one of your own chats as from this sentinel; the step waits for that turn
+   * (within the time limit) and keeps the first line of its answer. The chat stays yours: the step
+   * never takes it as its conversation (no StepRun.channel), so it stays in Unread and auto-continue.
+   */
+  private async chatStep(active: ActiveRun, step: ChatStep, outputs: Outputs): Promise<StepEnd> {
+    const chats = this.deps.wake;
+    if (!chats) return { kind: 'failed', why: NO_CHAT_WAKE };
+    if (!step.to) return { kind: 'failed', why: 'pick the chat it wakes' };
+    const refusal = chats.refusal(step.to);
+    if (refusal) {
+      this.deps.pause?.(active.sentinel.id, `Paused: ${refusal}`);
+      return { kind: 'failed', why: refusal };
+    }
+    const text = redactSecrets(render(step.text, this.context(active, outputs))).trim();
+    if (!text) return { kind: 'failed', why: 'its prompt is empty' };
+    let id: string;
+    try {
+      id = await chats.deliver({ sentinel: { id: active.sentinel.id, name: active.sentinel.name }, run: active.run.id, step: step.id, to: step.to, text });
+    } catch (err) {
+      return { kind: 'failed', why: `the chat did not take it: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    const got = await chats.wait(id, this.remaining(active), active.abort.signal);
+    if (active.abort.signal.aborted) return { kind: 'stopped' };
+    if (got.state === 'answered') return { kind: 'done', output: firstLine(got.answer ?? '', 200) || 'The chat answered' };
+    if (got.state === 'failed' || got.state === 'lost') return { kind: 'failed', why: `its turn ${got.state === 'lost' ? 'was lost' : 'failed'}${got.answer ? `: ${firstLine(got.answer, 200)}` : ''}` };
+    return { kind: 'timeout' };
   }
 
   // ---------------------------------------------------------------- Ask a friend's Claude

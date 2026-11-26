@@ -54,6 +54,10 @@ export interface StepRecord extends StepSummary {
   readonly truncated?: boolean;
   /** Thinking: what Claude thought (bounded). */
   readonly text?: string;
+  /** A command's exit code, when the runtime gives it apart from the output (Codex). */
+  readonly exitCode?: number;
+  /** The runtime's own name for the tool, when Beluga shows it under Claude Code's ("commandExecution" for Bash). */
+  readonly native?: string;
   /** What its MCP App needs (only with Settings › Experimental › MCP Apps on). */
   readonly app?: StepApp;
 }
@@ -232,7 +236,7 @@ export function summaryOf(r: StepRecord): StepSummary {
 
 /** Rough size of a record in memory or on disk (characters). */
 export function sizeOf(r: StepRecord): number {
-  return (r.output?.length ?? 0) + (r.text?.length ?? 0) + (r.input ? JSON.stringify(r.input).length : 0) + (r.app?.structuredContent !== undefined ? JSON.stringify(r.app.structuredContent).length : 0) + r.title.length + 120;
+  return (r.output?.length ?? 0) + (r.text?.length ?? 0) + (r.input ? JSON.stringify(r.input).length : 0) + (r.app?.structuredContent !== undefined ? JSON.stringify(r.app.structuredContent).length : 0) + (r.app?.resultMeta ? JSON.stringify(r.app.resultMeta).length : 0) + r.title.length + 120;
 }
 
 /** A thinking block's text: readable, or hidden (redacted, or sent without its words). */

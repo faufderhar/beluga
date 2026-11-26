@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Popover from '@radix-ui/react-popover';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { Presence, PresenceState } from '@beluga/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
@@ -182,8 +182,11 @@ export function StatusPanel({ onDone }: { onDone?: () => void }) {
   );
 }
 
-/** You, at the bottom of the sidebar: your avatar and status; clicking changes it. */
-export function SelfBar() {
+/**
+ * You, at the bottom of the sidebar: your avatar and status; clicking changes it. `extra` goes
+ * under the status choices in the same card (the sidebar puts the room there).
+ */
+export function SelfBar({ extra }: { readonly extra?: ReactNode }) {
   const net = useNetwork();
   const [open, setOpen] = useState(false);
   const self = net.self;
@@ -192,12 +195,11 @@ export function SelfBar() {
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button type="button" className={s.me} aria-label={`Your status: ${selfLine(self.presence)}`}>
-          <PersonAvatar name={self.name} id={self.peerId} state={self.presence.state} size={26} />
+          <PersonAvatar name={self.name} id={self.peerId} state={self.presence.state} size={32} />
           <span className={s.meText}>
             <span className={s.meName}>{self.name}</span>
             <span className={s.meStatus}>{selfLine(self.presence)}</span>
           </span>
-          <Icon name="chevronUp" size={11} className={s.meChevron} />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -212,6 +214,7 @@ export function SelfBar() {
           onOpenAutoFocus={(e) => (e.preventDefault(), (e.currentTarget as HTMLElement | null)?.focus())}
         >
           <StatusPanel onDone={() => setOpen(false)} />
+          {extra ? <div className={s.roomPart}>{extra}</div> : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

@@ -147,7 +147,7 @@ export class StepBook {
     for (const id of run.order) {
       if (run.chars <= MAX_RUN_CHARS) break;
       const r = run.records.get(id)!;
-      if (r.output === undefined && r.input === undefined && r.text === undefined && r.app?.structuredContent === undefined) continue;
+      if (r.output === undefined && r.input === undefined && r.text === undefined && r.app?.structuredContent === undefined && r.app?.resultMeta === undefined) continue;
       // An app keeps where it's drawn from, not its result.
       const app = r.app ? { app: { server: r.app.server, tool: r.app.tool, resourceUri: r.app.resourceUri } } : {};
       const light = { ...summaryOf(r), truncated: true, ...(r.isError ? { isError: true } : {}), ...app };

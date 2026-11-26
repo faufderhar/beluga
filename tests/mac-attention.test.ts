@@ -49,6 +49,17 @@ describe('the core counts what you missed', () => {
     expect(s.unread['ws:auth']).toBe(1);
   });
 
+  it("doesn't count your own first message, nor the run it starts, in a new worktree you left", () => {
+    let s = apply(base(), overview, { type: 'chat', id: 'c1', from: 'me', text: 'Add auth', ts: 1, byAgent: false, channel: 'ws:auth' }, run('queued'), run('started'));
+    expect(s.unread['ws:auth']).toBeUndefined();
+    // Its answer is news.
+    s = apply(s, run('done'));
+    expect(s.unread['ws:auth']).toBe(1);
+    // A friend's message, or your agent posting, still counts.
+    s = apply(base(), overview, { type: 'chat', id: 'c2', from: 'bob', text: 'hi', ts: 2, byAgent: false, channel: 'ws:auth' }, { type: 'chat', id: 'c3', from: 'me', text: 'on it', ts: 3, byAgent: true, channel: 'ws:auth' });
+    expect(s.unread['ws:auth']).toBe(2);
+  });
+
   it('counts a Claude Code session in one of your worktrees ending its turn', () => {
     let s = apply(base(), overview, { type: 'claude_code', sessions: [session({})] });
     expect(s.unread['ws:hooks']).toBeUndefined();
@@ -68,6 +79,14 @@ describe('a conversation’s signal: needs you > unread > working > idle', () =>
     expect(signalOf(busy, 'ws:auth', 'auth')).toMatchObject({ level: 'working', working: true, tip: 'Your agent is working' });
     const cc = apply(s, { type: 'claude_code', sessions: [session({})] });
     expect(signalOf(cc, 'ws:hooks', 'hooks').level).toBe('working');
+  });
+
+  it('is working while a thread under it works, and idle once its threads are done', () => {
+    const child = ws({ id: 'kid', name: 'kid', kind: 'chat', projectId: 'chats', thread: { parent: 'ws:q', parentTitle: 'How do deploys work?', root: 'ws:q', depth: 1, task: 't', startedAt: 1, owed: [] } });
+    const s = apply(base(), { type: 'projects', projects: [{ ...chats, workspaces: [...chats.workspaces, child] }, api, site] }, overview);
+    const busy = apply(s, run('started', 'ws:kid'));
+    expect(signalOf(busy, 'ws:q')).toMatchObject({ level: 'working', working: true });
+    expect(signalOf(apply(busy, run('done', 'ws:kid')), 'ws:q').working).toBe(false);
   });
 
   it('is unread once Claude finished elsewhere, and says so', () => {

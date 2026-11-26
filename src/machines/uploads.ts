@@ -8,6 +8,7 @@ import { isEnvFileName } from '../workspaces/env.js';
 import { refusedOnThisMac } from './env-send.js';
 import { uploadsDir } from '../daemon/web-files.js';
 import { MAX_UPLOAD_BYTES, UPLOAD_PIECE } from '../shared/uploads.js';
+import { THIS_COMPUTER } from '../shared/assistant.js';
 
 /**
  * Files you add to a chat that runs on one of your computers (BLG-793): a file dropped from Finder
@@ -74,10 +75,10 @@ export type DropVerdict = { readonly path: string; readonly name: string } & ({ 
 
 export async function checkDrop(file: string, home: string = belugaHome()): Promise<DropVerdict> {
   const name = path.basename(file);
-  if (!path.isAbsolute(file)) return { path: file, name, verdict: 'refuse', reason: 'not a file on this Mac' };
+  if (!path.isAbsolute(file)) return { path: file, name, verdict: 'refuse', reason: `not a file on ${THIS_COMPUTER}` };
   const real = await realpath(file).catch(() => file);
   const insideHome = (p: string): boolean => p === home || p.startsWith(home + path.sep);
-  const reason = refusedOnThisMac(file) ?? refusedOnThisMac(real) ?? (insideHome(file) || insideHome(real) ? 'Beluga’s own files stay on this Mac' : undefined);
+  const reason = refusedOnThisMac(file) ?? refusedOnThisMac(real) ?? (insideHome(file) || insideHome(real) ? `Beluga’s own files stay on ${THIS_COMPUTER}` : undefined);
   if (reason) return { path: file, name, verdict: 'refuse', reason };
   return { path: file, name, verdict: isEnvFileName(name) || isEnvFileName(path.basename(real)) ? 'ask' : 'send' };
 }
@@ -88,9 +89,9 @@ export async function checkDrop(file: string, home: string = belugaHome()): Prom
  * A refused file never goes; an env file only with `env` (you said Send Once).
  */
 export async function sendPiece(call: (method: string, args: readonly unknown[]) => Promise<unknown>, id: number, file: string, off: number, opts: { readonly env?: boolean } = {}): Promise<SentPiece> {
-  if (!path.isAbsolute(file)) throw new Error('Pick a file on this Mac');
+  if (!path.isAbsolute(file)) throw new Error(`Pick a file on ${THIS_COMPUTER}`);
   const check = await checkDrop(file);
-  if (check.verdict === 'refuse') throw new Error(`${check.name} stays on this Mac: ${check.reason}`);
+  if (check.verdict === 'refuse') throw new Error(`${check.name} stays on ${THIS_COMPUTER}: ${check.reason}`);
   if (check.verdict === 'ask' && !opts.env) throw new Error(`${check.name} holds secrets: say Send Once first`);
   const info = await stat(file);
   if (!info.isFile()) throw new Error('Only files go with a message (not folders)');

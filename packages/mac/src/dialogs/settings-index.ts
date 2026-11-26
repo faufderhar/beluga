@@ -1,15 +1,18 @@
 import type { IconName } from '../components/Icon.js';
-import { trayName } from '../lib/os-words.js';
+import { ASSISTANT_TITLE } from '../../../../src/shared/assistant.js';
+import { thisComputer, trayName, upFirst } from '../lib/os-words.js';
 import type { PaneInfo, SettingEntry, SettingsPane } from '../lib/settings-search.js';
 // Relative, not @beluga/ui: the root's tests and typecheck read this file too.
 import { HIDEABLE_BUTTONS } from '../../../../src/ui/settings-menus.js';
 import { EXPERIMENTS, EXPERIMENT_INFO } from '../../../../src/shared/experiments.js';
+import { TRACE_PROVIDERS } from '../../../../src/shared/trace-destinations.js';
 
 /** Settings' panes, in sidebar order, with other words people use for them. */
 export const PANES: ReadonlyArray<PaneInfo<SettingsPane> & { icon: IconName; keywords?: string }> = [
   { id: 'general', label: 'General', icon: 'gear', keywords: 'profile account' },
   { id: 'appearance', label: 'Appearance', icon: 'eye', keywords: 'look themes colors colours display' },
   { id: 'claude', label: 'Agent', icon: 'spark', keywords: 'claude codex model ai' },
+  { id: 'traces', label: 'Traces', icon: 'pulse', keywords: 'observability opentelemetry otel otlp telemetry export monitoring tracing' },
   { id: 'notifications', label: 'Notifications', icon: 'bell', keywords: 'alerts sounds' },
   { id: 'workspaces', label: 'Workspaces', icon: 'branch', keywords: 'worktrees projects git' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal', keywords: 'shell console xterm' },
@@ -58,9 +61,10 @@ export const SETTINGS: readonly Entry[] = [
     ['Update automatically', 'Install new versions as they come.', 'auto update upgrade'],
     ['Check for updates', 'At launch and every few hours.', 'update version check now'],
   ]),
-  group('general', 'Usage statistics', 'Off, Limited or On.', 'telemetry analytics privacy statistics share data improve'),
+  group('general', 'Usage statistics', 'Off, Essential or On.', 'telemetry analytics privacy statistics share data improve'),
   ...rows('general', 'Usage statistics', [
-    ['Share usage statistics', 'Off sends nothing; Limited only the essentials; On how you use Beluga.', 'telemetry analytics privacy share data level'],
+    ['Share usage statistics', 'Off sends nothing; Essential only the essentials; On how you use Beluga.', 'telemetry analytics privacy notice gdpr share data level'],
+    ['Install ID', 'The random ID your statistics go under: copy it for a privacy request, or reset it.', 'telemetry install id identifier reset copy privacy gdpr request delete data'],
   ]),
   ...rows('general', 'Writing', [
     ['Send with', 'Return or Command-Return sends a message.', 'enter return send message newline new line keyboard'],
@@ -74,6 +78,7 @@ export const SETTINGS: readonly Entry[] = [
   ...rows('appearance', undefined, [
     ['Appearance', 'Match the system, light or dark.', 'dark mode light mode night theme system'],
     ['Accent', 'Selection, focus and buttons.', 'color colour highlight tint'],
+    ['Style', 'Beluga’s own look, or macOS 26’s round buttons and glass panes.', 'look shape corners rounded round capsule pill buttons liquid glass macos native panes'],
   ]),
   group('appearance', 'Light theme', 'The window’s colours by day.', 'theme day colors colours palette latte'),
   group('appearance', 'Dark theme', 'The window’s colours at night.', 'theme night colors colours palette oled black'),
@@ -99,6 +104,7 @@ export const SETTINGS: readonly Entry[] = [
     ['Ask before running commands', 'Your own agent. Secrets stay blocked either way.', 'approval permission self approval bash'],
   ]),
   group('claude', 'Models in chat', 'Which models the chat’s model menu offers.', 'open models picker whitelist opus sonnet'),
+  ...rows('claude', 'Autopilot', [['Wait for your answer', 'How long Autopilot waits for your answer to a question or plan before your agent carries on without it.', 'autopilot question plan timeout unanswered skip wait minutes step by step check-ins']]),
   group('claude', 'Your agents', 'Each agent Beluga can run, and how to set it up.', 'sign in install login claude code codex'),
   ...rows('claude', 'Your agents', [['Signed in or installed one just now?', 'Check Again looks for your agents now.', 'check again refresh']]),
   group('claude', 'Launch flags', 'Your own flags for claude and codex.', 'args arguments cli flags dangerously skip permissions'),
@@ -108,6 +114,13 @@ export const SETTINGS: readonly Entry[] = [
   ]),
   group('claude', 'MCP servers', 'The servers your agent uses.', 'mcp tools servers connectors'),
   ...rows('claude', 'Local models', [['Run on your own models', 'Ollama or another server on your computer.', 'ollama lm studio local llm offline']]),
+  group('claude', 'ACP agents', 'Antigravity, Cursor, Gemini CLI and other Agent Client Protocol agents, added by you.', 'acp agent client protocol antigravity cursor gemini qwen kimi goose grok kiro registry'),
+  ...rows('claude', 'ACP agents', [
+    ['Agents that speak ACP', 'One you add is in the agent box you type in.', 'acp antigravity cursor gemini add'],
+    ['Add an agent', 'Beluga’s own list: Antigravity, Cursor, Gemini CLI, Qwen Code…', 'add antigravity cursor gemini qwen kimi goose install'],
+    ['ACP Registry', 'Search and install an agent from agentclientprotocol.com.', 'registry install download search browse'],
+    ['A command of yours', 'Any program that speaks ACP, by its command.', 'command custom local own add'],
+  ]),
   ...rows('claude', 'In the chat', [['Sub-agents', 'Every step, one line each, or just a count.', 'subagents task tool agents']]),
   ...rows('claude', 'Context', [
     ['Context meter', 'How full each conversation is, beside the send button.', 'context window tokens usage'],
@@ -120,7 +133,7 @@ export const SETTINGS: readonly Entry[] = [
     ['Chats it’s off in', 'Chats that wait for you to press Continue.', 'usage limit chats off resume continue'],
   ]),
   ...rows('claude', 'Working at once', [['Conversations your agent works in at once', 'Past it, a message waits its turn.', 'parallel concurrency limit queue simultaneous runs']]),
-  ...rows('claude', 'Open chats', [['Chats kept at once', 'How many chats Your Mac and Sentinel keep as tabs.', 'chat limit tabs sentinel']]),
+  ...rows('claude', 'Open chats', [['Chats kept at once', `How many chats ${ASSISTANT_TITLE} and Sentinel keep as tabs.`, 'chat limit tabs sentinel']]),
   ...rows('claude', THREAD_LIMITS_GROUP, [
     ['Levels of threads', 'How deep a chat’s threads go.', 'thread depth child sub-agent limit'],
     ['Working at once in one chat’s tree', 'Threads working under one chat.', 'thread running tree limit'],
@@ -135,6 +148,9 @@ export const SETTINGS: readonly Entry[] = [
     ['Pull request instructions', 'How your agent writes pull requests.', 'pr prompt github'],
     ['Templates', 'Ways to start a task.', 'task templates start'],
   ]),
+
+  // Traces: one row per tool, made from shared/trace-destinations.ts (Ratel first).
+  ...TRACE_PROVIDERS.map((p): Entry => ({ pane: 'traces', label: p.name, keywords: `${p.by ?? ''} ${p.keywords ?? ''} opentelemetry otel traces observability`.trim() })),
 
   // Notifications
   ...rows('notifications', undefined, [
@@ -167,7 +183,8 @@ export const SETTINGS: readonly Entry[] = [
   // Workspaces
   ...rows('workspaces', undefined, [
     ['Run setup in new worktrees', 'The project’s setup command runs in each new worktree.', 'npm install setup command auto setup'],
-    ['Branch prefix', 'What new worktrees’ branches start with.', 'git branch name prefix'],
+    ['Branch prefix', 'What new worktrees’ branches start with.', 'git branch name prefix naming rule worktree'],
+    ['Pull request titles', 'A rule your agent follows when it titles a pull request.', 'pr title naming rule conventional commits format'],
     ['Fetch in the background', 'How often Beluga fetches each project’s remote on its own, or never.', 'git fetch remote origin interval minutes ssh key vault password prompt popup off'],
     ['Keep open pull requests current', 'Your agent pushes its commits to an open pull request when its turn ends.', 'push pr pull request git agent commits'],
     ['Open a pull request when work is ready', 'When a worktree’s task moves to In Review, your agent opens a draft pull request.', 'auto pr pull request draft create review task automatic'],
@@ -269,7 +286,7 @@ export const SETTINGS: readonly Entry[] = [
   ]),
   group('external', 'Connect an agent', 'Make a pairing code: what it may do, and where.', 'pair pairing code connect'),
   ...rows('external', 'Connect an agent', [
-    ['For an agent outside this Mac', 'A hosted agent, or one on another computer.', 'remote hosted tailscale public'],
+    ['For a remote agent', 'A hosted agent, or one on another computer.', 'remote hosted tailscale public'],
     ['What it may do', 'Its level: ask each time, trusted or full trust.', 'level trust'],
     ['Full trust for this code', 'An explicit choice for a remote agent.', 'remote full warning'],
     ['All projects and chats', 'Or choose what it reaches.', 'projects reach scope'],
@@ -286,7 +303,7 @@ export const SETTINGS: readonly Entry[] = [
   // Phone
   group('computers', 'Where new work runs', 'This computer, one of yours, or the least busy.', 'run new work machine best available'),
   ...rows('computers', 'Where new work runs', [['Run New Work On', 'Worktrees, runs, plans and sentinels you start.', 'here best available machine computer']]),
-  group('computers', 'You on the network', 'This Mac, or the computer that’s your Always On.', 'always on identity network friends move stand in standing in mac mini server'),
+  group('computers', 'You on the network', `${upFirst(thisComputer())}, or the computer that’s your Always On.`, 'always on identity network friends move stand in standing in mac mini server'),
   group('computers', 'Env files sent without asking', 'Projects whose .env files go to your computers.', 'env dotenv secrets ask again always'),
   ...rows('computers', 'Your settings', [['Your settings on every computer', 'They follow you by themselves; a conflict is said here.', 'sync settings conflicts same everywhere secrets keep in sync']]),
   group('computers', 'Your computers', 'Add one over SSH or with a code; rename, icon, Update It, Forget.', 'add ssh link code fingerprint rename icon forget update health'),

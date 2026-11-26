@@ -1059,10 +1059,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: var(--control-h-small);
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--control-radius-small);
   background: none;
   font: inherit;
   font-size: 13px;

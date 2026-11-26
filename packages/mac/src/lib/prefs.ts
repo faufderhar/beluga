@@ -6,7 +6,7 @@ import { type TermKeysPref, type TermThemePref, termKeysOf, themeOf } from './te
 import { type ConvoMode, clampBoth, isConvoMode } from './convo-mode.js';
 import { type ShortcutOverrides, keyPlatform, overridesOf } from './shortcuts-model.js';
 import { type ThemeBase, allThemesCss, isSolid, themeFor, themeIdOf, themePatch } from './themes.js';
-import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
+import { DEFAULT_LAYOUT, DRAWER_DEFAULT, SIDE_DEFAULT, PANEL_DEFAULT, PANEL_TABS, PANES_DEFAULT, type PanelLayout, type PanelTab, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPLIT_DEFAULT, type CenterTabs, type DockTab, type ShownTabs, type TerminalPlace, migratePrefs, normalizeLayout, usableLayout } from './panel-model.js';
 import type { DuringTurnAction } from '../chat/send-action.js';
 import { type RowColors, rowColorsOf } from './row-colors.js';
 
@@ -23,6 +23,12 @@ export interface UiPrefs {
   /** Text size: 12–16 px for body text. */
   readonly textSize: number;
   readonly density: 'compact' | 'comfortable';
+  /**
+   * The window's style (Settings › Appearance › Style): Beluga's own (softly rounded controls, the
+   * sidebar and panel full height), or macOS 26's (capsule controls, floating glass panes) where the
+   * window blurs. See docs/mac-controls.md.
+   */
+  readonly look: 'beluga' | 'macos';
   /** How wide the conversation can get (characters, roughly). */
   readonly chatWidth: 'narrow' | 'wide' | 'full';
   /** You picked chatWidth in Settings (before, Wide was saved as the default without you choosing it: BLG-697). */
@@ -31,16 +37,22 @@ export interface UiPrefs {
   readonly inspector: boolean;
   /** How wide the right panel is (px; never more than 60% of the window). */
   readonly panelWidth: number;
-  /** The tab you last picked in the panel, per workspace ('ws:<id>') and for everything else ('app'); the bottom pane's end in '|bottom'. */
-  readonly panelTabs: Readonly<Record<string, PanelTab>>;
-  /** Which tabs are in the panel's top pane and which in its bottom one (drag a tab across to change it). */
+  /** The tabs you last showed in the panel, oldest first, per workspace ('ws:<id>') and for everything else ('app'): each group shows the latest of its own. */
+  readonly panelShown: ShownTabs;
+  /** How you arranged the panel's dock and the center's (Dockview's saved layouts), one each per set of tabs (a worktree's, a chat's, a project's page…). */
+  readonly dockLayouts: Readonly<Record<string, unknown>>;
+  /** The tabs you moved beside the chat (the center's dock), per set of tabs: the rest are in the panel. */
+  readonly centerTabs: CenterTabs;
+  /** How the dock starts where you haven't arranged it: which tabs on top and which below (the two panes from before the dock carry over). */
   readonly panelLayout: PanelLayout;
-  /** How much of the panel's height the top pane takes (0.18–0.75). */
+  /** How much of the panel's height the top group starts with (0.18–0.75). */
   readonly paneSplit: number;
-  /** The bottom pane is open (closed, it's just its tabs along the bottom). */
+  /** The groups under the top one (the terminal's dock) are open (folded, they're just their tabs). */
   readonly bottomOpen: boolean;
   /** In the Changes and Files tabs: how much of the height the list keeps above a diff or a preview (0.18–0.75). */
   readonly panelSplit: number;
+  /** The same with the preview beside the list (a wide tab): how much of the width the list keeps (0.22–0.6). */
+  readonly panelSplitSide: number;
   readonly sidebar: boolean;
   readonly sidebarWidth: number;
   /** Sidebar sections you've folded. */
@@ -61,11 +73,11 @@ export interface UiPrefs {
   readonly reduceMotion: boolean;
   /** A solid window: no macOS blur behind the sidebar (lighter on slower Macs, BLG-409). macOS's own Reduce transparency does this too. */
   readonly reduceTransparency: boolean;
-  /** Where ⌘J (and Run) show the terminal: the drawer under the chat, or the right panel's Terminal tab. */
+  /** Where the terminal is kept, so where ⌘J (and Run) show it: under the chat ('drawer': a tab in the center's dock), or in the right panel. */
   readonly termIn: TerminalPlace;
-  /** The terminal drawer under the chat is open. */
+  /** Under the chat, the terminal is showing (⌘J puts it away while it has a group to itself). */
   readonly drawer: boolean;
-  /** How much of the window's height the drawer takes (0.18–0.75). */
+  /** How much of the center's height the terminal starts with under the chat (0.18–0.75); after that it's as tall as you drag it. */
   readonly drawerSize: number;
   /** The terminal's font family ('' : the system's monospace, SF Mono). */
   readonly termFont: string;
@@ -172,17 +184,21 @@ export const DEFAULT_PREFS: UiPrefs = {
   accent: 'system',
   textSize: 13,
   density: 'comfortable',
+  look: 'beluga',
   chatWidth: 'full',
   chatWidthPicked: false,
   inspector: true,
   panelWidth: PANEL_DEFAULT,
-  panelTabs: {},
+  panelShown: {},
+  dockLayouts: {},
+  centerTabs: {},
   panelLayout: DEFAULT_LAYOUT,
   paneSplit: PANES_DEFAULT,
   bottomOpen: true,
   panelSplit: SPLIT_DEFAULT,
+  panelSplitSide: SIDE_DEFAULT,
   sidebar: true,
-  sidebarWidth: 248,
+  sidebarWidth: SIDEBAR_DEFAULT,
   folded: [],
   foldedBeforeCategories: [],
   openProjects: [],
@@ -243,11 +259,30 @@ export function chatWidthOf(saved: UiPrefs): UiPrefs['chatWidth'] {
   return w === 'wide' && saved.chatWidthPicked === true ? 'wide' : 'full';
 }
 
+/** Saved remembered tabs, with anything that isn't a tab dropped. */
+function shownOf(raw: unknown): ShownTabs {
+  if (!raw || typeof raw !== 'object') return {};
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).flatMap(([k, v]) => (Array.isArray(v) ? [[k, v.filter((t): t is DockTab => t === 'main' || PANEL_TABS.includes(t as PanelTab))]] : [])));
+}
+
+function centerOf(raw: unknown): CenterTabs {
+  if (!raw || typeof raw !== 'object') return {};
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).flatMap(([k, v]) => (Array.isArray(v) ? [[k, v.filter((t): t is PanelTab => PANEL_TABS.includes(t as PanelTab))]] : [])));
+}
+
+/** Saved arrangements Dockview can still read (one that can't starts over, never a broken panel). */
+function layoutsOf(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object') return {};
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter(([, v]) => usableLayout(v)));
+}
+
+const widthOf = (raw: unknown): number => (typeof raw === 'number' && Number.isFinite(raw) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(raw))) : SIDEBAR_DEFAULT);
+
 function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, sendDuringTurn: saved.sendDuringTurn === 'steer' ? 'steer' : 'queue', panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, chatWidth: chatWidthOf(saved), convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true, lightTheme: themeIdOf(saved.lightTheme, 'light'), darkTheme: themeIdOf(saved.darkTheme, 'dark'), accent: saved.accent in ACCENTS ? saved.accent : 'system', rowColors: rowColorsOf(saved.rowColors) };
+    return { ...saved, sendDuringTurn: saved.sendDuringTurn === 'steer' ? 'steer' : 'queue', panelLayout: normalizeLayout(saved.panelLayout), panelShown: shownOf(saved.panelShown), dockLayouts: layoutsOf(saved.dockLayouts), centerTabs: centerOf(saved.centerTabs), sidebarWidth: widthOf(saved.sidebarWidth), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, chatWidth: chatWidthOf(saved), convoDefault: saved.convoDefaultPicked === true && isConvoMode(saved.convoDefault) ? saved.convoDefault : 'terminal', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true, lightTheme: themeIdOf(saved.lightTheme, 'light'), darkTheme: themeIdOf(saved.darkTheme, 'dark'), accent: saved.accent in ACCENTS ? saved.accent : 'system', look: saved.look === 'macos' ? 'macos' : 'beluga' };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -335,6 +370,7 @@ export function apply(p: UiPrefs = shown): void {
   root.dataset.palette = theme.id;
   root.dataset.edges = theme.lit ? 'lit' : 'soft';
   root.dataset.density = p.density;
+  root.dataset.look = p.look;
   root.dataset.motion = p.reduceMotion ? 'reduce' : 'full';
   // Only a Mac's window blurs what's behind it: Linux and Windows get the solid look. A theme's own
   // sidebar is opaque (its colours, true black on OLED), so the blur under it would only cost.
@@ -344,8 +380,6 @@ export function apply(p: UiPrefs = shown): void {
   vibrancy(blur);
   root.style.setProperty('--accent', accentCss(p.accent, CSS.supports('color', 'AccentColor')));
   root.style.setProperty('--text-size', `${p.textSize}px`);
-  root.style.setProperty('--sidebar-w', `${p.sidebarWidth}px`);
-  root.style.setProperty('--panel-w', `${p.panelWidth}px`);
   root.style.setProperty('--chat-max', p.chatWidth === 'narrow' ? '42rem' : p.chatWidth === 'wide' ? '60rem' : '100%');
 }
 

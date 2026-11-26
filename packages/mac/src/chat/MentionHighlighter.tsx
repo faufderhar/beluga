@@ -3,6 +3,7 @@ import { splitWorktreeRefs } from "@beluga/shared/worktree-refs.js";
 import { useApp, useBeluga } from "../lib/beluga.js";
 import { type ChatRefOf, boxedChats, chatRefOf, plainChats } from "./chat-box.js";
 import { ImageChip } from "./ImageChip.js";
+import { Icon } from "../components/Icon.js";
 import { IMAGE_REF, refOf } from "./image-refs.js";
 import {
   type MentionPiece,
@@ -12,6 +13,9 @@ import {
 import m from "./mention.module.css";
 import type { ChipSpan } from "./chip-caret.js";
 import { useChipCaret } from "./use-chip-caret.js";
+import { splitKeyRefs } from "./key-refs.js";
+import { useKeyChipFit } from "./key-chip-fit.js";
+import k from "./key-paste.module.css";
 import { boxedWorktrees, plainWorktrees, type WorktreeNames, worktreeNamesOf } from "./worktree-box.js";
 
 function withImages(piece: MentionPiece): MentionPiece[] {
@@ -51,6 +55,12 @@ function withWorktrees(piece: MentionPiece, names: WorktreeNames): MentionPiece[
           "id" in q ? { raw: q.raw, ref: { kind: "worktree" as const, label: names.get(q.id)!, id: q.id } } : q,
         ),
   );
+}
+
+/** A `$NAME` this chat keeps (a key kept out of the chat, BLG-965): a key chip over its words. */
+function withKeys(piece: MentionPiece, names: ReadonlySet<string>): MentionPiece[] {
+  if ("ref" in piece || !names.size) return [piece];
+  return splitKeyRefs(piece.text, names).map((p) => ("name" in p ? { raw: p.raw, ref: { kind: "key" as const, label: p.name } } : p));
 }
 
 /** A chat's mention written short in the box ("[@\u2007Title]", chat-box.ts): a chip with its title. */
@@ -109,7 +119,7 @@ function useWholeLinksOnCopy(input: RefObject<HTMLTextAreaElement | null>, known
 }
 
 /** Drawn as a chip over the room its words take (the box's own words go see-through). */
-const isChip = (p: MentionPiece): boolean => "ref" in p && (p.ref.kind === "image" || p.ref.kind === "worktree" || p.ref.kind === "chat");
+const isChip = (p: MentionPiece): boolean => "ref" in p && (p.ref.kind === "image" || p.ref.kind === "worktree" || p.ref.kind === "chat" || p.ref.kind === "key");
 
 /** Where each chip's words are in the text (the pieces, laid end to end, are the text). */
 function chipSpans(pieces: readonly MentionPiece[]): { all: ChipSpan[]; whole: ChipSpan[] } {
@@ -139,6 +149,7 @@ function chipSpans(pieces: readonly MentionPiece[]): { all: ChipSpan[]; whole: C
  * and Backspace takes them whole (use-chip-caret.ts).
  */
 /** A box with no mentions to mark (only its images). */
+const NO_KEYS: readonly string[] = [];
 const NO_MENTIONS: MentionWorld = {
   friends: [],
   peers: [],
@@ -151,11 +162,17 @@ export function MentionHighlighter({
   world = NO_MENTIONS,
   input,
   className,
+  keys = NO_KEYS,
+  entering = NO_KEYS,
 }: {
   text: string;
   world?: MentionWorld;
   input: RefObject<HTMLTextAreaElement | null>;
   className: string;
+  /** Variable names `$NAME` may mean here: drawn as key chips (BLG-965). */
+  keys?: readonly string[];
+  /** Keys just kept: their chips grow in, where the key's words were. */
+  entering?: readonly string[];
 }) {
   const layer = useRef<HTMLDivElement>(null);
   const { client } = useBeluga();
@@ -165,14 +182,17 @@ export function MentionHighlighter({
   const pieces = useMemo(() => {
     const names = new Map(JSON.parse(known) as [string, string][]);
     const refOf = chatTitles ? chatRefOf(client.store.getState()) : undefined;
+    const keyNames = new Set(keys);
     return splitMentions(text, world)
+      .flatMap((p) => withKeys(p, keyNames))
       .flatMap((p) => withChats(p, refOf))
       .flatMap(withImages)
       .flatMap((p) => withWorktrees(p, names));
-  }, [text, world, known, chatTitles, client]);
+  }, [text, world, known, chatTitles, client, keys]);
   const chips = pieces.some(isChip);
   const spans = useMemo(() => chipSpans(pieces), [pieces]);
   useChipCaret(input, text, spans.all, spans.whole);
+  useKeyChipFit(layer, pieces);
   useWholeLinksOnCopy(input, known);
   useEffect(() => {
     const el = input.current;
@@ -200,7 +220,15 @@ export function MentionHighlighter({
       data-ink={chips || undefined}
     >
       {pieces.map((p, i) =>
-        "ref" in p && isChip(p) ? (
+        "ref" in p && p.ref.kind === "key" ? (
+          <mark key={`k${i}:${p.ref.label}`} className={m.imageChip} data-mention={p.raw} data-kind="key">
+            <span className={m.chipRoom}>{p.raw}</span>
+            <span className={`${m.chipFace} ${k.keyChip}`} data-key-chip={p.ref.label} data-enter={entering.includes(p.ref.label) || undefined}>
+              <Icon name="key" size={10} />
+              <span className={k.keyChipName}>{p.ref.label}</span>
+            </span>
+          </mark>
+        ) : "ref" in p && isChip(p) ? (
           <mark key={i} className={m.imageChip} data-mention={p.raw} data-kind={p.ref.kind}>
             <span className={m.chipRoom}>{p.raw}</span>
             <ImageChip className={isBare(p) ? `${m.chipFace} ${m.chipHug}` : p.ref.kind === "image" ? m.chipFace : `${m.chipFace} ${m.chipSnug}`} label={p.ref.label} icon={p.ref.kind === "worktree" ? "branch" : p.ref.kind === "chat" ? "chat" : "image"} />

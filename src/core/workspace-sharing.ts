@@ -1,4 +1,5 @@
 import { defaultAgentOf, wsWireName } from '../protocol.js';
+import type { ForkGrant } from '../shared/share-levels.js';
 import { placeAgent } from '../shared/agent-picker.js';
 import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
 import { agentLabel } from '../shared/agent-label.js';
@@ -7,6 +8,7 @@ import type { ShareService } from './shares.js';
 import { type DomainState, type LogItem, type SaidBy, type Store, clean, peerName } from './store.js';
 import { shareNameOf } from './workspace-controller.js';
 import type { Intent } from './intents.js';
+import { SENTINEL_CHAT_PREFIX } from './sentinel/model.js';
 
 /** What to share with a friend: a project (all its worktrees, now and later), or one worktree (`workspaceId`; `projectId` may come with it). */
 export interface FriendShareInput {
@@ -14,6 +16,8 @@ export interface FriendShareInput {
   readonly projectId?: string;
   readonly workspaceId?: string;
   readonly role: WsRole;
+  /** They may also fork its worktrees (with `contribute`), and with the secrets you ticked (BLG-1019); `none`: not any more. Unset: as it was. */
+  readonly fork?: ForkGrant | 'none';
   /** The whole project, even for a friend who has only some of its worktrees (without it, their scope stays). */
   readonly whole?: boolean;
 }
@@ -39,6 +43,8 @@ const HISTORY_ITEMS = 60;
 /** How long each message of a room invite's history may be (the room's ws_invite takes no more). */
 const HISTORY_TEXT = 8000;
 const wsIdOf = (channel: string): string | undefined => (channel.startsWith('ws:') ? channel.slice(3) : undefined);
+/** Your Mac chats and the Sentinel chat: only you post into them (BLG-393). */
+const isOwnerOnly = (channel: string): boolean => channel === 'mac:assistant' || channel.startsWith('mac:assistant:') || channel.startsWith(SENTINEL_CHAT_PREFIX);
 
 /** A short, plain-text version of the recent conversation for someone joining: its last `limit` messages, each up to `max` characters. */
 export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: string) => string, limit = HISTORY_ITEMS, max = HISTORY_TEXT): Array<{ from: string; text: string; ts: number; byAgent: boolean }> {
@@ -103,9 +109,10 @@ export class WorkspaceSharing {
 
   /** May `from` post into (or ask Claude in) this channel? */
   canPost(from: string, channel: string): boolean {
+    if (from === this.deps.selfId()) return true;
+    if (isOwnerOnly(channel)) return false;
     const id = wsIdOf(channel);
     if (!id) return true;
-    if (from === this.deps.selfId()) return true;
     const shared = this.sharedFor(channel);
     if (shared) return from === shared.owner || (this.deps.store.getState().roster[id] ?? []).some((m) => m.peerId === from && m.role === 'contribute');
     return this.members(id)[from] === 'contribute';

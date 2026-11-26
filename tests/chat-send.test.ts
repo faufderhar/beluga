@@ -362,6 +362,10 @@ describe('a guard refusal starts no run and returns its code', () => {
     const from = await t.working(SOURCE, 'r1', { origin: { ref: refOf('ws:other'), title: 'x', agent: { runtime: 'claude', label: 'Claude' }, chainId: 'c1', hop: 4, messageId: 'm0' } });
     await expect(from.send(refOf(TARGET), 'hi', {})).rejects.toThrow(/^hop_limit:/);
     expect(t.runsIn(TARGET)).toEqual([]);
+    // It says plainly to stop: no time to try again, no retry (agents retried these: BLG-1029).
+    const said = await from.send(refOf(TARGET), 'hi', {}).then(() => '', (e: Error) => e.message);
+    expect(said).toMatch(/Not sent, and a retry is refused too: do not send it again, with this tool or another way, and end your turn now/);
+    expect(said).not.toMatch(/Try again/i);
     await t.end(SOURCE);
   });
 

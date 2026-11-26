@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ACCESS, DONE_KEY, LAST_SETTING, PLACE_KEY, PREFS_KEY, RESUME_MS, STEPS, TOUR, accessPlace, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, resumeAt, saveMark, savePlace, shouldShow, stepBy, tourPlace, wasDone, stepsFor, lastSettingOf } from '../packages/mac/src/onboarding/onboarding-model.js';
 import { ACCESS_COPY, accessNext, grantText } from '../packages/mac/src/onboarding/access-copy.js';
+import { sceneFirst } from '../packages/mac/src/onboarding/onboarding-model.js';
 import { TOUR_SENTINELS } from '../packages/mac/src/onboarding/sentinel-tour.js';
 import { TOUR_COPY } from '../packages/mac/src/onboarding/tour-copy.js';
 import { accessAllows, stepAvailable, triggerAvailable } from '../src/core/sentinel/model.js';
@@ -72,7 +73,7 @@ describe('coming back after macOS asks to quit and reopen', () => {
     expect(shouldShow(store, '', 2 * MIN)).toBe(true);
     expect(resumeAt(store, 2 * MIN)).toBe('accessibility');
     expect(shouldShow(store, '', RESUME_MS + MIN)).toBe(false);
-    savePlace(store, 'agents', 0);
+    savePlace(store, 'scratch', 0);
     expect(shouldShow(store, '', MIN)).toBe(false);
     expect(wasDone(store)).toBe(true);
   });
@@ -102,7 +103,7 @@ describe('stepping through it', () => {
   it('places the tour steps ("2 of 5") and skips past them to the look', () => {
     expect(TOUR.every(inTour)).toBe(true);
     expect(inTour('setup')).toBe(false);
-    expect(tourPlace('agents')).toEqual({ at: 2, of: TOUR.length });
+    expect(tourPlace('scratch')).toEqual({ at: 2, of: TOUR.length });
     expect(tourPlace('look')).toBeUndefined();
     expect(afterTour()).toBe('look');
     expect(STEPS.indexOf(afterTour())).toBe(STEPS.indexOf(TOUR.at(-1)!) + 1);
@@ -147,9 +148,9 @@ describe('the permission steps', () => {
 });
 
 describe('the new tour and phone steps', () => {
-  it('shows the table weave in the tour, right after the live agents', () => {
+  it('shows the table weave in the tour, right after Scratch', () => {
     expect(TOUR).toContain('tables');
-    expect(stepBy('agents', 1)).toBe('tables');
+    expect(stepBy('scratch', 1)).toBe('tables');
     expect(tourPlace('tables')).toEqual({ at: 3, of: TOUR.length });
   });
 
@@ -173,20 +174,19 @@ describe('the new tour and phone steps', () => {
   });
 
   it('groups the dots: the tour, the permissions, the rest', () => {
-    expect(groupOf('agents')).toBe('tour');
+    expect(groupOf('scratch')).toBe('tour');
     expect(groupOf('automation')).toBe('access');
     expect(groupOf('phone')).toBe('other');
   });
 });
 
 describe('Sentinel in the tour (BLG-362)', () => {
-  it('explains a sentinel, then shows it at work, right after friends', () => {
-    expect(stepBy('friends', 1)).toBe('sentinel');
-    expect(stepBy('sentinel', 1)).toBe('uses');
-    expect(stepBy('uses', 1)).toBe('earnings');
-    expect(inTour('sentinel') && inTour('uses')).toBe(true);
+  it('is one step, after a friend’s agent and a shared session (BLG-989)', () => {
+    expect(stepBy('friends', 1)).toBe('together');
+    expect(stepBy('together', 1)).toBe('sentinel');
+    expect(stepBy('sentinel', 1)).toBe('earnings');
+    expect(TOUR.filter((st) => st.startsWith('sentinel') || (st as string) === 'uses')).toEqual(['sentinel']);
     expect(TOUR_COPY.sentinel?.title).toBeTruthy();
-    expect(TOUR_COPY.uses?.title).toBeTruthy();
   });
 
   it('builds only sentinels Sentinel really allows', () => {
@@ -214,14 +214,49 @@ describe('Your computers in the tour (BLG-813)', () => {
     expect(tourPlace('machines')).toEqual({ at: 4, of: TOUR.length });
   });
 
-  it('says what your computers are in one or two sentences, with an icon and no emoji', () => {
+  it('says what your computers are in one or two sentences, with no emoji', () => {
     const copy = TOUR_COPY.machines;
     expect(copy?.title).toBeTruthy();
     const sentences = copy!.body.split(/(?<=[.!?])\s+/).filter(Boolean);
     expect(sentences.length).toBeGreaterThanOrEqual(1);
     expect(sentences.length).toBeLessThanOrEqual(2);
     expect(copy!.body).toMatch(/Always On/);
-    expect(copy!.icon).toBe('server');
-    for (const line of [copy!.eyebrow, copy!.title, copy!.body, ...copy!.points]) expect(line).not.toMatch(/\p{Extended_Pictographic}/u);
+    for (const line of [copy!.title, copy!.body]) expect(line).not.toMatch(/\p{Extended_Pictographic}/u);
+  });
+});
+
+/**
+ * The tour's words stay plain (BLG-989): a title is one sentence that names what you can do, and no
+ * line leans on the tics that make copy read as generated.
+ */
+describe('the tour’s words', () => {
+  const copies = Object.entries(TOUR_COPY);
+
+  it('titles are one short sentence each', () => {
+    for (const [step, copy] of copies) {
+      expect(copy!.title.split(/(?<=[.!?])\s+/).filter(Boolean), step).toHaveLength(1);
+      expect(copy!.title.split(' ').length, step).toBeLessThanOrEqual(9);
+    }
+  });
+
+  it('a step says little: one or two sentences under its title, and a hint only where there’s something to click', () => {
+    for (const [step, copy] of copies) {
+      expect(copy!.body.split(/(?<=[.!?])\s+/).filter(Boolean).length, step).toBeLessThanOrEqual(2);
+      expect(copy!.body.split(' ').length, step).toBeLessThanOrEqual(32);
+      if (copy!.hint) expect(copy!.hint.split(' ').length, step).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('every other step puts its scene first, so the tour zigzags', () => {
+    expect(TOUR.map(sceneFirst)).toEqual(TOUR.map((_, i) => i % 2 === 1));
+  });
+
+  it('no line uses a contrast reveal, an em dash or an exclamation mark', () => {
+    for (const [step, copy] of copies) {
+      for (const line of [copy!.title, copy!.body, copy!.hint ?? '']) {
+        expect(line, step).not.toMatch(/—|!|\bnot just\b|\bit’s not\b|\bnot only\b/i);
+        expect(line, step).not.toMatch(/\b(seamless|robust|powerful|unlock|streamline|supercharge|effortless)/i);
+      }
+    }
   });
 });

@@ -108,7 +108,27 @@ button.stat:disabled {
   margin: 0;
   font-size: 1.08rem;
   font-weight: 600;
-  min-width: 14rem;
+  min-width: min(14rem, 100%);
+}
+/*
+ * A narrow page (the window at its narrowest, a wide right panel beside it): the way to start gets
+ * its own full line under the question, the tabs share it out; narrower still, the tabs drop their
+ * icons and keep their words (#527).
+ */
+@container (max-width: 600px) {
+  .composerHead > [role='tablist'] {
+    flex: 1 1 100%;
+  }
+  .composerHead [role='tab'] {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
+  }
+}
+@container (max-width: 380px) {
+  .composerHead [role='tab'] > svg {
+    display: none;
+  }
 }
 .box {
   position: relative;
@@ -118,8 +138,8 @@ button.stat:disabled {
   background: var(--bg-raised);
   box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 1px 3px rgba(0, 0, 0, 0.06);
   transition: box-shadow var(--dur);
-  /* Named so the model chip and Runs on can drop words when this card is narrow (picker.module.css, runs-on.module.css). */
-  container: composer / inline-size;
+  /* Named for both the home box's own line of controls (home-box) and the shared composer chips (ModelPicker, RunsOn). */
+  container: home-box composer / inline-size;
 }
 .box:focus-within {
   box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), 0 2px 10px rgba(0, 0, 0, 0.07);
@@ -176,37 +196,30 @@ button.stat:disabled {
 }
 .bar > label,
 .bar > span,
+.actions > label,
 .bar button {
   flex-shrink: 0;
   white-space: nowrap;
 }
 /* 11rem fits "Name" and the "from the task" placeholder. It grows once the model chip has its words, and a long typed name scrolls inside instead of widening the row. */
 .bar > label:has(.nameInput) {
-  flex: 1 1 11rem;
-  min-width: 11rem;
-  max-width: 14rem;
+  flex-shrink: 1;
+  min-width: 88px;
 }
-/* Beats the draft's fixed .name width. */
-.bar .nameInput {
-  width: auto;
-  min-width: 0;
-  max-width: 100%;
-  flex: 1 1 auto;
+/* A long branch ("feat/live-topic-graph") gives way too, after the name, to the width of a short one, its name cut with an ellipsis. */
+.bar > label:first-child:has([role='combobox']) {
+  flex-shrink: 0.25;
+  min-width: 7.5rem;
 }
-/* Basis is the icon and chevron. A fixed Runs-on chip plus the name's 11rem floor is wider than the column's cap, so Create Worktree would wrap and the model name would never give way. Both chips share what is left, and max-content lets a short model name fill in before either one grows past its words. */
-.bar > button[data-shrink],
-.bar > [data-runs-on] {
-  flex: 1000 1 3rem;
+.bar > label:first-child [role='combobox'] {
+  flex-shrink: 1;
+}
+/* A long model name ellipsizes before Create Worktree drops onto a second line. */
+.bar > button[data-shrink] {
+  flex: 0 1 auto;
   min-width: 3rem;
   max-width: max-content;
   overflow: hidden;
-}
-/* "Runs on" gives way before the computer's name. The button's accessible name still says the whole phrase. */
-.bar > [data-runs-on] [data-runs-on-words] {
-  flex-shrink: 100;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 /* Just Ask's and New Plan's line of words: it takes two lines before it pushes anything off. */
 .bar > .note {
@@ -218,14 +231,48 @@ button.stat:disabled {
 .bar [role='combobox'] {
   max-width: 180px;
 }
-/* A narrow page: the fields' words step aside (each says what it is in its tooltip and placeholder). */
-@container page (max-width: 760px) {
+.bar > :last-child {
+  margin-left: auto;
+}
+/* Runs (a plan's), the mic and the box's button: one group, so they wrap together and stay on the right. */
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px 12px;
+}
+/*
+ * A narrow box: the fields' words step aside (each says what it is in its tooltip and placeholder).
+ * With Then (BLG-973) and Runs on, the new worktree's line needs about 32rem + 530px to keep them
+ * (the selects and the name are sized in px, the words in rem), so in the column's 60rem they step aside.
+ */
+@container home-box (width < calc(32rem + 590px)) {
   .bar > label > span:first-child,
+  .actions > label > span:first-child,
   .bar [data-runs-on-words] {
     display: none;
   }
 }
-
+/*
+ * Too narrow for one line even without them (about 21.5rem + 430px, the name and the branch at their
+ * shortest): two rows, the fields on top and the actions (the mic, the button) under them on the right (#527).
+ */
+@container home-box (width < calc(21.5rem + 440px)) {
+  .bar {
+    flex-wrap: wrap;
+  }
+  .bar > .flex {
+    flex-basis: 100%;
+    height: 0;
+    margin-top: -6px;
+  }
+  .actions {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+}
 
 /* ---- lists */
 .lists {

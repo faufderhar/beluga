@@ -162,7 +162,7 @@ export function WorktreeItem({ row, plan, ticked, onTick, act }: { row: Worktree
         </span>
         <span role="cell" className={s.more} onClick={stop}>
           <ActionsDropdown items={items}>
-            <IconButton icon="more" label={`More for ${w.name}`} />
+            <IconButton size="small" icon="more" label={`More for ${w.name}`} />
           </ActionsDropdown>
         </span>
       </div>

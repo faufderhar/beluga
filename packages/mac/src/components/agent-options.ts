@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
-import type { AgentRef } from '@beluga/protocol.js';
+import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
+import type { RuntimeChoice } from '@beluga/shared/agent-runtimes.js';
 import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { runtimeMark } from '@beluga/shared/agent-marks.js';
 import { agentName } from '@beluga/shared/agent-label.js';
@@ -69,4 +70,21 @@ export function useStartWith(): (current: AgentRef | undefined, pick: (agent: Ag
       agentMenuItems(entries, current, (v) => pick(v === YOUR_AGENT ? undefined : agentForChoice(v, runtimes))).map((it) => (verb ? { ...it, label: `${verb} ${it.label.startsWith('Your agent') ? `y${it.label.slice(1)}` : it.label}` } : it)),
     [entries, runtimes],
   );
+}
+
+/**
+ * Just the agents, one row each with its mark (Claude, Codex, OpenCode…), no models: for a menu
+ * that asks who does a part of the work (Build With ▸). The agent runs its
+ * default model; its own model picker changes that later. One not set up here is greyed, saying why.
+ * `current` is checked by its runtime; `pick` gets the agent.
+ */
+export function agentOnlyItems(runtimes: readonly RuntimeChoice[], current: AgentRef | undefined, pick: (agent: AgentRef) => void): ActionItem[] {
+  const known = runtimes.length ? runtimes : [{ id: CLAUDE_AGENT.runtime, label: CLAUDE_AGENT.label, available: true }];
+  return known.map((r) => ({
+    label: r.label,
+    icon: runtimeMark(r.id),
+    ...(r.available ? {} : { disabled: true, ...(r.why ? { hint: r.why } : {}) }),
+    checked: current?.runtime === r.id,
+    onSelect: () => pick({ runtime: r.id, label: r.label }),
+  }));
 }

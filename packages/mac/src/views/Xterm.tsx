@@ -17,6 +17,10 @@ import s from '../views/terminal.module.css';
 /** ⌘← start of line (^A), ⌘→ end of line (^E), ⌘⌫ delete to the start (^U). */
 const MAC_LINE_KEYS: Readonly<Record<string, string>> = { ArrowLeft: '\x01', ArrowRight: '\x05', Backspace: '\x15' };
 
+/** Drawn output is acked in pieces this big, or after ACK_AFTER_MS for what's left (flow control, BLG-963). */
+const ACK_CHARS = 16 * 1024;
+const ACK_AFTER_MS = 40;
+
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 /** Beluga's colours for the window's appearance, with the ones you brought from another terminal over them. */
 export const themeNow = (): ITheme & { background: string } => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)', ...importedTheme(getPrefs()) });
@@ -33,7 +37,10 @@ export interface XtermProps {
   /** Start the program; a promise: attached once it settles (a program that takes a moment). */
   readonly start: (size: { cols: number; rows: number }) => void | Promise<unknown>;
   readonly focus?: boolean;
-  /** Draw with the GPU (WebGL), falling back to the DOM when it can't: for a big, busy terminal. */
+  /**
+   * Draw with the GPU (WebGL), falling back to the DOM when it can't or in Low Power mode. On by
+   * default: the DOM can't keep up with a busy program (a build log, Claude Code redrawing).
+   */
   readonly gpu?: boolean;
   /** Add to the terminal once it's made → how to take that down. */
   readonly extend?: (term: Terminal, tools: XtermTools) => (() => void) | undefined;
@@ -52,7 +59,7 @@ export interface XtermProps {
 }
 
 /** One terminal program, drawn by xterm.js from its raw bytes (the program runs in Beluga). */
-export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey, settleMs = 0, fromBottom = false }: XtermProps) {
+export function Xterm({ termKey, start, focus = true, gpu = true, extend, onKey, settleMs = 0, fromBottom = false }: XtermProps) {
   const own = useRef({ extend, onKey });
   own.current = { extend, onKey };
   const { client } = useBeluga();
@@ -119,12 +126,45 @@ export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey
     let offExit: (() => void) | undefined;
     let gone = false;
     const waiting: string[] = [];
+    // Flow control (BLG-963): what xterm has drawn and the daemon hasn't heard about yet. The program
+    // waits while we're far behind, so what you type never queues behind megabytes still to draw.
+    let drawn = 0;
+    // What came in and isn't acked yet, and which round of writes still acks once drawn.
+    let owed = 0;
+    let round = 0;
+    let ackTimer: ReturnType<typeof setTimeout> | undefined;
+    const ackNow = (): void => {
+      clearTimeout(ackTimer);
+      ackTimer = undefined;
+      if (drawn && !gone) link?.ack?.(drawn);
+      drawn = 0;
+    };
+    const drew = (chars: number): void => {
+      owed -= chars;
+      drawn += chars;
+      if (drawn >= ACK_CHARS) ackNow();
+      else ackTimer ??= setTimeout(ackNow, ACK_AFTER_MS);
+    };
+    const output = (d: string): void => {
+      owed += d.length;
+      if (document.hidden) return void (term.write(d), drew(d.length));
+      const r = round;
+      term.write(d, () => r === round && drew(d.length));
+    };
+    // A hidden window draws slowly, if at all: it never makes a build wait. All it owes is acked now, and as it comes.
+    const hidden = (): void => {
+      if (!document.hidden || !owed) return;
+      round++;
+      drew(owed);
+      ackNow();
+    };
+    document.addEventListener('visibilitychange', hidden);
     const send = (d: string): void => (link ? link.write(d) : void waiting.push(d));
     const attach = (): void => {
       if (gone) return;
-      const l = client.attachTerminal(termKey);
+      const l = client.attachTerminal(termKey, { flow: true });
       link = l;
-      offData = l.onData((d) => term.write(d));
+      offData = l.onData(output);
       offExit = l.onExit((e) => term.write(`\r\n\x1b[2m[exited${e.code !== null ? ` with ${e.code}` : ''}]\x1b[0m\r\n`));
       l.resize(term.cols, term.rows);
       for (const d of waiting.splice(0)) l.write(d);
@@ -162,6 +202,8 @@ export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey
     };
     el.addEventListener('mousedown', grab);
     const refit = (): void => {
+      // Not on screen (its tab is behind another one, its dock is folded): it keeps the size it had.
+      if (!el.offsetWidth || !el.offsetHeight) return;
       try {
         fit.fit();
         link?.resize(term.cols, term.rows);
@@ -209,6 +251,8 @@ export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey
     return () => {
       live.current = undefined;
       clearTimeout(settle);
+      clearTimeout(ackTimer);
+      document.removeEventListener('visibilitychange', hidden);
       anchored?.dispose();
       el.removeEventListener('mousedown', grab);
       resize.disconnect();

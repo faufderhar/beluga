@@ -70,6 +70,24 @@ function fixture(level: TrustLevel | undefined, opts: { selfApproval?: 'ask' | '
   return { h, store, inputs, grant, started, card, status, owned };
 }
 
+describe('MCP Apps shown (appsShown): the runs whose apps you watch', () => {
+  it('is set on a run you sent yourself', async () => {
+    const f = fixture(undefined);
+    f.h.runFor(ME, 'ws:w1', 'work');
+    await waitFor(() => f.inputs.length > 0);
+    expect(f.inputs[0]).toMatchObject({ ownerMcp: true, appsShown: true });
+  });
+
+  it('is not set on a Sentinel run: its report is what anyone reads', async () => {
+    const f = fixture(undefined);
+    f.owned.sentinel.mockReturnValue({ tools: {}, brief: 'watch', inRun: true });
+    f.h.runFor(ME, 'ws:w1', 'work');
+    await waitFor(() => f.inputs.length > 0);
+    expect(f.inputs[0]?.ownerMcp).toBe(true);
+    expect(f.inputs[0]?.appsShown).toBeUndefined();
+  });
+});
+
 describe('a run an external agent starts', () => {
   it('counts among its running channels until it stops', async () => {
     const f = fixture('trusted');
@@ -90,6 +108,8 @@ describe('a run an external agent starts', () => {
     expect(input.ownerMcp).toBe(true);
     expect(input.env?.TOKEN).toBe('mine');
     expect(input.viaAgent).toBe(false);
+    // It reads only the answer: its MCP servers aren't told an app shows the rest.
+    expect(input.appsShown).toBeUndefined();
     for (const own of Object.values(f.owned)) expect(own).toHaveBeenCalled();
     expect(f.status()).toMatchObject({ requester: ME, requesterName: 'GrokBot' });
     expect(f.h.viaIn('ws:w1')).toMatchObject({ name: 'GrokBot' });

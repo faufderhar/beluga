@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { inApp, webServed } from '../lib/boot.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
-import { type Box, MAX_DROPPED, droppedFiles, sameBox } from '../chat/drop-model.js';
+import { type Box, MAX_DROPPED, appDropScale, droppedFiles, sameBox } from '../chat/drop-model.js';
 import t from './tasks.module.css';
 
 /**
@@ -23,10 +23,9 @@ interface Over {
   readonly box: Box;
 }
 
-/** What's under the drag at `x`, `y` (physical pixels, as the app gives them), if it takes files. */
+/** What's under the drag at `x`, `y` (CSS pixels), if it takes files. */
 function overAt(x: number, y: number): Over | undefined {
-  const scale = window.devicePixelRatio || 1;
-  const el = document.elementFromPoint(x / scale, y / scale)?.closest<HTMLElement>('[data-task-drop]');
+  const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-task-drop]');
   const id = el?.dataset.taskDrop;
   if (!el || !id) return undefined;
   const r = el.getBoundingClientRect();
@@ -45,11 +44,12 @@ export function useTaskFileDrop(): ReactNode {
   const add = async (target: Over, paths: readonly string[]): Promise<void> => {
     let picked;
     try {
-      picked = droppedFiles(await api.local.statFiles(paths.slice(0, MAX_DROPPED)));
+      picked = droppedFiles(await api.local.statFiles(paths.slice(0, MAX_DROPPED)), { folders: false });
     } catch (err) {
       return toast(client, `Couldn’t add what you dropped: ${message(err)}`, 'error');
     }
-    const { files, skipped } = picked;
+    const { files } = picked;
+    const skipped = picked.folders.length + picked.missing;
     if (!files.length) return toast(client, 'Only files can be added to a task (not folders)', 'warn');
     let added = 0;
     for (const f of files) {
@@ -70,11 +70,10 @@ export function useTaskFileDrop(): ReactNode {
   // computer Beluga runs on first, then added by their path there.
   useEffect(() => {
     if (inApp() || !webServed()) return;
-    const scale = (): number => window.devicePixelRatio || 1;
     const hasFiles = (e: DragEvent): boolean => [...(e.dataTransfer?.types ?? [])].includes('Files');
     const onOver = (e: DragEvent): void => {
       if (!hasFiles(e)) return;
-      const here = overAt(e.clientX * scale(), e.clientY * scale());
+      const here = overAt(e.clientX, e.clientY);
       if (!here) return setOver(undefined);
       e.preventDefault();
       setOver((was) => (was?.id === here.id && sameBox(was.box, here.box) ? was : here));
@@ -83,7 +82,7 @@ export function useTaskFileDrop(): ReactNode {
       if (!e.relatedTarget) setOver(undefined);
     };
     const onDrop = (e: DragEvent): void => {
-      const here = hasFiles(e) ? overAt(e.clientX * scale(), e.clientY * scale()) : undefined;
+      const here = hasFiles(e) ? overAt(e.clientX, e.clientY) : undefined;
       setOver(undefined);
       if (!here) return;
       e.preventDefault();
@@ -106,11 +105,10 @@ export function useTaskFileDrop(): ReactNode {
     if (!inApp()) return;
     let off: (() => void) | undefined;
     let alive = true;
-    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
-      const un = await getCurrentWebview().onDragDropEvent((e) => {
-        const p = e.payload;
+    void import('../lib/file-drop.js').then(async ({ onFileDrop }) => {
+      const un = await onFileDrop((p) => {
         if (p.type === 'leave') return setOver(undefined);
-        const here = overAt(p.position.x, p.position.y);
+        const here = overAt(p.position.x / appDropScale(), p.position.y / appDropScale());
         if (p.type === 'drop') {
           setOver(undefined);
           if (here && p.paths.length) void latest.current(here, p.paths);

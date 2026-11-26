@@ -182,6 +182,20 @@ first, then Keys and Commands, Everything You Can Do… (⌘K), and the File, Vi
 Settings there change the Beluga on the server, as the Mac app's do; how it looks (appearance,
 text size) is kept by each browser.
 
+### On a phone's browser
+
+On a screen 700px wide or less (any phone), the app is one column. The page fills the screen.
+The sidebar button at the top left opens the sidebar as a drawer, which closes once you pick a
+row. The panel button at the top right brings up Changes, Files and Info as a full-screen sheet
+with its own Close. Everything you tap is at least 44px. Buttons that show on hover on a Mac
+(a message's actions, a row's buttons) are always shown on a touch screen. The browser's own Back
+replaces the app's back and forward buttons.
+
+It's made for checking in and steering: the Overview, a worktree's chat, its changes and diffs,
+tasks and their briefs, the group chat, and what waits for you under the bell. The terminal, the
+plan canvas, arranging the panel, dragging things in, calls, and commenting on a diff's lines
+are for a computer. For notifications while the browser is closed, use the phone app.
+
 ### Through Tailscale
 
 You need Tailscale on the server and on your laptop or phone, logged in to the same tailnet. Then,

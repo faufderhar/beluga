@@ -136,13 +136,13 @@ describe('two screens at once', () => {
     const { session, store, screen } = await setup();
     const tui = await screen('test');
     const mac = await screen('mac');
-    store.dispatch({ type: 'chat', id: 'm1', from: session.selfId, text: 'one', ts: 1, byAgent: false, channel: 'ws:w9' });
+    store.dispatch({ type: 'chat', id: 'm1', from: 'bob', text: 'one', ts: 1, byAgent: false, channel: 'ws:w9' });
     await waitFor(() => tui.store.getState().unread['ws:w9'] === 1 && mac.store.getState().unread['ws:w9'] === 1);
     mac.store.dispatch({ type: 'view', view: { kind: 'shared', owner: 'b', id: 'w9', tab: 'chat' } });
     await waitFor(() => tui.store.getState().unread['ws:w9'] === undefined);
     mac.close();
     await waitFor(() => store.getState().attention.shown.length === 1); // only the terminal's room now
-    store.dispatch({ type: 'chat', id: 'm2', from: session.selfId, text: 'two', ts: 2, byAgent: false, channel: 'ws:w9' });
+    store.dispatch({ type: 'chat', id: 'm2', from: 'bob', text: 'two', ts: 2, byAgent: false, channel: 'ws:w9' });
     await waitFor(() => tui.store.getState().unread['ws:w9'] === 1);
   });
 

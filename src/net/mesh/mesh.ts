@@ -30,6 +30,7 @@ import { isLate } from '../patient-timer.js';
 import { blackbox } from '../../core/blackbox/recorder.js';
 import { type BudgetOptions, InboundBudget } from './inbound-budget.js';
 import type { AgentRef } from '../../protocol.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Your Mac on the Beluga network: no server and no host. It listens at an address derived from
@@ -163,7 +164,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
         const now = Date.now();
         if (now - (this.busyNoted.get(peerId) ?? 0) < 60_000) return;
         this.busyNoted.set(peerId, now);
-        blackbox.record('log', `${this.nameFor(peerId)}'s Beluga is sending more than its share of this Mac's time: theirs are handled in turn (${waiting} waiting${dropped ? ', more let go until it eases' : ''})`);
+        blackbox.record('log', `${this.nameFor(peerId)}'s Beluga is sending more than its share of ${THIS_COMPUTER}'s time: theirs are handled in turn (${waiting} waiting${dropped ? ', more let go until it eases' : ''})`);
       },
       onError: (err) => blackbox.record('error', `a frame from a linked Mac failed: ${err instanceof Error ? err.message : String(err)}`),
     });

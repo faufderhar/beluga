@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { VoiceModelId } from '../src/companion/protocol.js';
 import { MacVoice } from '../src/core/voice.js';
 import { coerceVoice, resolveVoice, suggestVoice, VOICE_MODEL_IDS, VOICE_MODELS, voiceKnows, voiceSize } from '../src/shared/voice-models.js';
@@ -97,12 +97,11 @@ describe('voice: the Mac writes it down', () => {
       },
     });
     await expect(voice.transcribe(audio(), { model: 'parakeet', language: 'en' })).rejects.toThrow(/still getting Parakeet \(\d+%\)/);
-    // The download and the size check are async. A fixed wait loses that race on a busy runner,
-    // so the model is still "coming" and has no incomplete error yet.
+    // Waits for the download to get there, not a fixed time: a busy runner (Windows CI) can take longer.
     const parakeet = async () => (await voice.status()).models.find((m) => m.model === 'parakeet');
-    await expect.poll(parakeet, { timeout: 5_000 }).toMatchObject({ ready: false, progress: 0.5 });
+    await vi.waitFor(async () => expect(await parakeet()).toMatchObject({ ready: false, progress: 0.5 }), { timeout: 5_000, interval: 10 });
     release();
-    await expect.poll(parakeet, { timeout: 5_000 }).toMatchObject({ ready: false, error: expect.stringMatching(/incomplete/) });
+    await vi.waitFor(async () => expect(await parakeet()).toMatchObject({ ready: false, error: expect.stringMatching(/incomplete/) }), { timeout: 5_000, interval: 10 });
     expect((await voice.status()).models.map((m) => m.model)).toEqual(['whisper-turbo', 'parakeet']);
   });
 });

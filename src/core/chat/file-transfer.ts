@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Bucket } from '../../net/mesh/link.js';
 import type { FileFrame } from '../../net/mesh/mesh.js';
 import { FILE_PIECE } from '../../net/mesh/wire.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Chat files travel Mac to Mac over the same end-to-end links as messages, pulled by the
@@ -140,7 +141,7 @@ export class Pull {
       if (this.finished) return void (await handle.close());
       this.handle = handle;
     } catch {
-      this.settle('it could not be saved on this Mac');
+      this.settle(`it could not be saved on ${THIS_COMPUTER}`);
       return;
     }
     if (this.want.size === 0) return this.settle();
@@ -169,7 +170,7 @@ export class Pull {
         if (this.received >= this.want.size) this.settle();
         else this.pump();
       },
-      () => this.settle('it could not be saved on this Mac'),
+      () => this.settle(`it could not be saved on ${THIS_COMPUTER}`),
     );
   }
 

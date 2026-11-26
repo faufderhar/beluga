@@ -1,3 +1,4 @@
+import { setProjectNaming } from '../core/naming-rules.js';
 import { git, tryGit } from '../workspaces/git.js';
 import { byYourHand } from '../core/by-hand.js';
 import { type WorktreeMover, worktreeMover } from '../core/worktree-move.js';
@@ -7,7 +8,7 @@ import { remoteScratch } from '../core/friend-share/scratch.js';
 import type { AddResult, WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { browseDir, listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
-import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, reattach, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, reattach, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes, savePastedText } from '../core/attachments.js';
 import { fetchBytes } from '../core/downloads.js';
 import { testDatabase } from '../core/views/sources.js';
 import { existsSync, statSync } from 'node:fs';
@@ -25,6 +26,8 @@ import { STRIPE_HANDLERS } from './stripe-handlers.js';
 import { REVENUECAT_HANDLERS } from './revenuecat-handlers.js';
 import { SUPPORT_HANDLERS } from './support-handlers.js';
 import { TELEMETRY_HANDLERS } from './telemetry-handlers.js';
+import { ACP_HANDLERS } from './acp-handlers.js';
+import { TRACES_HANDLERS } from './traces-handlers.js';
 import { STATS_HANDLERS } from './stats-handlers.js';
 import { maybeStatsOf } from '../core/stats/counter.js';
 import { WEB_HANDLERS } from './web-handlers.js';
@@ -99,6 +102,8 @@ export const HANDLERS = {
   'session.copyText': (s, text, success) => s.copyText(text, success),
   'session.setPrefs': (s, prefs) => s.setPrefs(prefs),
   'session.setPlanMode': (s, channel, on) => s.setPlanMode(channel, on),
+  'session.setAutopilot': (s, channel, on) => s.setAutopilot(channel, on),
+  'session.setBuildWith': (s, channel, agent) => s.setBuildWith(channel, agent ?? null),
   'session.setClaudeSharing': (s, policy) => s.setClaudeSharing(policy),
   'session.rename': (s, name) => s.rename(name),
   'session.zoom': (s, dir) => s.zoom(dir),
@@ -171,6 +176,8 @@ export const HANDLERS = {
   'sharing.earlier': (s, owner, wsId) => needFriendShares(s).earlier(owner, wsId),
   'sharing.runHere': (s, owner, wsId, prompt) => needFriendShares(s).runHere(owner, wsId, prompt),
   'sharing.fork': (s, owner, wsId, name) => needFriendShares(s).fork(owner, wsId, name),
+  'sharing.forkCarry': (s, wsId, picks) => needFriendShares(s).forkCarry(wsId, picks),
+  'sharing.setForkCarry': (s, wsId, picks) => needFriendShares(s).setForkCarry(wsId, picks),
   'sharing.scratch': (s, owner, wsId) => {
     if (!s.store.getState().shared.some((w) => w.owner === owner && w.id === wsId)) throw new Error('That worktree isn’t shared with you');
     return remoteScratch(owner, wsId, (at, o) => s.listFiles(at, o));
@@ -190,6 +197,7 @@ export const HANDLERS = {
   'remote.requestWorktree': (s, peerId, project, task, plan) => s.remote.requestWorktree(peerId, project, task, plan),
   'remote.handoff': (s, wsId, peerId) => s.remote.handoff(wsId, peerId),
   'remote.canHandOff': (s, wsId, peerId) => s.remote.canHandOff(wsId, peerId),
+  'remote.handoffNote': (s, wsId, peerId) => s.remote.handoffNote(wsId, peerId ?? undefined),
 
   'diff.load': (s, id) => s.diff.load(id),
   'diff.select': (s, index) => s.diff.select(index),
@@ -223,7 +231,22 @@ export const HANDLERS = {
   'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.agent ? { agent: opts.agent } : {}) }))?.id,
   'workspaces.newChat': async (s, projectId, title, dir) => (await ctl(s)?.newChat(projectId, title, dir))?.id,
   'workspaces.startChat': (s, projectId, text, dir, opts) => (maybeStatsOf(s)?.prompt(`new-chat:${projectId}`, text), byYourHand(text, () => ctl(s)?.startChat(projectId, text, dir ?? undefined, { ...(opts?.terminal ? { terminal: true } : {}), ...(opts?.plan ? { plan: true } : {}) }))),
-  'workspaces.startWorktree': async (s, projectId, text, opts) => (maybeStatsOf(s)?.prompt(`new-worktree:${projectId}`, text, opts?.agent?.runtime), await byYourHand(text, () => ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.plan ? { plan: true } : {}), ...(opts?.tasks ? { tasks: true } : {}), ...(opts?.quiet ? { quiet: true } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), ...(opts?.terminal ? { terminal: true } : {}), ...(opts?.id ? { id: opts.id } : {}), nameLater: true })))?.id,
+  // Keys pasted into its first message (BLG-965) are its own variables before it starts, so its first run has them.
+  'workspaces.startWorktree': async (s, projectId, text, opts) => {
+    const vars = opts?.vars?.filter((v) => v.key) ?? [];
+    const preset = vars.length > 0 && Boolean(opts?.id) && s.env.presetWorktree(opts!.id!, vars);
+    try {
+      const id = (maybeStatsOf(s)?.prompt(`new-worktree:${projectId}`, text, opts?.agent?.runtime), await byYourHand(text, () => ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.plan ? { plan: true } : {}), ...(opts?.tasks ? { tasks: true } : {}), ...(opts?.quiet ? { quiet: true } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), ...(opts?.terminal ? { terminal: true } : {}), ...(opts?.id ? { id: opts.id } : {}), ...(opts?.land ? { land: true } : {}), nameLater: true })))?.id;
+      if (id && preset && opts?.id === id) s.env.listInExample(id, vars);
+      else if (id && vars.length) s.env.keepPasted({ workspaceId: id }, vars);
+      // Made under another id (or not at all): the preset goes.
+      if (preset && opts?.id !== id) s.env.forgetWorktree(opts!.id!);
+      return id;
+    } catch (err) {
+      if (preset) s.env.forgetWorktree(opts!.id!);
+      throw err;
+    }
+  },
   'workspaces.branches': (s, projectId) => ctl(s)?.branches(projectId),
   'workspaces.fork': async (s, id, name) => (await ctl(s)?.fork(id, name))?.id,
   'workspaces.editPrompt': (s, id, line, text, mode) => ctl(s)?.editPrompt(id, line, text, mode),
@@ -245,6 +268,8 @@ export const HANDLERS = {
   'workspaces.remove': (s, id, opts) => ctl(s)?.remove(id, opts),
   'workspaces.commit': (s, id, message) => ctl(s)?.commit(id, message),
   'workspaces.merge': (s, id) => ctl(s)?.merge(id),
+  'workspaces.land': (s, id) => ctl(s)?.land(id),
+  'workspaces.setLandOnBase': (s, id, on) => ctl(s)?.setLandOnBase(id, on),
   'workspaces.prepareRemoval': (s, id) => ctl(s)?.prepareRemoval(id),
   'workspaces.applyEnvBack': (s, id, removed) => ctl(s)?.applyEnvBack(id, removed),
   'workspaces.keepEnvHere': (s, id) => ctl(s)?.keepEnvHere(id),
@@ -292,7 +317,7 @@ export const HANDLERS = {
   'workbench.shareScripts': (s, projectId) => bench(s)?.shareScripts(projectId),
   'workbench.setAgent': (s, channel, agent, mode) => s.workbench?.setAgent(channel, agent ?? undefined, mode) ?? false,
   'workbench.setModel': (s, channel, value) => (s.workbench ? s.workbench.setModel(channel, value) : s.setPrefs({ model: value || undefined })),
-  'workbench.setEffort': (s, channel, effort) => (s.workbench ? s.workbench.setEffort(channel, effort || undefined) : s.setPrefs({ effort: effort || null })),
+  'workbench.setEffort': (s, channel, effort) => (s.workbench ? s.workbench.setEffort(channel, effort) : s.setPrefs({ effort: effort === 'auto' ? undefined : effort })),
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.quickPr': (s, id, opts) => bench(s)?.quickPr(id, opts),
   'workbench.mergeToBase': (s, id, opts) => bench(s)?.mergeToBase(id, opts),
@@ -343,6 +368,9 @@ export const HANDLERS = {
   'env.worktree': (s, id) => s.env.worktree(id),
   'env.setWorktree': (s, id, rows) => s.env.setWorktree(id, rows),
   'env.carryWorktree': (s, id) => s.env.carryWorktree(id),
+  'env.pastedKeys': (s, where, text) => s.env.pastedKeys(where, text),
+  'env.keepPasted': (s, where, rows) => s.env.keepPasted(where, rows),
+  'env.notAKey': (s, prefix, on) => s.env.notAKey(prefix, on),
   'env.overview': (s, projectId) => s.env.overview(projectId),
   'env.addToExample': (s, projectId) => s.env.addToExample(projectId),
   'env.exampleSync': (s, projectId, on) => s.env.setExampleSync(projectId, on),
@@ -374,6 +402,7 @@ export const HANDLERS = {
     const a = registerAttachment(saved, statSync(saved).size);
     return { n: a.n, chip: chipText(a.n), file: path.basename(saved) };
   },
+  'attachments.addText': (_s, text) => savePastedText(text),
   'attachments.reattach': (_s, file) => {
     const a = reattach(file);
     if (!a) throw new Error('That image is gone from this computer');
@@ -427,6 +456,14 @@ export const HANDLERS = {
     if (!root) return null;
     return (await git(root, ['remote', 'get-url', 'origin'], 5_000).catch(() => '')).trim() || null;
   },
+  'projects.setNaming': async (s, projectId, patch, team) => {
+    const project = s.store.getState().projects.find((p) => p.id === projectId && p.root);
+    if (!project) throw new Error('No such project');
+    const where = setProjectNaming({ project, yours: s.store.getState().prefs.projectNaming, setYours: (all) => s.setPrefs({ projectNaming: all }) }, patch, team);
+    // beluga.json changed: the project reads it again, so its rule shows (and counts) at once.
+    if (where !== 'yours') await ctl(s)?.refresh();
+    return where;
+  },
   'projects.iconAt': (_s, dir) => readProjectIcon(expandHome(dir)),
   // Every repo found (the sheet shows the newest, and its Filter searches them all).
   'projects.suggest': (s) => suggestProjects(s.store.getState().projects.map((p) => p.root).filter(Boolean), undefined, SUGGEST_ALL),
@@ -464,6 +501,8 @@ export const HANDLERS = {
   ...REVENUECAT_HANDLERS,
   ...SUPPORT_HANDLERS,
   ...TELEMETRY_HANDLERS,
+  ...ACP_HANDLERS,
+  ...TRACES_HANDLERS,
   ...STATS_HANDLERS,
   ...WEB_HANDLERS,
   ...DIAGNOSTICS_HANDLERS,

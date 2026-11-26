@@ -204,11 +204,35 @@ export class ScriptedCodex {
         return;
       }
       if (this.opts.stepMs) await new Promise((resolve) => setTimeout(resolve, this.opts.stepMs));
+      // `long…`: the window fills, and Codex compacts by itself before it goes on.
+      if (words.startsWith('long')) {
+        notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 240_000, inputTokens: 239_000, cachedInputTokens: 0, outputTokens: 1000, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: 258400 } });
+        compaction(threadId, turnId);
+      }
       notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: cmd, command: `/bin/zsh -lc 'echo ${words}'`, cwd: process.cwd(), status: 'completed', aggregatedOutput: `${words}\n`, exitCode: 0, durationMs: 5 } });
       if (this.signedIn) notify('account/rateLimits/updated', { rateLimits: { ...(this.rateLimits as object), primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1780409235 } } });
       notify('item/completed', { threadId, turnId, item: { type: 'reasoning', id: `r-${turnId}`, summary: ['Saying it back.'], content: [] } });
       notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: `m-${turnId}`, text: `echo: ${words}`, phase: null } });
       notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 30, inputTokens: 20, cachedInputTokens: 5, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: 258400 } });
+      notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed', error: null, items: [] } });
+    };
+
+    /**
+     * Codex compacting a thread (thread/compact/start, or by itself mid-turn when the window fills):
+     * its contextCompaction item, the deprecated thread/compacted it still sends with it, then its
+     * count of the shorter history (shapes from codex-cli 0.166).
+     */
+    const compaction = (threadId: string, turnId: string): void => {
+      const item = { type: 'contextCompaction', id: `compact-${turnId}` };
+      notify('item/started', { threadId, turnId, item });
+      notify('item/completed', { threadId, turnId, item });
+      notify('thread/compacted', { threadId, turnId });
+      notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 8, inputTokens: 8, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: 258400 } });
+    };
+    const compactTurn = (threadId: string): void => {
+      const turnId = randomUUID();
+      notify('turn/started', { threadId, turn: { id: turnId, status: 'inProgress', error: null, items: [] } });
+      compaction(threadId, turnId);
       notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed', error: null, items: [] } });
     };
 
@@ -235,6 +259,11 @@ export class ScriptedCodex {
           const input = params.input as Array<{ type: string; text?: string }>;
           setImmediate(() => void turn(String(params.threadId), id, input.find((i) => i.type === 'text')?.text ?? ''));
           return { turn: { id, status: 'inProgress', error: null, items: [] } };
+        }
+        case 'thread/compact/start': {
+          if (!this.threads.has(String(params.threadId))) throw new Error('thread not found');
+          setImmediate(() => compactTurn(String(params.threadId)));
+          return {};
         }
         case 'turn/steer':
           if (running?.id !== params.expectedTurnId) throw new Error('no active turn');

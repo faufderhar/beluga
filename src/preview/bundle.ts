@@ -6,6 +6,7 @@ import { isSecretPath } from '../core/shares.js';
 import type { PreviewProblem } from '../shared/preview/opened.js';
 import { OUTSIDE, buildProblem } from './problems.js';
 import { nextPlugin, sveltePlugin, tailwindPlugin, vuePlugin } from './plugins.js';
+import { svelteKitPlugin } from './sveltekit.js';
 import { REACT_NATIVE_DEFINE, WEB_FIRST_EXTENSIONS, browserPlugin, reactNativePlugin, reactNativeWebOf } from './react-native.js';
 import type { Framework } from '../shared/preview/components.js';
 
@@ -190,7 +191,7 @@ export async function makeBundler(root: string, file: string, rel: string, entry
       legalComments: 'none',
       charset: 'utf8',
       // The fence first: nothing outside the worktree is read by the others either.
-      plugins: [fencePlugin(root), browserPlugin(), ...(native ? [reactNativePlugin()] : []), tailwindPlugin(root), nextPlugin(), ...(entry.framework === 'vue' ? [vuePlugin(root)] : []), ...(entry.framework === 'svelte' ? [sveltePlugin(root, entry.svelte ?? 5)] : [])],
+      plugins: [fencePlugin(root), browserPlugin(), ...(native ? [reactNativePlugin()] : []), tailwindPlugin(root), nextPlugin(), ...(entry.framework === 'vue' ? [vuePlugin(root)] : []), ...(entry.framework === 'svelte' ? [svelteKitPlugin(root), sveltePlugin(root, entry.svelte ?? 5)] : [])],
     }));
   return {
     async build(): Promise<BuildResult> {

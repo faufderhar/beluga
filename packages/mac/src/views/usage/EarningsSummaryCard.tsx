@@ -69,7 +69,7 @@ export function EarningsSummaryCard() {
       aside={
         <>
           {status ? <span className={s.updated}>{status}</span> : null}
-          <IconButton icon="plus" label="Connect Earnings to Another Project…" className={s.earnAdd} onClick={() => openEarnings()} />
+          <IconButton size="small" icon="plus" label="Connect Earnings to Another Project…" className={s.earnAdd} onClick={() => openEarnings()} />
         </>
       }
     >

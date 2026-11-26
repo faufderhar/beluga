@@ -10,8 +10,11 @@ import path from 'node:path';
 import { z } from 'zod';
 import { ENV_KEY, type EnvKeys, type EnvVar, MAX_ENV_VALUE, MAX_ENV_VARS, envProblems, envRecord, importEnv, mergeEnv, parseEnvText } from '../shared/env-vars.js';
 import { DEFAULT_EXAMPLE_FILE, EXAMPLE_FILES, exampleKeys, syncExample } from '../shared/env-example.js';
-import { ENDPOINT_ID, endpointIdFor } from '../shared/local-endpoints.js';
+import { type FoundKey, findKeys, mayHoldKey } from '../shared/key-detect.js';
+import { ENDPOINT_ID, type EndpointFormat, endpointIdFor } from '../shared/local-endpoints.js';
+import { TRACE_FIELD_KEY, TRACE_FIELD_MAX, TRACE_PROVIDER_IDS, type TraceProviderId, mergeTraceFields, traceFields, traceProvider } from '../shared/trace-destinations.js';
 import type { Project, Workspace } from '../workspaces/types.js';
+import { varsElsewhere } from './env-elsewhere.js';
 import { belugaHome } from './home.js';
 import type { Store } from './store.js';
 
@@ -22,9 +25,28 @@ export const Endpoint = z.object({
   baseUrl: z.string().url().max(500).refine((u) => /^https?:\/\//.test(u), 'Use an http:// or https:// address'),
   key: z.string().max(4000).optional(),
   models: z.array(z.string().min(1).max(40)).max(20).default([]),
+  /** Unset: Anthropic's format. 'openai': runs through the translator (agent/runtime/openai-bridge.ts). */
+  format: z.enum(['anthropic', 'openai']).optional(),
 });
 export type Endpoint = z.infer<typeof Endpoint>;
 const MAX_ENDPOINTS = 12;
+
+/**
+ * One of your own trace destinations (BLG-1014, shared/trace-destinations.ts): which tool, whether it's
+ * on, whether your text goes too, and what you pasted in (its keys too: kept here with your other
+ * secrets, never published; screens see only which are saved).
+ */
+export const TraceDestination = z.object({
+  id: z.enum(TRACE_PROVIDER_IDS),
+  on: z.boolean().default(true),
+  text: z.boolean().default(true),
+  fields: z.record(z.string().regex(TRACE_FIELD_KEY), z.string().max(TRACE_FIELD_MAX)).default({}),
+});
+export type TraceDestination = z.infer<typeof TraceDestination>;
+
+/** A key's prefix as kept in notKeys: `rtl_`, `acme_live_`. */
+export const NOT_KEY_PREFIX = /^[a-z][a-z0-9]{1,7}(?:_[a-z0-9]{2,4})?[_-]$/;
+const MAX_NOT_KEYS = 200;
 
 const Vars = z.record(z.string().regex(ENV_KEY), z.string().max(MAX_ENV_VALUE));
 
@@ -50,12 +72,18 @@ export const EnvFile = z.object({
    * other secrets, never published. Screens get them without the key (local-endpoints.ts).
    */
   endpoints: z.array(Endpoint).max(MAX_ENDPOINTS).default([]),
+  /** Prefixes you said aren't keys (`rtl_`, BLG-977): a paste is never asked about as maybe a key for them. */
+  notKeys: z.array(z.string().regex(NOT_KEY_PREFIX)).max(MAX_NOT_KEYS).default([]),
+  /** Your own trace destinations (BLG-1014), one per tool. */
+  traces: z.array(TraceDestination).max(TRACE_PROVIDER_IDS.length).default([]),
+  /** The random id your own traces go under (a conversation's id is a hash of it and the session's). */
+  tracesId: z.string().uuid().optional(),
   /** 2: `dotenv` unset means on. Files without it said false for "never switched on". */
   v: z.number().optional(),
 });
 export type EnvFile = z.infer<typeof EnvFile>;
 
-const EMPTY: EnvFile = { global: {}, claudeDotenv: false, projects: {}, worktrees: {}, endpoints: [], v: 2 };
+const EMPTY: EnvFile = { global: {}, claudeDotenv: false, projects: {}, worktrees: {}, endpoints: [], notKeys: [], traces: [], v: 2 };
 
 /** A file from before .env loaded by default: its "off" was only never switched on, so it's the default now. */
 function upgrade(file: EnvFile): EnvFile {
@@ -161,6 +189,11 @@ function exampleInfo(dir: string, set: ReadonlySet<string>, files: readonly stri
     missing: keys.filter((k) => !set.has(k)),
     unlisted: [...new Set(files)].filter((k) => !listed.has(k)),
   };
+}
+
+/** A key found in pasted text, and whether keeping it changes a variable set there now. */
+export interface PastedKey extends FoundKey {
+  readonly replaces?: boolean;
 }
 
 /** One place's variables, for the Settings editor. */
@@ -310,6 +343,11 @@ export class EnvVars {
     return id ? this.projects.find((p) => p.id === id) : undefined;
   }
 
+  /** A project with no folder (Chats): not one of `projects`, and no place for variables of its own. */
+  private folderless(id: string | undefined): boolean {
+    return Boolean(id) && this.deps.store.getState().projects.some((p) => p.id === id && !p.root);
+  }
+
   /** Tell screens the names (never the values). */
   private publish(): void {
     const projects = Object.fromEntries(Object.entries(this.kept.projects).map(([root, p]) => [root, { keys: Object.keys(p.vars), dotenv: loadsDotenv(p) }]));
@@ -429,6 +467,84 @@ export class EnvVars {
     this.save();
     this.publish();
     return n;
+  }
+
+  /**
+   * The API keys in text just pasted into a chat there (BLG-965), named the way the place names
+   * its keys: one you have already says which, one shaped like yours takes its name, a provider's
+   * takes the name your .env.example uses for it. What comes back holds only the pasted text's own
+   * keys, never another value; `replaces`: a different value is set under that name there now.
+   */
+  pastedKeys(where: EnvPlace, text: string): PastedKey[] {
+    if (!mayHoldKey(text)) return [];
+    const { project, dir, wsId } = this.placeOf(where);
+    const known = mergeEnv(...this.layers(project, dir, wsId, true).map((l) => l.vars));
+    const example = [project?.root, dir].flatMap((d) => (d ? [readExample(d)] : [])).flatMap((f) => (f ? exampleKeys(f.text) : []));
+    const elsewhere = varsElsewhere(this.data, this.projects, { projectRoot: project?.root, wsId }, readDotenv);
+    return findKeys(text, { known, names: example, elsewhere, notKeys: this.data.notKeys }).map((k) => (k.why !== 'yours' && known[k.name] !== undefined && known[k.name] !== k.value ? { ...k, replaces: true } : k));
+  }
+
+  /**
+   * "Not a key" on a paste's card (BLG-977): tokens with this prefix aren't asked about as maybe a
+   * key again (`on: false` takes that back, the card's Undo). Keys in a format we know still are.
+   */
+  notAKey(prefix: string, on: boolean): void {
+    const p = prefix.toLowerCase();
+    if (!NOT_KEY_PREFIX.test(p)) throw new Error('That isn’t a key’s prefix');
+    const rest = this.data.notKeys.filter((k) => k !== p);
+    const notKeys = on ? [...rest, p].slice(-MAX_NOT_KEYS) : rest;
+    if (notKeys.length === this.data.notKeys.length && notKeys.every((k, i) => k === this.data.notKeys[i])) return;
+    this.data = { ...this.data, notKeys };
+    this.save();
+  }
+
+  /**
+   * Keep keys pasted into a chat (BLG-965): as that workspace's own variables (same name: replaced),
+   * so its runs get them and archiving or merging asks whether the project keeps them; with no
+   * workspace yet (a new chat), as the project's own, or with no project either, as yours everywhere. A worktree that has a .env.example lists their names there
+   * (a placeholder, never the value), so the change ships with its work. → the template it listed them in.
+   */
+  keepPasted(where: { readonly workspaceId?: string; readonly projectId?: string }, rows: readonly EnvVar[]): { example?: string } {
+    if (!rows.length) return {};
+    const { workspaceId, projectId } = where;
+    if (!workspaceId) {
+      // A new chat that has no place yet: the project's (or with none, yours), as Settings › Environment would keep them.
+      // Chats has no folder, so it has no variables of its own: a new chat there is one with no project.
+      const scope = this.folderless(projectId) ? undefined : projectId;
+      if (scope && !this.project(scope)) throw new Error('That project is gone');
+      this.set(scope, importEnv(this.get(scope).vars, rows));
+      return {};
+    }
+    const found = this.workspace(workspaceId);
+    if (!found) throw new Error('That chat’s workspace is gone');
+    this.setWorktree(workspaceId, importEnv(toRows(this.data.worktrees[workspaceId]?.vars ?? {}), rows));
+    return this.listInExample(workspaceId, rows);
+  }
+
+  /**
+   * Keys for a worktree that's being made (a key pasted into a new worktree's first message):
+   * set before it exists, so its first run has them. Forgotten if it isn't made (forgetWorktree).
+   */
+  presetWorktree(id: string, rows: readonly EnvVar[]): boolean {
+    // An id that's already a workspace isn't one being made: its variables aren't this message's to add to.
+    if (this.workspace(id)) return false;
+    const vars = checkedVars(importEnv(toRows(this.data.worktrees[id]?.vars ?? {}), rows));
+    this.data = { ...this.data, worktrees: withWorktree(this.data.worktrees, id, { ...this.data.worktrees[id], vars }) };
+    this.save();
+    this.publish();
+    return true;
+  }
+
+  /** Names in a worktree's .env.example (only one it has, and unless the project switched syncing off). → the file. */
+  listInExample(workspaceId: string, rows: readonly EnvVar[]): { example?: string } {
+    const found = this.workspace(workspaceId);
+    if (!found || found.ws.kind !== 'worktree' || this.data.projects[found.project.root]?.exampleSync === false) return {};
+    const template = readExample(found.ws.path);
+    if (!template) return {};
+    const { text, added } = syncExample(template.text, rows);
+    if (!added.length) return {};
+    writeFileSync(path.join(found.ws.path, template.file), text);
+    return { example: template.file };
   }
 
   /** A deleted worktree's variables go with it. */
@@ -608,8 +724,8 @@ export class EnvVars {
   }
 
   /**
-   * Every secret value this computer's Beluga knows: your variables, each project's saved ones and
-   * its main folder's .env files, and the endpoints' keys. Only for masking them out of text on this
+   * Every secret value this computer's Beluga knows: your variables, each project's and worktree's
+   * saved ones (keys pasted into a chat too), its main folder's .env files, and the endpoints' keys. Only for masking them out of text on this
    * computer before it's sent (src/telemetry/mask.ts); never shown, never sent.
    */
   secretValues(): string[] {
@@ -621,7 +737,44 @@ export class EnvVars {
         return [];
       }
     });
-    return [...Object.values(data.global), ...Object.values(data.projects).flatMap((p) => Object.values(p.vars)), ...dotenvs, ...data.endpoints.flatMap((e) => (e.key ? [e.key] : []))];
+    return [...Object.values(data.global), ...Object.values(data.projects).flatMap((p) => Object.values(p.vars)), ...Object.values(data.worktrees).flatMap((w) => Object.values(w.vars)), ...dotenvs, ...data.endpoints.flatMap((e) => (e.key ? [e.key] : [])), ...data.traces.flatMap(traceSecrets)];
+  }
+
+  /** Your trace destinations, keys and all: for sending from this Mac only (never a screen: see telemetry/destinations.ts). */
+  traceDestinations(): readonly TraceDestination[] {
+    return this.data.traces;
+  }
+
+  /**
+   * Connect a tool, or change one. A secret field left empty keeps the one saved, unless its address
+   * changed (shared/trace-destinations.ts mergeTraceFields). `on` and `text` unset keep what it had
+   * (a new one: on, with text).
+   */
+  saveTraceDestination(change: { readonly id: TraceProviderId; readonly on?: boolean; readonly text?: boolean; readonly fields?: Readonly<Record<string, string>> }): void {
+    const provider = traceProvider(change.id);
+    if (!provider) throw new Error('Beluga doesn’t know that tool');
+    const list = this.data.traces;
+    const before = list.find((d) => d.id === change.id);
+    const fields = change.fields ? mergeTraceFields(provider, before?.fields ?? {}, change.fields) : (before?.fields ?? {});
+    const parsed = TraceDestination.safeParse({ id: change.id, on: change.on ?? before?.on ?? true, text: change.text ?? before?.text ?? true, fields: traceFields(provider, fields) });
+    if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'That doesn’t look right');
+    this.data = { ...this.data, traces: before ? list.map((d) => (d.id === change.id ? parsed.data : d)) : [...list, parsed.data], tracesId: this.data.tracesId ?? crypto.randomUUID() };
+    this.save();
+  }
+
+  removeTraceDestination(id: string): void {
+    this.data = { ...this.data, traces: this.data.traces.filter((d) => d.id !== id) };
+    this.save();
+  }
+
+  /** The random id your own traces go under, made once. */
+  tracesId(): string {
+    const kept = this.data.tracesId;
+    if (kept) return kept;
+    const id = crypto.randomUUID();
+    this.data = { ...this.data, tracesId: id };
+    this.save();
+    return id;
   }
 
   /** Your endpoints, keys and all: for runs on this Mac only (never a screen: see local-endpoints.ts). */
@@ -633,14 +786,15 @@ export class EnvVars {
    * Add or change an endpoint. `key`: undefined keeps the one it has, '' removes it. A new one
    * (no id) gets an id from its label. → its id.
    */
-  saveEndpoint(change: { readonly id?: string; readonly label: string; readonly baseUrl: string; readonly key?: string; readonly models?: readonly string[] }): string {
+  saveEndpoint(change: { readonly id?: string; readonly label: string; readonly baseUrl: string; readonly key?: string; readonly models?: readonly string[]; readonly format?: EndpointFormat }): string {
     const list = this.data.endpoints;
     const before = change.id ? list.find((e) => e.id === change.id) : undefined;
     if (change.id && !before) throw new Error('That endpoint is gone');
     const id = before?.id ?? endpointIdFor(change.label, list.map((e) => e.id));
     const key = change.key === undefined ? before?.key : change.key || undefined;
     const models = [...new Set((change.models ?? before?.models ?? []).map((m) => m.trim()).filter(Boolean))];
-    const parsed = Endpoint.safeParse({ id, label: change.label.trim(), baseUrl: change.baseUrl.trim().replace(/\/+$/, ''), ...(key ? { key } : {}), models });
+    const format = change.format ?? before?.format;
+    const parsed = Endpoint.safeParse({ id, label: change.label.trim(), baseUrl: change.baseUrl.trim().replace(/\/+$/, ''), ...(key ? { key } : {}), models, ...(format === 'openai' ? { format } : {}) });
     if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'That endpoint doesn’t look right');
     if (!before && list.length >= MAX_ENDPOINTS) throw new Error(`Up to ${MAX_ENDPOINTS} endpoints`);
     this.data = { ...this.data, endpoints: before ? list.map((e) => (e.id === id ? parsed.data : e)) : [...list, parsed.data] };
@@ -759,4 +913,10 @@ function worktreeAt(project: Project, dir: string | undefined): { wsId?: string 
   const at = path.resolve(dir);
   const ws = project.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && inside(at, w.path)).sort((a, b) => b.path.length - a.path.length)[0];
   return ws ? { wsId: ws.id } : {};
+}
+
+/** A destination's secret values (its keys, a DSN, a header list): masked out of everything sent. */
+function traceSecrets(d: TraceDestination): string[] {
+  const provider = traceProvider(d.id);
+  return (provider?.fields ?? []).flatMap((f) => (f.kind === 'secret' && d.fields[f.key] ? [d.fields[f.key]!] : []));
 }

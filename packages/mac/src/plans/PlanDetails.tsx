@@ -13,7 +13,7 @@ import { type FlowStep, MILESTONE_STATE, branchFlow, milestoneNowWords, taskWord
 import { LiveDot, TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
 import { openDecision } from './plan-ask-model.js';
 import { PlanFeed } from './PlanFeed.js';
-import { useCheckerChat, useClock, usePlanActions } from './use-plans.js';
+import { useCardClock, useCheckerChat, useClock, usePlanActions } from './use-plans.js';
 import { useStartWith } from '../components/agent-options.js';
 import { SplitButton } from '../components/SplitButton.js';
 import { useMyAgent } from '../lib/agent-words.js';
@@ -60,7 +60,7 @@ export function PlanDetails({ view, picked, canStart, onPick, onClose }: { view:
     <aside className={p.details} aria-label={feed ? 'What happened' : branch ? 'Where the work goes' : decided ? 'Decisions' : 'Details'}>
       <header className={p.detailsHead} data-scrolled={scrolled ? 'true' : 'false'}>
         <div className={p.detailsHeadText}>{feed ? <FeedHead /> : branch ? <BranchHead view={view} /> : decided ? <DecisionsHead /> : gate ? <GateHead m={gate} /> : <TaskHead t={task!} />}</div>
-        <IconButton icon="x" label="Close" className={p.detailsClose} onClick={onClose} />
+        <IconButton size="small" icon="x" label="Close" className={p.detailsClose} onClick={onClose} />
       </header>
       <div key={picked} className={p.detailsBody} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
         {feed ? <PlanFeed plan={view.plan} /> : branch ? <BranchFlow view={view} /> : decided ? <PlanDecisions plan={view.plan} onPick={onPick} /> : gate ? <GateDetails plan={view.plan} m={gate} onPick={onPick} /> : <TaskDetails view={view} t={task!} canStart={canStart} />}
@@ -160,7 +160,7 @@ function BranchFlow({ view }: { view: PlanView }) {
 
 function TaskHead({ t }: { t: TaskView }) {
   // Its state in words, with what it's doing now (the step and its time, a stall, a usage limit).
-  const now = useClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
+  const now = useCardClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
   const info = taskWords(t, now);
   return (
     <>

@@ -182,7 +182,7 @@ function Details({ activity, earnings, range, onRange }: { activity: EarningsAct
   return (
     <div className={s.details}>
       <div className={s.bar}>
-        <Segmented<`${EarningsRange}`>
+        <Segmented<`${EarningsRange}`> size="small"
           label="Range"
           value={`${range}`}
           onChange={(v) => onRange(Number(v) as EarningsRange)}

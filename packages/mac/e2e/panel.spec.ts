@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from './fixtures.js';
+import { termText } from './helpers.js';
 
 /**
  * The workspace screen: the conversation stays in the center, and the right panel has the
@@ -173,14 +174,14 @@ test('Terminal in the panel: + adds a shell for this workspace, and it runs ther
   await expect(term.getByRole('tab', { name: /^Shell \d+/ })).toBeVisible();
   await term.locator('.xterm').click();
   await page.keyboard.type('pwd; echo panel-$((6*7))\n');
-  await expect(term.getByText('panel-42').last()).toBeVisible({ timeout: 15_000 });
-  await expect(term.getByText(/add-auth/).first()).toBeVisible();
+  await expect.poll(() => termText(term), { timeout: 15_000 }).toContain('panel-42');
+  await expect.poll(() => termText(term)).toMatch(/add-auth/);
   await term.getByRole('tab', { name: /^Shell \d+/ }).hover();
   await term.getByRole('button', { name: /^Close Shell \d+/ }).click();
   await expect(term.getByRole('tab', { name: /^Shell \d+/ })).toHaveCount(0);
 });
 
-test('⌘J opens a drawer under the chat when that’s your choice (Settings › Terminal), and it remembers its height', async ({ page }) => {
+test('⌘J opens the terminal under the chat when that’s your choice (Settings › Terminal), and it remembers its height', async ({ page }) => {
   await page.keyboard.press('Meta+,');
   await page.getByRole('dialog').getByRole('button', { name: 'Terminal', exact: true }).click();
   await page.getByRole('dialog').getByRole('tab', { name: 'Bottom Drawer' }).click();
@@ -192,14 +193,14 @@ test('⌘J opens a drawer under the chat when that’s your choice (Settings ›
   // ⌘J puts the keyboard in it.
   await expect(drawer.locator('.xterm-helper-textarea')).toBeFocused();
   await page.keyboard.type('echo drawer-$((6*7))\n');
-  await expect(drawer.getByText('drawer-42').last()).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => termText(drawer), { timeout: 15_000 }).toContain('drawer-42');
   // The conversation stays above it.
   await expect(composer(page)).toBeVisible();
-  // Drag it taller; the height is kept.
-  const edge = page.getByRole('separator', { name: 'Resize the terminal drawer' });
+  // It's a group of the center's dock, under the chat's: drag the divider between them to make it taller; the height is kept.
+  const group = page.getByRole('main').locator('.dv-groupview').filter({ has: page.getByRole('tab', { name: 'Terminal', exact: true }) });
   const before = await settledHeight(drawer);
-  const box = (await edge.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const box = (await group.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y - 120, { steps: 6 });
   await page.mouse.up();
@@ -209,14 +210,19 @@ test('⌘J opens a drawer under the chat when that’s your choice (Settings ›
   await openWorkspace(page);
   await expect(drawer).toBeVisible();
   expect(Math.abs((await settledHeight(drawer)) - taller)).toBeLessThan(4);
-  // The panel's Terminal tab says where the terminal is.
-  await tab(page, 'Terminal').click();
-  await expect(panel(page).getByText('The terminal is in the drawer')).toBeVisible();
+  // It's in one place: the panel has no Terminal tab while it's under the chat.
+  await expect(tab(page, 'Terminal')).toHaveCount(0);
   // ⌘J puts the keyboard in it; typing there, ⌘J puts it away.
   await page.keyboard.press('Meta+J');
   await expect(drawer.locator('.xterm-helper-textarea')).toBeFocused();
   await page.keyboard.press('Meta+J');
   await expect(drawer).toBeHidden();
+  await expect(composer(page)).toBeFocused();
+  // Its ⋯ menu moves it to the panel, where ⌘J shows it from then on.
+  await page.keyboard.press('Meta+J');
+  await drawer.getByRole('button', { name: 'Terminal options' }).click();
+  await page.getByRole('menuitem', { name: 'Move to the Right Panel' }).click();
+  await expect(panel(page).getByRole('region', { name: 'Terminal' })).toBeVisible();
 });
 
 test('dragging the panel’s edge resizes it, and the width is kept', async ({ page }) => {
@@ -255,14 +261,42 @@ test('Run shows the terminal without taking the keyboard from the message box', 
   await page.keyboard.press('Meta+R');
 });
 
-test('drag a tab to the other pane and it stays there; right-click moves it back; the bottom pane folds to its tabs', async ({ page }) => {
+test('a tab moves beside the chat and back; the chat keeps what you were typing', async ({ page }) => {
+  await openWorkspace(page);
+  const center = page.getByRole('tablist', { name: 'Center' });
+  // The chat alone has no strip of its own.
+  await expect(center).toHaveCount(0);
+  await composer(page).fill('still here');
+  await tab(page, 'Files').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move Beside the Chat' }).click();
+  // In the center's dock now (in the page's main area), out of the panel.
+  await expect(center.getByRole('tab')).toHaveText(['Files']);
+  await expect(panel(page).getByRole('tab', { name: 'Files', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('main').getByRole('tree', { name: 'Files' })).toBeVisible();
+  await expect(composer(page)).toHaveValue('still here');
+  // It shows whether the panel does or not.
+  await page.keyboard.press('Meta+Alt+0');
+  await expect(page.getByRole('main').getByRole('tree', { name: 'Files' })).toBeVisible();
+  await page.keyboard.press('Meta+Alt+0');
+  // After a reload it's still beside the chat.
+  await page.reload();
+  await openWorkspace(page);
+  await expect(center.getByRole('tab')).toHaveText(['Files']);
+  await center.getByRole('tab', { name: 'Files', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move to the Panel' }).click();
+  await expect(center).toHaveCount(0);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel', exact: true }).getByRole('tab')).toHaveText([/^Changes/, 'Files', 'Scratch', 'Info']);
+  await composer(page).fill('');
+});
+
+test('drag a tab to the other group and it stays there; right-click moves it back; the dock under the top group folds to its tabs', async ({ page }) => {
   await openWorkspace(page);
   const top = panel(page).getByRole('tablist', { name: 'Panel', exact: true });
   const bottom = panel(page).getByRole('tablist', { name: 'Panel bottom' });
   await top.getByRole('tab', { name: 'Info', exact: true }).dragTo(bottom);
   await expect(bottom.getByRole('tab')).toHaveText(['Terminal', 'Info', 'Background']);
   await expect(bottom.getByRole('tab', { name: 'Info' })).toHaveAttribute('aria-selected', 'true');
-  await expect(panel(page).locator('#panel-body-bottom').getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+  await expect(panel(page).locator('[data-panel-dock="true"]:visible').getByRole('complementary', { name: 'Inspector' })).toBeVisible();
   // After a reload, it's still there.
   await page.reload();
   await openWorkspace(page);
@@ -270,11 +304,11 @@ test('drag a tab to the other pane and it stays there; right-click moves it back
   await bottom.getByRole('tab', { name: 'Info' }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Move to Top' }).click();
   await expect(top.getByRole('tab')).toHaveText([/^Changes/, 'Files', 'Scratch', 'Info']);
-  // The bottom pane folds to its tabs, and opens again from any of them.
+  // The dock folds to its tabs, and opens again from any of them.
   await panel(page).getByRole('button', { name: 'Hide the terminal dock' }).click();
-  await expect(panel(page).locator('#panel-body-bottom')).toHaveCount(0);
+  await expect(panel(page).locator('[data-panel-dock="true"]:visible')).toHaveCount(0);
   await bottom.getByRole('tab', { name: 'Terminal' }).click();
-  await expect(panel(page).locator('#panel-body-bottom')).toBeVisible();
+  await expect(panel(page).locator('[data-panel-dock="true"]:visible')).toBeVisible();
   // Reset Panel Layout puts everything back.
   await top.getByRole('tab', { name: 'Files' }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Reset Panel Layout' }).click();

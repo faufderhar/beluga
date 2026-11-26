@@ -44,6 +44,8 @@ export default defineConfig<object, { demoLinkMs: number }>({
     // The real served build through the daemon's web port, joined by a link (e2e/web/, BLG-652): built once first.
     { name: 'web-build', testMatch: /web\/build\.setup\.ts$/ },
     { name: 'web', testMatch: /web\/.*\.spec\.ts$/, dependencies: ['web-build'], use: { baseURL: undefined, storageState: { cookies: [], origins: [] } } },
+    // The phone layout (BLG-6) in Safari's engine too, where it's installed: what an iPhone runs.
+    ...(existsSync(webkit.executablePath()) ? [{ name: 'phone-webkit', testMatch: /phone\.spec\.ts$/, use: { browserName: 'webkit' as const } }] : []),
     // The same in Firefox and Safari's WebKit, where they're installed (`npx playwright install firefox webkit`).
     ...(['firefox', 'webkit'] as const)
       .filter((name) => existsSync({ firefox, webkit }[name].executablePath()))

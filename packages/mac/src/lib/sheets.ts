@@ -14,6 +14,8 @@ export type NativeSheet =
   | { readonly kind: 'continue_worktree'; readonly wsId: string }
   /** Fork a friend's shared worktree to this Mac: its changes, Scratch and conversation (BLG-312). */
   | { readonly kind: 'fork_to_mac'; readonly owner: string; readonly wsId: string }
+  /** What forks of your worktree bring of what git ignores (BLG-1017): pick, see the list and size, Save. */
+  | { readonly kind: 'fork_carry'; readonly wsId: string }
   /** A command to run on a friend's computer (`peerId` unset: pick who). */
   | { readonly kind: 'peer_run'; readonly peerId?: string }
   /** A new template (Name, Prompt, Plan first). */
@@ -55,6 +57,8 @@ export type NativeSheet =
   | { readonly kind: 'new_plan'; readonly projectId?: string }
   /** A new sentinel (docs/sentinel.md §3): from a recipe, or built yourself; `projectId` 'mac' is Your Mac. */
   | { readonly kind: 'new_sentinel'; readonly projectId?: string; readonly way?: 'describe' | 'recipe' | 'build' }
+  /** Make a schedule that wakes this chat (BLG-400): the message box's Schedule mode › When › Custom…. `onMade`: once it's made. */
+  | { readonly kind: 'schedule'; readonly channel: string; readonly prompt?: string; readonly onMade?: () => void }
   /** Add a Tile to a dashboard (docs/sentinel.md §10). */
   | { readonly kind: 'add_tile'; readonly dashboardId: string }
   /** A kept table's document or storage object, or a run's file, in Beluga's viewer (BLG-381); `name` is the storage cell for one from Storage; for a run's file (BLG-392), `metric` is the run and `name` its file. */
@@ -67,6 +71,7 @@ export type NativeSheet =
   | { readonly kind: 'plan_send_back'; readonly planId: string; readonly milestone: string }
   /** How a running plan runs (its mode), with what a change means from now on. */
   | { readonly kind: 'plan_mode'; readonly planId: string }
+  | { readonly kind: 'plan_settings'; readonly planId: string }
   /** A GitHub step couldn't reach GitHub: why, in plain words, and its fixes (see git-trouble.ts). */
   | { readonly kind: 'git_trouble'; readonly wsId: string; readonly trouble: import('../../../../src/shared/git-trouble.js').GitTrouble; readonly retry: import('./git-trouble.js').GitRetry };
 

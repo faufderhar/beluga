@@ -208,7 +208,7 @@ function InviteLink({ g }: { g: GroupView }) {
           </div>
         </>
       ) : (
-        <Button icon="link" disabled={busy} onClick={() => void make(false)}>
+        <Button size="small" icon="link" disabled={busy} onClick={() => void make(false)}>
           Create Invite Link
         </Button>
       )}

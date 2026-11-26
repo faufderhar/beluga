@@ -8,12 +8,11 @@ import { Icon } from '../../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../../components/ui.js';
 import { useApi, useApp, useBeluga, useScopedKey } from '../../lib/beluga.js';
+import { copyText } from '../../lib/copy.js';
 import { scrollWithin } from '../../lib/scroll-within.js';
 import { ViewBoundary } from '../../lib/lazy-view.js';
-import { localPathOf, openWithDefaultApp } from '../../lib/files.js';
+import { localPathOf, openWithDefaultApp, revealInFinder } from '../../lib/files.js';
 import { focusFor, openFocus, showChange, usePanelRuntime } from '../../lib/panel.js';
-import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
-import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { chordLabel } from '../../lib/shortcuts-model.js';
 import { STATE } from '../../views/DiffView.js';
 import { useRowItems } from '../../views/FilesView.js';
@@ -28,11 +27,12 @@ import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
 import { useFileDrag } from '../file-drag.js';
+import { useSplit } from './use-split.js';
 import { type TreeRow, ancestorsOf, foundRows, treeRows } from './tree.js';
 import s from './panel.module.css';
 import k from './content-search.module.css';
 import { revealLabel } from '../../lib/os-words.js';
-import { showWorktreeFolder, useRevealLabel } from '../../lib/remote-open.js';
+import { showWorktreeFolder, useRevealFileLabel, useRevealLabel } from '../../lib/remote-open.js';
 import { ReaderContent } from '../../views/reader/reader-lazy.js';
 
 /** The reader in its own chunk (views/reader/reader-lazy.tsx): fetched early, drawn at once once it's here (BLG-853), giving up on a stalled fetch instead of waiting (#370). */
@@ -97,7 +97,7 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
         <span className={s.flex} />
         <EditTools viewer={viewer} wsId={wsId} selfId={selfId} compact />
         {markdown ? (
-          <Segmented
+          <Segmented size="small"
             label="Show as"
             value={mode}
             onChange={setMode}
@@ -108,10 +108,10 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
           />
         ) : null}
         {component && !editing ? <PreviewToggle previewing={previewing} onChange={setPreviewing} /> : null}
-        {changed ? <IconButton icon="diff" label="Show Changes" onClick={() => showChange(client.store.getState(), viewer.path)} /> : null}
-        {local ? <IconButton icon="external" label={isPdfFile(viewer.path) ? 'Open in Preview' : 'Open in Editor'} onClick={() => void openWithDefaultApp(client, local)} /> : null}
-        <IconButton icon="expand" label="Open in full" keys={chordLabel('Cmd+Enter')} onClick={() => openFocus('file', wsId)} />
-        <IconButton icon="x" label="Close" keys="Esc" onClick={() => void api.files.closeViewer()} />
+        {changed ? <IconButton size="small" icon="diff" label="Show Changes" onClick={() => showChange(client.store.getState(), viewer.path)} /> : null}
+        {local ? <IconButton size="small" icon="external" label={isPdfFile(viewer.path) ? 'Open in Preview' : 'Open in Editor'} onClick={() => void openWithDefaultApp(client, local)} /> : null}
+        <IconButton size="small" icon="expand" label="Open in full" keys={chordLabel('Cmd+Enter')} onClick={() => openFocus('file', wsId)} />
+        <IconButton size="small" icon="x" label="Close" keys="Esc" onClick={() => void api.files.closeViewer()} />
       </div>
       <div ref={body} className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0} {...{ [SCROLL_ROOT]: '' }}>
         <ViewBoundary at={viewer.path}>
@@ -126,7 +126,7 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
 
 /**
  * The right panel's Files: the workspace's folder as a tree (search it by name or by contents),
- * and the file you pick, previewed under it. Double-click opens a file in its app; right-click for
+ * and the file you pick, previewed under it (beside it, in a wide tab). Double-click opens a file in its app; right-click for
  * the rest. On a project's page (`project`) it's the project's main folder: the same, without
  * Show Changes (that's a worktree's Changes tab).
  */
@@ -134,7 +134,7 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
   const api = useApi();
   const { client } = useBeluga();
   const revealWords = useRevealLabel();
-  const prefs = usePrefs();
+  const revealFileWords = useRevealFileLabel();
   const selfId = useApp((st) => st.selfId);
   const cache = useApp((st) => st.dirCache);
   const viewer = useApp((st) => st.viewer);
@@ -169,7 +169,6 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
   const list = useRef<HTMLDivElement>(null);
   const hitList = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
-  const box = useRef<HTMLDivElement>(null);
   // A line found in the contents: the file opens there.
   const openAt = (path: string, line: number): void => {
     revealLine(at(path), line);
@@ -203,6 +202,8 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
   }, [answered]);
   const early: ViewerState | undefined = opening && !answered ? { ...opening, content: '', truncated: false, loading: true, scroll: 0 } : undefined;
   const previewed = inFocus ? undefined : (early ?? shown);
+  // Under the tree while the tab is narrow, beside it once there's room for both.
+  const split = useSplit(Boolean(previewed));
   useEffect(() => {
     if (!shown) return;
     const up = ancestorsOf(shown.path);
@@ -306,110 +307,118 @@ export function FilesTab({ wsId, project = false }: { wsId: string; project?: bo
     }
   };
 
-  const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
   const local = shown ? localOf(shown.path) : undefined;
+  // Where all this is on disk: what's picked in the tree (else the open file, else the folder itself).
+  const picked = contents ? (shown?.path ?? '') : (cursor ?? shown?.path ?? '');
+  const onDisk = localOf(picked);
+  const pickedDir = !picked || expanded.has(picked) || entriesOf(picked) !== undefined || rows.some((r) => r.path === picked && r.dir);
+  // The folder itself opens; anything in it is shown selected in its own folder (as the tree's right-click does).
+  const showOnDisk = (): void => void (picked && onDisk ? revealInFinder(client, onDisk) : showWorktreeFolder(client, wsId));
   return (
-    <div ref={box} className={s.stack}>
+    <div className={s.filesBox}>
       {fileDrag}
-      <div className={s.top} style={previewed ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
-        <div className={s.filterRow}>
-          <label className={s.filter}>
-            <Icon name="search" size={12} />
-            <input
-              ref={field}
-              value={query}
-              placeholder={contents ? 'Search in files' : 'Search file names'}
-              aria-label={contents ? 'Search in the files’ contents' : 'Search file names'}
-              spellCheck={false}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape' && query) (e.preventDefault(), e.stopPropagation(), setQuery(''));
-                else if (e.key === 'ArrowDown' && contents) (e.preventDefault(), hitList.current?.focus());
-                else if (e.key === 'ArrowDown') (e.preventDefault(), list.current?.focus(), setCursor(rows.find((r) => r.kind === 'entry')?.path));
-              }}
-            />
-            <FlagToggles flags={flags} onChange={setFlags} />
-          </label>
-          {contents ? null : <IconButton icon="chevronUp" label="Collapse all folders" onClick={() => expand(new Set())} disabled={!expanded.size} />}
-          <IconButton icon="folder" label={revealWords} onClick={() => void showWorktreeFolder(client, wsId)} />
-        </div>
-        <div className={k.modeRow}>
-          <Segmented
-            label="Search"
-            radio
-            value={searchIn}
-            onChange={(v) => {
-              setSearchIn(v);
-              field.current?.focus();
-            }}
-            options={[
-              { value: 'names', label: 'Names', hint: 'Find files by name or path, anywhere in the folder' },
-              { value: 'contents', label: 'Contents', hint: 'Search inside the files (ripgrep)' },
-            ]}
-          />
-        </div>
-        {contents ? (
-          <ContentResultsList state={found} query={query} listRef={hitList} onOpen={openAt} onEscape={() => field.current?.focus()} />
-        ) : (
-          <div ref={list} className={cx(s.list, s.tree)} role="tree" aria-label="Files" tabIndex={0} onKeyDown={onKey}>
-            {rows.map((row) => {
-              const state = changes.files.get(row.path);
-              const look = state ? STATE[state] : undefined;
-              const on = row.path === cursor;
-              return row.kind === 'loading' ? (
-                <div key={`${row.path}…`} className={s.treeNote} style={{ paddingLeft: 10 + row.depth * 14 + 18 }}>
-                  Loading…
-                </div>
-              ) : (
-                <ActionsContext key={row.path} items={() => itemsFor(row)}>
-                  <div
-                    role="treeitem"
-                    aria-level={row.depth + 1}
-                    aria-selected={on}
-                    aria-expanded={row.dir ? row.open : undefined}
-                    aria-label={row.name}
-                    data-cursor={on}
-                    data-file-row={row.path}
-                    {...(row.dir ? { 'data-file-dir': '' } : {})}
-                    className={cx(s.row, s.treeRow, on && s.rowOn, shown?.path === row.path && s.rowShown)}
-                    style={{ paddingLeft: 6 + row.depth * 14 }}
-                    title={row.path}
-                    {...aheadOnHover(api, () => (row.dir ? undefined : at(row.path)))}
-                    onClick={() => activate(row)}
-                    onDoubleClick={() => {
-                      const p = localOf(row.path);
-                      if (!row.dir && p) void openWithDefaultApp(client, p);
-                    }}
-                  >
-                    <span className={s.chevron}>{row.dir ? <Icon name={row.open ? 'chevronDown' : 'chevronRight'} size={9} /> : null}</span>
-                    <Icon name={row.dir ? 'folder' : 'file'} size={13} className={row.dir ? s.dirIcon : s.fileIcon} />
-                    <span className={cx(s.rowName, look?.tone)}>
-                      <Marked name={row.name} marks={row.marks} />
-                    </span>
-                    {look ? <span className={cx(d.letter, look.tone)}>{look.letter}</span> : row.dir && changes.dirs.has(row.path) ? <span className={s.changedDot} title="Has changes" /> : null}
-                    {!row.dir && !look && row.size !== undefined && on ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
-                  </div>
-                </ActionsContext>
-              );
-            })}
-            {q ? <NameNote state={named} count={rows.filter((r) => !r.dir).length} /> : null}
+      <div ref={split.ref} className={cx(s.stack, split.side && s.stackSide)}>
+        <div className={s.top} style={split.listStyle}>
+          <div className={s.filterRow}>
+            <label className={s.filter}>
+              <Icon name="search" size={12} />
+              <input
+                ref={field}
+                value={query}
+                placeholder={contents ? 'Search in files' : 'Search file names'}
+                aria-label={contents ? 'Search in the files’ contents' : 'Search file names'}
+                spellCheck={false}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape' && query) (e.preventDefault(), e.stopPropagation(), setQuery(''));
+                  else if (e.key === 'ArrowDown' && contents) (e.preventDefault(), hitList.current?.focus());
+                  else if (e.key === 'ArrowDown') (e.preventDefault(), list.current?.focus(), setCursor(rows.find((r) => r.kind === 'entry')?.path));
+                }}
+              />
+              <FlagToggles flags={flags} onChange={setFlags} />
+            </label>
+            {contents ? null : <IconButton size="small" icon="chevronUp" label="Collapse all folders" onClick={() => expand(new Set())} disabled={!expanded.size} />}
+            <IconButton size="small" icon="folder" label={revealWords} onClick={() => void showWorktreeFolder(client, wsId)} />
           </div>
-        )}
+          <div className={k.modeRow}>
+            <Segmented size="small"
+              label="Search"
+              radio
+              value={searchIn}
+              onChange={(v) => {
+                setSearchIn(v);
+                field.current?.focus();
+              }}
+              options={[
+                { value: 'names', label: 'Names', hint: 'Find files by name or path, anywhere in the folder' },
+                { value: 'contents', label: 'Contents', hint: 'Search inside the files (ripgrep)' },
+              ]}
+            />
+          </div>
+          {contents ? (
+            <ContentResultsList state={found} query={query} listRef={hitList} onOpen={openAt} onEscape={() => field.current?.focus()} />
+          ) : (
+            <div ref={list} className={cx(s.list, s.tree)} role="tree" aria-label="Files" tabIndex={0} onKeyDown={onKey}>
+              {rows.map((row) => {
+                const state = changes.files.get(row.path);
+                const look = state ? STATE[state] : undefined;
+                const on = row.path === cursor;
+                return row.kind === 'loading' ? (
+                  <div key={`${row.path}…`} className={s.treeNote} style={{ paddingLeft: 10 + row.depth * 14 + 18 }}>
+                    Loading…
+                  </div>
+                ) : (
+                  <ActionsContext key={row.path} items={() => itemsFor(row)}>
+                    <div
+                      role="treeitem"
+                      aria-level={row.depth + 1}
+                      aria-selected={on}
+                      aria-expanded={row.dir ? row.open : undefined}
+                      aria-label={row.name}
+                      data-cursor={on}
+                      data-file-row={row.path}
+                      {...(row.dir ? { 'data-file-dir': '' } : {})}
+                      className={cx(s.row, s.treeRow, on && s.rowOn, shown?.path === row.path && s.rowShown)}
+                      style={{ paddingLeft: 6 + row.depth * 14 }}
+                      title={row.path}
+                      {...aheadOnHover(api, () => (row.dir ? undefined : at(row.path)))}
+                      onClick={() => activate(row)}
+                      onDoubleClick={() => {
+                        const p = localOf(row.path);
+                        if (!row.dir && p) void openWithDefaultApp(client, p);
+                      }}
+                    >
+                      <span className={s.chevron}>{row.dir ? <Icon name={row.open ? 'chevronDown' : 'chevronRight'} size={9} /> : null}</span>
+                      <Icon name={row.dir ? 'folder' : 'file'} size={13} className={row.dir ? s.dirIcon : s.fileIcon} />
+                      <span className={cx(s.rowName, look?.tone)}>
+                        <Marked name={row.name} marks={row.marks} />
+                      </span>
+                      {look ? <span className={cx(d.letter, look.tone)}>{look.letter}</span> : row.dir && changes.dirs.has(row.path) ? <span className={s.changedDot} title="Has changes" /> : null}
+                      {!row.dir && !look && row.size !== undefined && on ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
+                    </div>
+                  </ActionsContext>
+                );
+              })}
+              {q ? <NameNote state={named} count={rows.filter((r) => !r.dir).length} /> : null}
+            </div>
+          )}
+        </div>
+        {previewed ? (
+          <>
+            <ResizeHandle label="Resize the tree" {...split.handle} />
+            <Preview viewer={previewed} wsId={wsId} local={local} changed={canShowChange(previewed.path)} />
+          </>
+        ) : null}
       </div>
-      {previewed ? (
-        <>
-          <ResizeHandle
-            axis="y"
-            label="Resize the tree"
-            onMove={(y) => {
-              const r = box.current?.getBoundingClientRect();
-              if (r) setPrefs({ panelSplit: clampShare((y - r.top) / r.height, SPLIT_MIN, SPLIT_MAX) });
-            }}
-            onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
-            onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
-          />
-          <Preview viewer={previewed} wsId={wsId} local={local} changed={canShowChange(previewed.path)} />
-        </>
+      {onDisk ? (
+        <footer className={s.pathBar} aria-label="Path on disk">
+          {/* Cut at its start when it's long: the end (the file) stays readable. */}
+          <span className={cx(s.pathText, 'selectable')} title={onDisk}>
+            <bdi>{onDisk}</bdi>
+          </span>
+          <IconButton size="small" icon="folder" label={pickedDir ? revealWords : revealFileWords} onClick={showOnDisk} />
+          <IconButton size="small" icon="copy" label="Copy Path" onClick={() => void copyText(onDisk).then(() => client.store.dispatch({ type: 'toast', text: 'Copied the path', level: 'success' }))} />
+        </footer>
       ) : null}
     </div>
   );

@@ -70,7 +70,6 @@ const ICON: Record<WorkspaceAction, IconName> = {
   archive: 'archive',
   restore: 'archive',
   delete: 'x',
-  handoff: 'hand',
   compact: 'gauge',
   share: 'share',
   setup: 'terminal',
@@ -119,8 +118,6 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
       return 'Archive…';
     case 'delete':
       return 'Delete…';
-    case 'handoff':
-      return 'Hand Off…';
     case 'share':
       return b.label.endsWith('…') ? b.label : `${b.label}…`;
     case 'merge_claude':
@@ -205,7 +202,7 @@ const SECTIONS: ReadonlyArray<readonly ToolAction['action'][]> = [
   ['open_plan', 'open_task'],
   ['run'],
   ['commit', 'pr', 'resolve_pr', 'fix_checks', 'review_claude', 'merge', 'merge_anyway', 'merge_claude'],
-  ['compact', 'handoff', 'share'],
+  ['compact', 'share'],
   ['finder', 'fork', 'setup'],
   ['continue_after_merge', 'restore', 'archive', 'delete'],
 ];

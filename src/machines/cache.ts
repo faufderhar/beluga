@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { type Action, type DomainState, reduceDomain } from '../core/store.js';
+import type { Action, DomainState } from '../core/store.js';
+import { replay } from '../ipc/state-compat.js';
 
 /**
  * Each computer's last state on this Mac (BLG-792): what a screen of yours there last showed, kept
@@ -71,7 +72,11 @@ export class StateCache {
   apply(machine: string, seq: number, action: Action): void {
     const k = this.kept.get(machine);
     if (!k || seq !== k.seq + 1) return;
-    this.kept.set(machine, { ...k, snapshot: reduceDomain(k.snapshot, action), seq, at: this.now() });
+    // Its Beluga may be another version (state-compat.ts): an action this reducer throws on is left
+    // out, and the next one, out of order, waits for its next snapshot.
+    const { state, outcome } = replay(k.snapshot, action);
+    if (outcome === 'failed') return;
+    this.kept.set(machine, { ...k, snapshot: state, seq, at: this.now() });
     this.later(machine);
   }
 

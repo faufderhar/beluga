@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { channelSuggestions, mentionedAsk, mergeAsk } from '../packages/mac/src/network/chat-model.js';
+import { channelSuggestions, channelWorld, mentionableProjects, mentionedAsk, mergeAsk } from '../packages/mac/src/network/chat-model.js';
+import { resolveMention } from '../packages/mac/src/chat/mentions.js';
 import type { FriendView, MemberView, MessageView } from '../src/net/mesh/views.js';
 import {
   acceptError,
@@ -264,6 +265,43 @@ describe('@ and / in a channel', () => {
     // Alone: only your Claude.
     expect(channelSuggestions('@', { people: [] }).map((s) => s.label)).toEqual(['Your agent']);
     expect(channelSuggestions('no mention', { people })).toEqual([]);
+  });
+
+  it('lists your projects after the people, only those "@" takes whole', () => {
+    const projects = [
+      { name: 'beluga', id: 'pr-1' },
+      { name: 'My App', id: 'pr-2' },
+      { name: 'bob-api', id: 'pr-3' },
+      { name: 'claude-tools', id: 'pr-4' },
+      { name: 'mia', id: 'pr-5' },
+    ];
+    const list = channelSuggestions('look at @', { people, projects });
+    expect(list.map((s) => s.label).slice(-3)).toEqual(['beluga', 'bob-api', 'claude-tools']);
+    expect(list.find((s) => s.label === 'beluga')).toMatchObject({ value: 'look at @beluga ', hint: '@beluga · your project' });
+    // A name with a space can't be one; one that is a person's handle stays the person.
+    expect(list.map((s) => s.label)).not.toContain('My App');
+    expect(list.filter((s) => s.label.toLowerCase() === 'mia')).toHaveLength(1);
+    expect(channelSuggestions('@bo', { people, projects }).map((s) => s.label)).toEqual(['Bob Stone’s agent', 'Bob Stone', 'bob-api']);
+    expect(mentionableProjects([{ name: 'claudes', id: 'x' }, { name: 'claude:x', id: 'y' }])).toEqual([]);
+  });
+
+  it('lists your chats by a word of their title, as their whole mention', () => {
+    const chats = [{ title: 'Fix login', ref: 'peer-self-123/ws:wt-abc', hint: 'Worktree' }];
+    const list = channelSuggestions('see @log', { people, chats });
+    expect(list).toEqual([expect.objectContaining({ label: '@Fix login', kind: 'chat', value: 'see @Fix login (chat: peer-self-123/ws:wt-abc) ' })]);
+    // Nothing for a lone @: a channel's people and agents come first.
+    expect(channelSuggestions('@', { people, chats }).some((s) => s.kind === 'chat')).toBe(false);
+  });
+
+  it('names your projects in the pills, never one a person here already is', () => {
+    const world = channelWorld(undefined, people, undefined, [
+      { name: 'beluga', id: 'pr-1' },
+      { name: 'Mia', id: 'pr-2' },
+    ]);
+    expect(world.projects).toEqual([{ name: 'beluga', id: 'pr-1' }]);
+    expect(resolveMention('beluga', world)).toEqual({ kind: 'project', label: 'beluga', id: 'pr-1' });
+    expect(resolveMention('Mia', world)).toMatchObject({ kind: 'friend' });
+    expect(channelWorld(undefined, people).projects).toEqual([]);
   });
 
   it('lists the channel’s commands for / at the start', () => {

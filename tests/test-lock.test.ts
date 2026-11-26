@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import setup, { type TestRun, releaseSlot, slotCount, trySlot, waitForSlot, waitingLine, workerCount } from '../scripts/test-lock.mjs';
 import { worktreeOf } from '../scripts/e2e-lock.mjs';
 import { niceForWorktree } from '../src/agent/runtime/claude/claude-process.js';
+import { waitFor } from './helpers.js';
 
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'klaud-tests-'));
 const run = (over: Partial<TestRun> = {}): TestRun => ({ pid: process.pid, name: 'KLD-49', worktree: '/w/kld-49', startedAt: Date.now(), ...over });
@@ -138,15 +139,24 @@ describe.skipIf(process.platform === 'win32')("vitest's global setup", () => {
 
 describe.skipIf(process.platform === 'win32')("a worktree's Claude Code runs at lower priority", () => {
   it('nices a run that carries KLAUD_WORKTREE, and what it starts inherits it', async () => {
-    // What it starts reads its own niceness (macOS's ps once said -10 for a process niced to 10 on CI).
-    const own = `${JSON.stringify(process.execPath)} -e 'process.stdout.write(String(require("os").getPriority()) + "\\n")'`;
+    // What it starts (a process of its own, started after the nice) prints its pid and waits, and
+    // its niceness is read from here. Read from inside, macOS CI's runners sometimes say -10 for a
+    // process niced to 10 (ps did too), so a process reading its own priority can't be trusted.
+    const own = `${JSON.stringify(process.execPath)} -e 'console.log(process.pid); setTimeout(() => {}, 5000)'`;
     const child = spawn('/bin/sh', ['-c', `sleep 0.3; ${own}`], { stdio: ['ignore', 'pipe', 'ignore'] });
     expect(niceForWorktree(child.pid!, { KLAUD_WORKTREE: '/w/kld-49' })).toBe(true);
     expect(os.getPriority(child.pid!)).toBe(10);
     let out = '';
     child.stdout.on('data', (d) => (out += d));
-    await new Promise((r) => child.on('exit', r));
-    expect(Number(out.trim())).toBe(10);
+    await waitFor(() => out.includes('\n'), 10_000);
+    const started = Number(out.trim());
+    expect(started).not.toBe(child.pid);
+    try {
+      expect(os.getPriority(started)).toBe(10);
+    } finally {
+      process.kill(started);
+      await new Promise((r) => child.on('exit', r));
+    }
   });
 
   it('leaves your own runs (no worktree) alone', () => {

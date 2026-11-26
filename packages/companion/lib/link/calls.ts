@@ -73,6 +73,8 @@ export const calls = {
   setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
   setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
+  /** 1.58 (BLG-981): Full Autopilot in a conversation (a plan's own: the plan). */
+  setAutopilot: (topic: Topic, on: boolean): Call => make('session.setAutopilot', [channelOf(topic), on], on ? 'Full Autopilot' : 'Autopilot off'),
   /** 1.38 (BLG-122): external agents: who holds a grant, what they did, and stopping them. */
   externalAgents: (): Call => make('external.agents', [], 'External agents'),
   externalActivity: (kind?: 'allowed' | 'asked' | 'refused'): Call => make('external.activity', [kind ? { kind } : {}], 'Activity'),
@@ -110,6 +112,10 @@ export const calls = {
   setTaskAgent: (key: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('board.setAgent', [key, agent], `${key}: ${label}`),
   /** 1.35 (BLG-498): who works a plan's milestones and tasks from here on (null: your default) → in words. */
   setPlanAgent: (planId: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('plans.setWorkAgent', [planId, agent], `Plan's agent: ${label}`),
+  /** 1.58 (BLG-982): who plans, builds or checks a plan from here on (null: back to the builder's). */
+  setPlanRole: (planId: string, role: 'planner' | 'builder' | 'checker', agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('plans.setRoleAgent', [planId, role, agent], `${role === 'planner' ? 'Planned' : role === 'builder' ? 'Built' : 'Checked'} by ${label}`),
+  /** 1.58 (BLG-981): Full Autopilot on a plan. */
+  setFullAuto: (planId: string, on: boolean): Call => make('plans.setFullAuto', [planId, on], on ? 'Full Autopilot' : 'Autopilot, answering yourself'),
   /** A task described in words: Claude's draft first, then it's added. */
   // 1.24 (BLG-322) `several`: only to a Mac that has it (SINCE.severalTasks); an older one drafts one task.
   draftTask: (projectId: string, text: string, several = false): Call => make('companion.draftTask', [{ projectId, text, ...(several ? { several } : {}) }], 'Draft a task'),

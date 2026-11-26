@@ -6,6 +6,8 @@ import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
 import { ARCHIVE_SETTLED_DAYS_DEFAULT, BRANCH_PREFIX_DEFAULT, NotifySettings as NotifySchema, SETTLE_IDLE_DAYS_DEFAULT } from '../shared/settings-schema.js';
 import { FETCH_EVERY_DEFAULT } from '../shared/background-fetch.js';
+import type { NamingRules } from '../shared/naming.js';
+import { AUTOPILOT_WAIT_DEFAULT } from '../shared/autopilot-wait.js';
 import type { Review } from '../workspaces/git.js';
 import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
@@ -336,6 +338,10 @@ export interface Prefs {
   readonly autoSetup: boolean;
   /** What new worktrees' branches start with (`beluga/`; empty: none). */
   readonly branchPrefix: string;
+  /** How pull request titles are written, for projects without a rule of their own (shared/naming.ts). */
+  readonly prTitleRule?: string;
+  /** Your naming rules per project (by project name), over the two above and the project's beluga.json. */
+  readonly projectNaming?: Readonly<Record<string, NamingRules>>;
   readonly contextMeter: boolean;
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
@@ -366,6 +372,8 @@ export interface Prefs {
   readonly fetchEvery: number;
   /** A worktree's task moving to In Review has its agent open a draft pull request there (BLG-927). */
   readonly prOnReview: boolean;
+  /** Minutes work on Autopilot waits for your answer before your agent carries on without it; 0: until you answer (BLG-998). */
+  readonly autopilotWait: number;
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder (watched live in the Mac app). */
   readonly scratchFolder: boolean;
   /** Experimental features that are on (shared/experiments.ts), off until you turn each on. */
@@ -809,6 +817,7 @@ export const DEFAULT_PREFS: Prefs = {
   pushToPr: true,
   fetchEvery: FETCH_EVERY_DEFAULT,
   prOnReview: false,
+  autopilotWait: AUTOPILOT_WAIT_DEFAULT,
   scratchFolder: true,
   experiments: [],
   subagents: 'full',
@@ -825,7 +834,7 @@ export const DEFAULT_PREFS: Prefs = {
 
 /** The preference fields out of saved settings. */
 export function prefsFrom(settings: Partial<Settings>): Prefs {
-  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'defaultAgent', 'projectAgents', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
+  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'defaultAgent', 'projectAgents', 'prTitleRule', 'projectNaming', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
   return { ...DEFAULT_PREFS, ...picked };
 }
 
@@ -1057,9 +1066,12 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(a.fromChat ? { origin: a.fromChat.origin, prompt: clean(a.fromChat.text) } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
-  // A new message, or a run in a workspace finishing while no screen shows it (Claude's answer is news).
-  const finished = Boolean(existing) && updated.channel.startsWith('ws:') && (updated.status === 'done' || updated.status === 'error') && existing?.status !== 'done' && existing?.status !== 'error';
-  return bumpUnread({ ...state, log }, updated.channel, !existing || finished);
+  // Claude's answer is news when no screen shows it: a run ending (in a workspace, or one you asked for).
+  // A run you asked for starting isn't: you just sent it (e.g. a new worktree's first message), so only its end counts.
+  const mine = isSelf(state, a.requester);
+  const ended = (s: string | undefined): boolean => s === 'done' || s === 'error';
+  const finished = ended(updated.status) && !ended(existing?.status) && (updated.channel.startsWith('ws:') || mine);
+  return bumpUnread({ ...state, log }, updated.channel, finished || (!existing && !mine));
 }
 
 /** Context meter updates and compactions: the meter's numbers, and a divider where Claude compacted (see context-log.ts). */
@@ -1089,6 +1101,9 @@ function applySub(list: readonly SubAgent[], json: string, ts: number): readonly
     return s;
   });
 }
+
+/** You, on this computer (not your agent speaking for you). */
+const isSelf = (state: DomainState, peerId: string): boolean => peerId !== '' && (peerId === state.selfId || peerId === state.self?.peerId);
 
 /** Count new messages in conversations no screen is showing. */
 function bumpUnread(state: DomainState, channel: string, isNew: boolean): DomainState {
@@ -1171,7 +1186,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
           ...(action.dialogue ? { dialogue: action.dialogue } : {}),
           ...(action.fromApp ? { fromApp: action.fromApp.slice(0, 80) } : {}),
         }),
-      }, action.channel ?? 'room', true);
+      }, action.channel ?? 'room', action.byAgent || !isSelf(state, action.from)); // What you wrote yourself is never news to you.
     case 'chat_react': {
       const log = reactOnLog(state.log, action);
       return log === state.log ? state : { ...state, log };
@@ -1330,6 +1345,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'member_set':
     case 'roster':
     case 'plan_mode':
+    case 'autopilot':
+    case 'build_with':
     case 'peer_gone':
     case 'shared_clear':
     case 'trust_prompt':
@@ -1364,6 +1381,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'agent_term':
     case 'term_visuals':
     case 'shell_choices':
+    case 'font_choices':
     case 'env_keys':
     case 'pr_custom':
     case 'gh':

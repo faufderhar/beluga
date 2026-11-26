@@ -28,6 +28,7 @@ import { ComputerPairing, type ComputerPairingEnd, type ComputerPairingInfo } fr
 import { type SshPairing, listSshHosts, openSshPairing } from './ssh-pair.js';
 import type { SettingsSync, SettingsSyncView } from './sync.js';
 import type { RunOnDevice } from './run-on.js';
+import { THIS_COMPUTER } from '../shared/assistant.js';
 
 /**
  * Your devices in the daemon (BLG-774): this install's device key, your device set, the computers
@@ -470,7 +471,7 @@ export class Machines {
     if (this.joining) this.joining.decide?.(false);
     const at = this.opts.alwaysOn?.at();
     const elsewhere = at ? this.book.get(at)?.name : undefined;
-    if (!this.set.holdsIdentity && elsewhere) return Promise.reject(new Error(`${elsewhere} is your Always On and holds your identity: make this Mac Always On again to add a computer from here`));
+    if (!this.set.holdsIdentity && elsewhere) return Promise.reject(new Error(`${elsewhere} is your Always On and holds your identity: make ${THIS_COMPUTER} Always On again to add a computer from here`));
     if (!this.set.holdsIdentity) return Promise.reject(new Error('This computer belongs to another of your Beluga apps: add computers from there'));
     let offered!: (o: ComputerOffer) => void;
     let failed!: (err: unknown) => void;

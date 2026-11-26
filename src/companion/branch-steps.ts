@@ -1,4 +1,5 @@
 import type { Session } from '../core/session.js';
+import { pushWords } from '../workspaces/push-main.js';
 import { worktreeOf } from './merge.js';
 import type { ThreadChildren } from '../shared/threads.js';
 import type { PhoneBranchStep } from './protocol.js';
@@ -76,6 +77,20 @@ export async function branchStep(s: Session, topic: string, step: PhoneBranchSte
     case 'pr_claude':
       needBench().createPr(id);
       return claude('opening the pull request');
+    case 'land': {
+      const r = await ws.land(id);
+      return r?.ok ? { ok: true, message: r.landed ? 'Landed in the main folder' : 'Nothing new to land' } : { ok: false, message: 'Didn’t land: its conversation says why' };
+    }
+    case 'land_on':
+    case 'land_off':
+      await ws.setLandOnBase(id, step === 'land_on');
+      return { ok: true, message: step === 'land_on' ? 'Its work lands in the main folder each time your agent finishes' : 'Its work stays on its branch' };
+    case 'push_main': {
+      const projectId = ws.manager.find(id)?.projectId;
+      if (!projectId) return { ok: false, message: 'Couldn’t find its project' };
+      const words = pushWords(await ws.mainSync.push(projectId));
+      return { ok: words.ok, message: words.text };
+    }
     case 'continue_after_merge':
       await needBench().continueAfterMerge(id);
       return { ok: true, message: 'This branch starts again from the latest base: the next change gets a new PR' };

@@ -6,6 +6,7 @@ import type { RunProcess } from '../../types.js';
 import { endProcess, keepLines, niceForWorktree } from '../claude/claude-process.js';
 import { codexCommand, pathVar } from '../codex/app-server.js';
 import { CodexRpc } from '../codex/rpc.js';
+import { type FolderReader, nodeGlobalBinDirs } from '../version-managers.js';
 import { ACP_VERSION, type InitializeResponse } from './acp.js';
 
 /** `opencode acp` for one run (or one side call): its JSON-RPC, its process, what it said it can do. */
@@ -46,18 +47,18 @@ const executable = (file: string): boolean => {
 
 /**
  * Where OpenCode is: BELUGA_OPENCODE_PATH, then where its install script puts it (~/.opencode/bin),
- * then `opencode` on PATH (npm, Homebrew, bun), then Homebrew's and bun's own folders (the Mac
- * app's PATH may not have them). On Windows, opencode.exe on PATH, else npm's opencode.cmd.
- * Undefined: not installed.
+ * then `opencode` on PATH (npm, Homebrew, bun), then the folders the Mac app's PATH may not have:
+ * Homebrew's, bun's, and npm's global ones under nvm, fnm, Volta, pnpm or a prefix of your own
+ * (#568). On Windows, opencode.exe on PATH, else npm's opencode.cmd. Undefined: not installed.
  */
-export function findOpenCode(env: Readonly<Record<string, string | undefined>> = process.env, platform: NodeJS.Platform = process.platform, runs: (file: string) => boolean = executable, home: string = os.homedir()): string | undefined {
+export function findOpenCode(env: Readonly<Record<string, string | undefined>> = process.env, platform: NodeJS.Platform = process.platform, runs: (file: string) => boolean = executable, home: string = os.homedir(), fs?: FolderReader): string | undefined {
   const set = env.BELUGA_OPENCODE_PATH;
   if (set) return runs(set) ? set : undefined;
   const p = platform === 'win32' ? path.win32 : path.posix;
   const dirs = pathVar(env).split(platform === 'win32' ? ';' : ':').filter(Boolean);
   if (platform === 'win32') return [...dirs.map((dir) => p.join(dir, 'opencode.exe')), ...dirs.map((dir) => p.join(dir, 'opencode.cmd'))].find(runs);
   const own = p.join(home, '.opencode/bin/opencode');
-  const extra = ['/opt/homebrew/bin', '/usr/local/bin', p.join(home, '.bun/bin'), p.join(home, '.local/bin')];
+  const extra = ['/opt/homebrew/bin', '/usr/local/bin', p.join(home, '.bun/bin'), p.join(home, '.local/bin'), ...nodeGlobalBinDirs(env, home, platform, fs)];
   return [own, ...[...dirs, ...extra.filter((d) => !dirs.includes(d))].map((dir) => p.join(dir, 'opencode'))].find(runs);
 }
 

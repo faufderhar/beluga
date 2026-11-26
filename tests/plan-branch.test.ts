@@ -80,6 +80,24 @@ describe('a plan’s branch', () => {
     expect(() => sh(dir, 'config', '--get', 'branch.klaud/b.merge')).toThrow();
   });
 
+  it('a worktree built on a task branch (blocked_by) builds on the plan branch once that one is merged and deleted', async () => {
+    const { dir, manager, id } = await project();
+    await manager.planBranch(id, 'plan/p');
+    branch(dir, 'klaud/h5', 'h5.txt', 'h5\n', 'plan/p');
+    const h6 = await manager.createWorktree(id, 'h6', 'klaud/h5');
+    expect(h6.base).toBe('klaud/h5');
+    await manager.mergeIntoPlan(id, 'plan/p', ['klaud/h5']);
+    await manager.dropBranch(id, 'klaud/h5', 'plan/p');
+    expect(manager.find(h6.id)?.base).toBe('plan/p');
+    await manager.refresh();
+    expect(manager.find(h6.id)?.base).toBe('plan/p');
+    // Its base deleted some other way: the merge preview says so, not "0 commits".
+    branch(dir, 'klaud/x', 'x.txt', 'x\n', 'plan/p');
+    const h7 = await manager.createWorktree(id, 'h7', 'klaud/x');
+    sh(dir, 'branch', '-D', 'klaud/x');
+    await expect(manager.mergePreview(h7.id)).rejects.toThrow(/klaud\/x, which isn’t there any more/);
+  });
+
   it('checked out somewhere already: merged there (kept); with uncommitted changes it says so', async () => {
     const { base, dir, manager, id } = await project();
     await manager.planBranch(id, 'plan/p');

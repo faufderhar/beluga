@@ -19,7 +19,7 @@ export function ChatsMenu() {
   const items: ActionItem[] = [{ label: `Show Archived (${chats.archived})`, icon: 'archive', onSelect: () => showArchivedOf(actions.run, chats.id) }];
   return (
     <ActionsDropdown items={items}>
-      <IconButton icon="more" label="Chats Options" />
+      <IconButton size="small" icon="more" label="Chats Options" />
     </ActionsDropdown>
   );
 }

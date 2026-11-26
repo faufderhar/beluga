@@ -98,6 +98,11 @@ milliseconds), through `src/preview/plugins.ts`:
 - **Vue and Svelte**: compiled with the project's own `vue/compiler-sfc` and `svelte/compiler`
   (each file's CSS in one `<style>`, replaced by a new build). Svelte 5 components draw inside a
   small host whose props are state, so a new prop changes them in place.
+- **SvelteKit** (`src/preview/sveltekit.ts`): `$lib` is the Kit app's `src/lib` (from the nearest
+  `svelte.config.*`, so a monorepo's `apps/web` too), and `$app/environment`, `$app/navigation`,
+  `$app/state`, `$app/stores`, `$app/paths`, `$app/forms` and `$env/*/public` have small
+  stand-ins (public env values are empty; no `.env` is read). A `goto` shows as an event, as a
+  Next link does. `$env/*/private` and `$app/server` are the server's: the build says so.
 - **Providers**: React components draw inside the project's `preview-wrapper.tsx` (at the root,
   in `src/` or `.beluga/`; or `wrap:`), which default-exports a component wrapping `{children}` in
   the app's router, theme, store and query client, and inside Storybook's decorators when the

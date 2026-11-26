@@ -3,6 +3,7 @@ import type { EnvVars } from '../core/env-vars.js';
 import type { Store } from '../core/store.js';
 import { installedVersion } from '../core/version.js';
 import { releaseConfig } from './config.js';
+import type { TraceDestinations } from './destinations.js';
 import { attachObserver } from './hook.js';
 import { TelemetryService } from './service.js';
 
@@ -16,6 +17,13 @@ export function telemetryOf(session: object): TelemetryService {
   return s;
 }
 
+/** This session's own trace destinations (Settings › Traces), or a clear error where there are none. */
+export function tracesOf(session: object): TraceDestinations {
+  const t = services.get(session)?.traces;
+  if (!t) throw new Error('Your own traces live in the Beluga app (its daemon).');
+  return t;
+}
+
 /** The demo's stand-in for Ratel: every send "succeeds" here, and nothing goes over the network. */
 const DEMO = { url: 'https://ratel.invalid', key: 'rtl_pub_demo' } as const;
 const demoFetch: typeof fetch = async () => new Response(null, { status: 202 });
@@ -25,7 +33,7 @@ const demoFetch: typeof fetch = async () => new Response(null, { status: 202 });
  * its record is in memory): it shows the ask when BELUGA_DEMO_ASKS is `telemetry` (screenshots of the
  * sheet), else it's answered.
  */
-export function launchTelemetry(host: { readonly session: object & { readonly env: Pick<EnvVars, 'secretValues'> }; readonly store: Store; readonly demo: boolean; readonly asks?: string }): () => Promise<void> {
+export function launchTelemetry(host: { readonly session: object & { readonly env: Pick<EnvVars, 'secretValues' | 'traceDestinations' | 'saveTraceDestination' | 'removeTraceDestination' | 'tracesId'> }; readonly store: Store; readonly demo: boolean; readonly asks?: string }): () => Promise<void> {
   const config = host.demo ? undefined : releaseConfig();
   let ready: readonly string[] = [];
   if (config)
@@ -38,6 +46,7 @@ export function launchTelemetry(host: { readonly session: object & { readonly en
     version: installedVersion(),
     ...(host.demo ? { file: null, pretend: true, config: DEMO, fetch: demoFetch } : {}),
     secrets: () => host.session.env.secretValues(),
+    destinations: host.session.env,
     runtimes: () => ready,
   });
   if (host.demo && host.asks !== 'telemetry') service.choose('limited', 'settings');

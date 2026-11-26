@@ -23,7 +23,7 @@ export function Walkthrough({ steps, index, onGo }: { steps: readonly GraphStep[
           {step.text ? <span className={g.walkBody}>{step.text}</span> : null}
         </div>
         <div className={g.walkNav}>
-          <IconButton icon="back" label="Previous Step" keys="←" disabled={index === 0} onClick={() => onGo(index - 1)} />
+          <IconButton size="small" icon="back" label="Previous Step" keys="←" disabled={index === 0} onClick={() => onGo(index - 1)} />
           {last ? (
             <button type="button" className={g.walkDone} onClick={() => onGo(-1)}>
               Done
@@ -33,7 +33,7 @@ export function Walkthrough({ steps, index, onGo }: { steps: readonly GraphStep[
               Next
             </button>
           )}
-          <IconButton icon="x" label="Leave the Walkthrough" keys="esc" onClick={() => onGo(-1)} />
+          <IconButton size="small" icon="x" label="Leave the Walkthrough" keys="esc" onClick={() => onGo(-1)} />
         </div>
       </div>
     </div>

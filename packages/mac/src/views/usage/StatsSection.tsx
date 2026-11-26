@@ -110,8 +110,8 @@ export function StatsSection({ state, got }: { state: AppState; got: GotStats })
         sub={failed ? 'Couldn’t get your stats from Beluga' : data.backfilling ? 'Counting what came before…' : since ? `Counted since ${since}. Press a number to see it below.` : 'Counting from today. Press a number to see it below.'}
         aside={
           <>
-            <Segmented label="Group by" value={by} options={GROUPS} onChange={setBy} />
-            <Segmented label="Range" value={range} options={RANGES} onChange={setRange} />
+            <Segmented size="small" label="Group by" value={by} options={GROUPS} onChange={setBy} />
+            <Segmented size="small" label="Range" value={range} options={RANGES} onChange={setRange} />
           </>
         }
       >
@@ -129,7 +129,7 @@ export function StatsSection({ state, got }: { state: AppState; got: GotStats })
               <Icon name="chartArea" size={14} /> {m.label} by {byWord}, {STEP[range]} at a time
             </span>
           }
-          aside={<Segmented label="Chart" value={mode} options={MODES} onChange={setMode} />}
+          aside={<Segmented size="small" label="Chart" value={mode} options={MODES} onChange={setMode} />}
         >
           <TrendChart key={by} trend={trend} m={m} mode={mode} animate={`${range}|${metric}|${mode}`} {...(why ? { why } : {})} />
         </Card>

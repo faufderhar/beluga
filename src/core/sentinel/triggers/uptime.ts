@@ -1,5 +1,6 @@
 import { type UptimeTrigger, hostOf } from '../model.js';
 import { MINUTE, type FetchLike, type TriggerContext, type TriggerDeps, type TriggerEvent, firstWords, startPolling } from './types.js';
+import { THIS_COMPUTER } from '../../../shared/assistant.js';
 
 /**
  * Uptime (docs/sentinel.md §1): the URL fetched every 1, 5 or 15 minutes (10 seconds to answer)
@@ -65,7 +66,7 @@ export async function checkUrl(fetchFn: FetchLike, t: UptimeTrigger, now: () => 
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     const codes = codesOf(err);
     const offline = !timedOut && OFFLINE.test(codes);
-    return { ok: false, status: 0, ms: now() - start, error: timedOut ? `no answer in ${TIMEOUT_MS / 1000} s` : offline ? `this Mac is offline (${OFFLINE.exec(codes)![1]})` : firstWords(err), ...(offline ? { offline: true } : {}) };
+    return { ok: false, status: 0, ms: now() - start, error: timedOut ? `no answer in ${TIMEOUT_MS / 1000} s` : offline ? `${THIS_COMPUTER} is offline (${OFFLINE.exec(codes)![1]})` : firstWords(err), ...(offline ? { offline: true } : {}) };
   }
 }
 

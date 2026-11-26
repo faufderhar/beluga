@@ -5,7 +5,7 @@ import type { AppState } from '@beluga/core/store.js';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import { type HandoffMode, limitHit, needsHandoff } from '@beluga/shared/agent-handoff.js';
 import { runtimeMark } from '@beluga/shared/agent-marks.js';
-import { type AgentPicker, type PickerGroup, type PickerState, agentPicker, pickAction } from '@beluga/shared/agent-picker.js';
+import { type AgentPicker, type PickerGroup, type PickerState, agentPicker, effortIn, pickAction } from '@beluga/shared/agent-picker.js';
 import type { RuntimeModel } from '@beluga/shared/agent-runtimes.js';
 import type { AgentOption } from '@beluga/ui/agent-choice.js';
 import { Icon } from '../components/Icon.js';
@@ -14,6 +14,7 @@ import { cx } from '../components/ui.js';
 import { ModelList } from './ModelList.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import s from './picker.module.css';
+import { knownOr } from '@beluga/shared/known-or.js';
 
 type Api = ReturnType<typeof useApi>;
 type Prefs = AppState['prefs'];
@@ -43,13 +44,6 @@ export function setMyAgent(api: Api, runtime: string, label: string, model: stri
 /** The picker's view of the state: "your default model" is your agent's, whichever runtime it is. */
 export const pickerState = (st: AppState): PickerState => ({ ...st, prefs: { model: myModel(st.prefs) || undefined, openModels: st.prefs.openModels } });
 
-/** The effort a conversation shows: its own pick, else Settings’. Not a conversation: Settings’. */
-export function shownEffort(st: Pick<AppState, 'projects' | 'prefs'>, channel: string): Effort | undefined {
-  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
-  const own = id ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === id)?.effort : undefined;
-  return own ?? st.prefs.effort;
-}
-
 /** A model's details (its effort levels) by runtime and value; Claude's come from Claude Code itself. */
 export function modelInfo(st: Pick<AppState, 'runtimes' | 'models'>, runtime: string, model: string): RuntimeModel | undefined {
   const models = runtime === CLAUDE_AGENT.runtime ? st.models : (st.runtimes.find((r) => r.id === runtime)?.models ?? []);
@@ -78,13 +72,13 @@ export function agentEntries(options: readonly AgentOption[]): SelectEntry<strin
 }
 
 /** Effort, in plain words, with what each level means (the same five steps for every agent). */
-export const EFFORT_INFO: Record<Effort, { label: string; detail: string }> = {
+export const EFFORT_INFO: Record<Effort, { label: string; detail: string }> = knownOr({
   low: { label: 'Low', detail: 'Answers fast; best for small, clear asks' },
   medium: { label: 'Medium', detail: 'Thinks enough for most everyday work' },
   high: { label: 'High', detail: 'Takes its time on tricky changes' },
   xhigh: { label: 'Extra High', detail: 'Works hard problems through carefully' },
   max: { label: 'Max', detail: 'As much thinking as it can; slowest' },
-};
+}, (v) => ({ label: v, detail: '' }));
 
 export const samePicker = (a: AgentPicker, b: AgentPicker): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -123,16 +117,8 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   const api = useApi();
   // Only what the picker shows (not the whole state): not drawn again on every streamed event (KLD-48).
   const picker = useApp((st) => agentPicker(pickerState(st), channel, myRuntime(st.prefs), draft), samePicker);
-  const globalEffort = useApp((st) => st.prefs.effort);
-  // In an open chat the meter pins that conversation; elsewhere it is Settings, for every conversation.
-  const place = useApp(
-    (st) => {
-      const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
-      const ws = id ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
-      return ws ? { inChat: true as const, effort: ws.effort } : { inChat: false as const, effort: undefined };
-    },
-    (a, b) => a.inChat === b.inChat && a.effort === b.effort,
-  );
+  // This conversation's own effort (the default for new ones): picking here never changes another chat's.
+  const effort = useApp((st) => effortIn(st, channel));
   const carried = useApp((st) => carriedOf(st, channel), sameCarried);
   const [seen, setSeen] = useState<string>();
   const [move, setMove] = useState<Move>();
@@ -144,10 +130,6 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   // Some models take only some effort levels.
   const allowed = new Set((model?.efforts ?? EFFORTS) as readonly string[]);
   const label = picker.label;
-  const inChat = place.inChat;
-  const pinned = inChat && place.effort !== undefined;
-  // The chip and the track show what the next message uses: this conversation's pin, else Settings.
-  const effort = pinned ? place.effort : globalEffort;
   const chip = `${label}${effort ? ` · ${EFFORT_INFO[effort].label}` : ''}`;
   const pick = (g: PickerGroup, value: string): void => {
     if (onDraft && !conversation) {
@@ -242,17 +224,17 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
               <div className={s.thinking}>
                 <div className={s.thinkingHead}>
                   <span className={s.thinkingLabel}>Thinking</span>
-                  <span className={s.thinkingDetail}>{inChat && !pinned ? (globalEffort ? `Follows Settings (${EFFORT_INFO[globalEffort].label})` : 'Follows Settings') : effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}</span>
+                  <span className={s.thinkingDetail}>{effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}</span>
                 </div>
                 {/* Auto, then Low to Max: a thumb that slides to the level picked, a warm fill behind it as deep as the level. */}
                 <div className={s.track} role="radiogroup" aria-label="Thinking effort" style={{ '--at': level + 1, '--heat': level < 0 ? 0 : (level + 1) / EFFORTS.length } as CSSProperties}>
                   <span className={s.fill} aria-hidden />
                   <span className={s.thumb} aria-hidden />
-                  <button type="button" role="radio" aria-checked={!effort} className={cx(s.level, !effort && s.levelOn)} title={inChat ? 'Follow Settings' : 'Your agent decides how much to think, case by case'} onClick={() => (inChat ? void api.workbench.setEffort(channel, '') : void api.session.setPrefs({ effort: null }))}>
+                  <button type="button" role="radio" aria-checked={!effort} className={cx(s.level, !effort && s.levelOn)} title="Your agent decides how much to think, case by case" onClick={() => void api.workbench.setEffort(conversation, 'auto')}>
                     Auto
                   </button>
                   {EFFORTS.map((e) => (
-                    <button key={e} type="button" role="radio" aria-checked={effort === e} disabled={!allowed.has(e)} title={allowed.has(e) ? EFFORT_INFO[e].detail : 'This model doesn’t take this level'} className={cx(s.level, effort === e && s.levelOn)} onClick={() => (inChat ? void api.workbench.setEffort(channel, e) : void api.session.setPrefs({ effort: e }))}>
+                    <button key={e} type="button" role="radio" aria-checked={effort === e} disabled={!allowed.has(e)} title={allowed.has(e) ? EFFORT_INFO[e].detail : 'This model doesn’t take this level'} className={cx(s.level, effort === e && s.levelOn)} onClick={() => void api.workbench.setEffort(conversation, e)}>
                       {EFFORT_INFO[e].label}
                     </button>
                   ))}

@@ -131,10 +131,10 @@ function Compose({ onDone }: { onDone: () => void }) {
       </div>
       <textarea className={s.edit} aria-label="What to ask" placeholder="What should their agent do? They see only this." value={ask} onChange={(e) => setAsk(e.target.value)} autoFocus />
       <div className={s.actions}>
-        <Button variant="primary" disabled={!ask.trim()} onClick={send}>
+        <Button size="small" variant="primary" disabled={!ask.trim()} onClick={send}>
           Ask
         </Button>
-        <Button variant="quiet" onClick={onDone}>
+        <Button size="small" variant="quiet" onClick={onDone}>
           Cancel
         </Button>
       </div>
@@ -159,7 +159,7 @@ export function RequestsView() {
     <div className={s.page}>
       <div className={s.inner}>
         <div className={s.bar}>
-          <Segmented<Tab>
+          <Segmented<Tab> size="small"
             label="Requests"
             value={tab}
             onChange={(v) => {
@@ -173,7 +173,7 @@ export function RequestsView() {
           />
           <span className={s.grow} />
           {composing ? null : (
-            <Button icon="claude" onClick={() => setComposing(true)}>
+            <Button size="small" icon="claude" onClick={() => setComposing(true)}>
               Ask Someone’s Agent…
             </Button>
           )}
@@ -201,7 +201,7 @@ export function RequestsView() {
           )}
         </div>
         {done ? (
-          <Button variant="quiet" onClick={() => setAnswered(!answered)}>
+          <Button size="small" variant="quiet" onClick={() => setAnswered(!answered)}>
             {answered ? 'Hide answered' : `Show answered · ${done}`}
           </Button>
         ) : null}

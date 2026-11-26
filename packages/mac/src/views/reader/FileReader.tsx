@@ -99,11 +99,11 @@ function ImageView({ viewer, controls, version }: { viewer: ViewerState; control
       </div>
       {controls ? (
         <div className={r.zoomBar} role="toolbar" aria-label="Zoom">
-          <IconButton icon="minus" label="Zoom out" onClick={() => step(-1)} />
+          <IconButton size="small" icon="minus" label="Zoom out" onClick={() => step(-1)} />
           <button type="button" className={r.zoomValue} onClick={() => setZoom(zoom === 'fit' ? 1 : 'fit')} aria-label={zoom === 'fit' ? 'Actual size' : 'Fit to window'}>
             {zoom === 'fit' ? 'Fit' : `${Math.round(zoom * 100)}%`}
           </button>
-          <IconButton icon="plus" label="Zoom in" onClick={() => step(1)} />
+          <IconButton size="small" icon="plus" label="Zoom in" onClick={() => step(1)} />
           {natural ? <span className={r.zoomSize}>{`${natural.w} × ${natural.h}`}</span> : null}
         </div>
       ) : null}

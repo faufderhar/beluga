@@ -14,6 +14,7 @@ import { Badge, Dot, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp, webServed } from '../lib/boot.js';
 import { newEmptyGroup, useGroupEdit } from '../lib/group-edit.js';
+import { foldsToSave, saveGroupFolds, settleGroupFolds } from '../lib/group-folds.js';
 import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { openProjectHome } from '../lib/project-home.js';
@@ -276,10 +277,10 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
               <TeamBadge projectId={p.id} />
               <EarningsPill root={p.root} projectId={p.id} celebrate />
               <span className={side.hoverTools}>
-                <IconButton icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />
-                <IconButton icon="plus" label={`New chat in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_chat', projectId: p.id }))} />
+                <IconButton size="small" icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />
+                <IconButton size="small" icon="plus" label={`New chat in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_chat', projectId: p.id }))} />
                 <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end" extra={extra} hide={ownWay}>
-                  <IconButton icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
+                  <IconButton size="small" icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
                 </SpecDropdown>
                 {/* Claude at work inside, beside what needs you or what's new (never hidden by them). */}
                 {busy ? (
@@ -388,7 +389,7 @@ export function ProjectsAddMenu() {
   ];
   return (
     <ActionsDropdown items={items}>
-      <IconButton icon="plus" label="Add a project, start one, clone one, or make a group" />
+      <IconButton size="small" icon="plus" label="Add a project, start one, clone one, or make a group" />
     </ActionsDropdown>
   );
 }
@@ -403,6 +404,28 @@ function useSpringLoad(group: string | undefined, folded: boolean): void {
   }, [group, folded]);
 }
 
+/**
+ * Keeps the groups' folds across launches (lib/group-folds.ts): saved when one is folded or
+ * opened, carried to a renamed group's new name, dropped with a group that's gone. Nothing is
+ * touched until the projects are in, so a window that just opened doesn't forget them.
+ */
+function useGroupFolds(): void {
+  const { ui } = useBeluga();
+  const loaded = useApp((st) => st.projectsLoaded);
+  const groups = useApp((st) => st.projectGroups);
+  const collapsed = useUi((u) => u.collapsed);
+  const before = useRef(groups);
+  useEffect(() => {
+    const was = before.current;
+    before.current = groups;
+    if (!loaded) return;
+    const settled = settleGroupFolds(collapsed, was, groups);
+    // Patched, this runs again with the settled list and saves it.
+    if (settled !== collapsed) ui.patch({ collapsed: [...settled] });
+    else saveGroupFolds(foldsToSave(collapsed, groups));
+  }, [ui, loaded, groups, collapsed]);
+}
+
 export function Projects() {
   const actions = useActions();
   const names = useApp((st) => st.projects.map((p) => p.name).join('\n'));
@@ -412,6 +435,7 @@ export function Projects() {
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
   const collapsed = useUi((u) => u.collapsed);
+  useGroupFolds();
   // Each group's pulse and counts, not the whole state: the tree isn't drawn again on every streamed event (KLD-48).
   const groups = useApp((st) => Object.fromEntries(entries.flatMap((e) => (e.kind === 'group' ? [[e.name, { busy: groupWorking(st, e.projects), tally: groupTally(st, e.projects) }]] : []))), sameDeep);
   const { creating } = useGroupEdit();

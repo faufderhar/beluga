@@ -164,3 +164,24 @@
   font-weight: 600;
   color: var(--text-3);
 }
+
+/* A phone (BLG-8): the folders fill the screen; an opened file covers them, with its own Close. */
+@media (max-width: 700px) {
+  .files {
+    position: relative;
+  }
+  .browser {
+    flex: 1;
+    width: auto;
+    border-right: 0;
+  }
+  .noViewer {
+    display: none;
+  }
+  .viewer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: var(--bg);
+  }
+}

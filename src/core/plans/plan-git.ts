@@ -1,4 +1,4 @@
-import type { CombineResult, MergeResult } from '../../workspaces/git.js';
+import { type CombineResult, type MergeResult, isAncestor, tryGit } from '../../workspaces/git.js';
 import { createPr, explainMergeError, findPr, hasGh, mergePr, pushForPr } from '../../workspaces/pr.js';
 import type { PlanPr } from './model.js';
 import type { WorkspaceController } from '../workspace-controller.js';
@@ -28,6 +28,8 @@ export interface PlanGit {
   mergePr(projectId: string, number: number, opts?: { readonly auto?: boolean }): Promise<void>;
   /** Merge the branch into the project's main folder (on main). */
   mergeLocal(projectId: string, branch: string): Promise<MergeResult>;
+  /** Of `branches`, those that are there and not in `into`: work a milestone would pass without. */
+  notIn?(projectId: string, into: string, branches: readonly string[]): Promise<string[]>;
 }
 
 export function planGitOf(controller: WorkspaceController): PlanGit {
@@ -35,6 +37,12 @@ export function planGitOf(controller: WorkspaceController): PlanGit {
   const root = (projectId: string): string => m.repoProject(projectId).root;
   return {
     ensureBranch: (projectId, branch) => m.planBranch(projectId, branch),
+    notIn: async (projectId, into, branches) => {
+      const at = root(projectId);
+      const out: string[] = [];
+      for (const b of branches) if ((await tryGit(at, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`])) && !(await isAncestor(at, b, into))) out.push(b);
+      return out;
+    },
     mergeInto: (projectId, into, branches) => m.mergeIntoPlan(projectId, into, branches),
     mainRef: (projectId) => m.latestBase(projectId),
     inMain: (projectId, branch) => m.inDefaultBranch(projectId, branch),

@@ -78,17 +78,42 @@ export const taskSize = (state: string): Size => (COMPACT_STATES.has(state) ? TA
 
 /** A milestone box: its head, its tasks with room around them, its gate inset at its foot. */
 export const MILESTONE = { head: 62, side: 20, minWidth: 340, gateGap: 16, inset: 10, badge: 20 } as const;
-/** The gate bar: a head row, then a row per criterion (up to two lines of ~6.2px characters each). */
-export const GATE = { head: 34, line: 16, row: 5, foot: 12, padX: 14, bullet: 22, char: 6.2 } as const;
+/** The gate bar: a head row, then a row per criterion (one or two lines each). */
+export const GATE = { head: 34, line: 16, row: 5, foot: 12, padX: 14, bullet: 22 } as const;
 /** A folded milestone: one summary row, as wide as its title needs (beside `chrome`: its tick, counts, chip and chevron) within these. */
 export const FOLDED = { height: 56, minWidth: 340, maxWidth: 520, chrome: 330 } as const;
 /** Room between milestones side by side, between rows of them (their lines run there), and around the plan. */
 export const PLAN_GAPS = { side: 56, row: 88, pad: 24 } as const;
 
-/** How tall a gate bar this wide is: from its criteria's words (the shape), never from their state. */
-export function gateHeight(criteria: readonly string[], width: number): number {
-  const chars = Math.max(12, Math.floor((width - 2 * GATE.padX - GATE.bullet) / GATE.char));
-  const lines = criteria.length ? criteria.reduce((n, c) => n + Math.min(2, Math.max(1, Math.ceil(c.length / chars))), 0) : 1;
+/** How wide a text is, in px, at this font size and weight: the screen's own font (`measureText`), or a guess. */
+export type MeasureText = (text: string, fontSize: number, fontWeight?: number) => number;
+
+/** Wide characters (CJK, kana, hangul, full-width forms): about a font size across. */
+const WIDE = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/u;
+/** The widest Latin letters. */
+const BROAD = /[A-Z@%&mwMW]/;
+
+/**
+ * A guess at a text's width where nothing can measure it (tests, a screen without a canvas): on the
+ * generous side, as a criterion guessed too narrow is cut off under the gate's foot.
+ */
+export const guessWidth: MeasureText = (text, fontSize, fontWeight = 400) => {
+  let em = 0;
+  for (const ch of text) em += WIDE.test(ch) ? 1 : BROAD.test(ch) ? 0.8 : 0.56;
+  return em * fontSize * (fontWeight >= 600 ? 1.06 : 1);
+};
+
+/** The gate's criteria: 11.5px on 16px lines (.criterion in PlanCanvas.module.css). */
+const CRITERION_FONT = 11.5;
+
+/**
+ * How tall a gate bar this wide is: from its criteria's words (the shape), never from their state.
+ * A criterion shows at most two lines, so all it takes is whether it fits on one.
+ */
+export function gateHeight(criteria: readonly string[], width: number, measure: MeasureText = guessWidth): number {
+  // A pixel short of the room, so rounding never puts a criterion on one line that the screen wraps.
+  const room = width - 2 * GATE.padX - GATE.bullet - 1;
+  const lines = criteria.length ? criteria.reduce((n, c) => n + (measure(c, CRITERION_FONT) > room ? 2 : 1), 0) : 1;
   const rows = Math.max(1, criteria.length);
   return Math.round(GATE.head + lines * GATE.line + (rows - 1) * GATE.row + GATE.foot);
 }
@@ -107,16 +132,16 @@ export interface MilestoneFrame extends Size {
  * one summary row, wide enough for its `title`. `height` stretches an open box, its gate staying
  * at the foot.
  */
-export function milestoneFrame(inner: Size, criteria: readonly string[], folded: boolean, height?: number, title = ''): MilestoneFrame {
+export function milestoneFrame(inner: Size, criteria: readonly string[], folded: boolean, height?: number, title = '', measure: MeasureText = guessWidth): MilestoneFrame {
   if (folded) {
-    // Room for its title (13.5px, ~7.4px a character) beside its tick, counts, criteria chip and chevron.
-    const wanted = FOLDED.chrome + title.length * 7.4;
+    // Room for its title (13.5px, weight 650: .foldTitle) beside its tick, counts, criteria chip and chevron.
+    const wanted = FOLDED.chrome + measure(title, 13.5, 650);
     const width = Math.round(Math.max(FOLDED.minWidth, Math.min(FOLDED.maxWidth, Math.max(inner.width, wanted))));
     return { folded, width, height: FOLDED.height, gate: { x: 0, y: 0, width, height: FOLDED.height }, shiftX: 0 };
   }
   const width = Math.max(MILESTONE.minWidth, Math.round(inner.width));
   const gateWidth = width - 2 * MILESTONE.inset;
-  const gateH = gateHeight(criteria, gateWidth);
+  const gateH = gateHeight(criteria, gateWidth, measure);
   const natural = Math.max(MILESTONE.head, Math.round(inner.height)) + MILESTONE.gateGap + gateH + MILESTONE.inset;
   const tall = Math.max(natural, Math.round(height ?? 0));
   return { folded, width, height: tall, gate: { x: MILESTONE.inset, y: tall - MILESTONE.inset - gateH, width: gateWidth, height: gateH }, shiftX: Math.max(0, Math.round((width - inner.width) / 2)) };

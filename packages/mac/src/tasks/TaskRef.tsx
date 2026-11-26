@@ -13,6 +13,7 @@ import { type ResolvedChat, resolveChat } from '@beluga/core/chat-links/resolve.
 import { type ChatRef, chatChipOf } from '@beluga/shared/chat-ref.js';
 import { openChatView } from '../lib/chat-links.js';
 import r from './task-ref.module.css';
+import { ASSISTANT_TITLE } from '../../../../src/shared/assistant.js';
 
 /**
  * Tasks Claude shows in an answer (src/shared/task-refs.ts): `task:BLG-12` as a chip in the
@@ -148,7 +149,7 @@ export function PlanChip({ id }: { id: string }) {
   );
 }
 
-export const CHAT_KIND: Readonly<Record<ResolvedChat['kind'], string>> = { worktree: 'Worktree', chat: 'Chat', assistant: 'Your Mac', sentinel: 'Sentinel' };
+export const CHAT_KIND: Readonly<Record<ResolvedChat['kind'], string>> = { worktree: 'Worktree', chat: 'Chat', assistant: ASSISTANT_TITLE, sentinel: 'Sentinel' };
 
 /**
  * A chat by its address (`chat:<owner>/<channel>`): a pill with its current title, read from the

@@ -50,7 +50,7 @@ export function DataCard({ item }: { item: Sentinel }) {
         <h3 className={s.cardTitle}>Kept data</h3>
         <span className={t.grow} />
         <span className={s.hint}>files kept {data.keepsDays} days</span>
-        {data.metrics.length ? <IconButton icon="folder" label={revealLabel('its numbers')} onClick={() => void a.act(() => a.api.dataReveal(item.id))} /> : null}
+        {data.metrics.length ? <IconButton size="small" icon="folder" label={revealLabel('its numbers')} onClick={() => void a.act(() => a.api.dataReveal(item.id))} /> : null}
       </header>
       {data.metrics.length ? (
         <div className={d.list} role="list" aria-label="What it keeps">
@@ -91,7 +91,7 @@ export function DataCard({ item }: { item: Sentinel }) {
                     { label: revealLabel(), icon: 'folder', onSelect: () => void a.act(() => a.api.dataReveal(item.id, r.runId)) },
                   ]}
                 >
-                  <IconButton icon="more" label="More for this run" />
+                  <IconButton size="small" icon="more" label="More for this run" />
                 </ActionsDropdown>
               </div>
             ))}

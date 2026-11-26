@@ -57,6 +57,16 @@ export function LaterMark() {
   );
 }
 
+/** A sentinel sends into this chat on a schedule (BLG-401): a quiet clock beside its other marks. `count`: how many; `paused`: all of them are off. */
+export function ScheduledMark({ count, paused }: { count: number; paused: boolean }) {
+  const words = `${count === 1 ? 'A schedule sends' : `${count} schedules send`} into this chat${paused ? ' (off)' : ''}`;
+  return (
+    <span className={cx(m.mark, m.later, paused && m.scheduledOff)} data-scheduled={paused ? 'off' : 'on'} title={words} aria-label={words} role="img">
+      <Icon name="clock" size={11} />
+    </span>
+  );
+}
+
 /**
  * A conversation's mark. `fallback`: what an idle row shows instead (its git state, say). `working`:
  * whose loader it shows at work (a worktree's own, teal and orbiting; Claude's otherwise).

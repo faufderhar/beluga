@@ -467,4 +467,29 @@ describe('Create PR without Claude', () => {
     expect(await wb([{ id: 'p1', workspaces: [ws] }]).quickPr('auth', { original: true })).toMatchObject({ ok: false });
     expect(made).toHaveLength(1);
   });
+
+  it('says plainly when the branch’s work is already on its base, instead of GitHub’s error', async () => {
+    const store = new Store(initialState('t', 'ask'));
+    const ws = { id: 'auth', name: 'auth', kind: 'worktree', branch: 'beluga/add-auth', base: 'origin/main', path: '/code/auth', projectId: 'p1', status: { changed: 0, ahead: 0, behind: 0 } };
+    const toasts: Array<[string, string | undefined]> = [];
+    exec.impl = (cmd, args) => (cmd === 'git' && args[0] === 'log' ? { stdout: '' } : { err: new Error('not mocked') });
+    const wb = new Workbench({
+      store,
+      controller: { manager: { list: [{ id: 'p1', workspaces: [ws] }], find: (id: string) => (id === ws.id ? ws : undefined), commitAll: vi.fn() }, refresh: async () => undefined, open: () => undefined } as unknown as WorkspaceController,
+      notify: () => undefined,
+      toast: (text, level) => void toasts.push([text, level]),
+      intend: () => undefined,
+      askClaude: () => undefined,
+      setPrefs: () => undefined,
+      remoteRef: () => undefined,
+      createPr: async () => {
+        throw new Error('pull request create failed: GraphQL: No commits between main and beluga/add-auth (createPullRequest)');
+      },
+    });
+    store.dispatch({ type: 'gh', ok: true });
+    const message = 'Nothing to open a pull request for: everything on beluga/add-auth is already on main';
+    expect(await wb.quickPr('auth')).toEqual({ ok: false, message });
+    expect(toasts.at(-1)).toEqual([message, 'info']);
+    expect(toasts.some(([, level]) => level === 'error')).toBe(false);
+  });
 });

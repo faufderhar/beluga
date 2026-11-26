@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, type Plan, TESTS_AT, TESTS_AT_INFO, reviewState, shownBody } from '@beluga/core/plans/model.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, FULL_AUTOPILOT_INFO, MAX_PARALLEL, type Plan, type PlanRole, TESTS_AT, TESTS_AT_INFO, reviewState, shownBody, startsByItself } from '@beluga/core/plans/model.js';
 import { type PlanView, tidyOffer } from '@beluga/core/plans/progress.js';
 import { CONTINUE_PROMPT, decodeFailure, resetWords } from '@beluga/shared/run-failure.js';
 import { formatDuration } from '@beluga/shared/text.js';
@@ -16,11 +16,10 @@ import { Button, Empty, IconButton, Segmented, Tip, Working, cx } from '../compo
 import { copyText } from '../lib/copy.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { RunsOnLabel } from '../chat/RunsOn.js';
-import { YOUR_AGENT, agentMenuItems, useAgentEntries, useStartWith } from '../components/agent-options.js';
+import { useStartWith } from '../components/agent-options.js';
 import { SplitButton } from '../components/SplitButton.js';
 import { agentName, useMyAgent } from '../lib/agent-words.js';
 import { agentMark } from '@beluga/shared/agent-marks.js';
-import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import type { AgentRef } from '@beluga/protocol.js';
 import { openSheet } from '../lib/sheets.js';
 import { mod, openExternal } from '../lib/system.js';
@@ -39,6 +38,7 @@ import { revealLabel } from '../lib/os-words.js';
 import { useActions } from '../lib/actions.js';
 import { onMachine } from '../machines/pane-model.js';
 import { useMoveTo } from './move-to.js';
+import { PlanAgentsButton } from './AgentRoles.js';
 
 const PlanCanvas = lazy(() => import('./PlanCanvas.js'));
 
@@ -80,7 +80,7 @@ export function PlanPage({ id, task }: { id: string; task?: string }) {
   useEffect(() => {
     if (picked && view && picked !== FEED && picked !== BRANCH && picked !== DECISIONS && !picked.startsWith('gate:') && !view.milestones.some((m) => m.tasks.some((t) => t.task.id === picked))) setPicked(undefined);
   }, [view, picked]);
-  if (!plan || !view) return <Empty icon="flag" title="This plan is gone" detail="It was deleted. Its tasks stay on the board." action={<Button onClick={() => openList()}>Back to Plans</Button>} />;
+  if (!plan || !view) return <Empty icon="flag" title="This plan is gone" detail="It was deleted. Its tasks stay on the board." action={<Button size="small" onClick={() => openList()}>Back to Plans</Button>} />;
   return <Page view={view} prefs={prefs} setPrefs={setPrefs} picked={picked} setPicked={setPicked} />;
 }
 
@@ -149,8 +149,6 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   }, [plan.id, setPrefs]);
   const { api, act, openList, openWorktree } = usePlanActions();
   const { client } = useBeluga();
-  const runtimes = useApp((s) => s.runtimes);
-  const agents = useAgentEntries();
   const startWith = useStartWith();
   const mine = useMyAgent();
   // The plan's conversation (its chat, the head Claude's last turn) loads with the page, the chat shown or not.
@@ -163,7 +161,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     // Yours never start in a worktree: their button is Decide…, which opens the plan's conversation (its card asks you).
     const yours = view.ready.filter((t) => t.forYou).map((t) => t.task.id);
     if (view.active.length >= plan.maxParallel) return new Set(yours);
-    const step = new Set(view.open.filter((m) => m.autonomy === 'step').map((m) => m.milestone.id));
+    const step = new Set(view.open.filter((m) => !startsByItself(plan, m.autonomy)).map((m) => m.milestone.id));
     return new Set([...yours, ...view.ready.filter((t) => !t.forYou && (plan.paused || step.has(t.milestoneId))).map((t) => t.task.id)]);
   }, [view, plan]);
   // The chat's width: dragged (live), else the one you left it at, never past half the plan's area.
@@ -310,15 +308,14 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const teamItems = usePlanTeamItems(plan.id, plan.projectId);
   // Move To ▸ another computer of yours (BLG-806): Pause and Move To while something runs in it.
   const moveTo = useMoveTo(plan, view, step);
-  // Agent for Its Work ▸ (BLG-498): who works what starts from now on; milestones at work keep theirs (the toast says so).
-  const workAgent = (v: string): void =>
-    void act(() => api.setWorkAgent(plan.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes))).then((said) => {
+  // Who plans, builds and checks it (BLG-982), from the header's Agents: from now on; milestones at work keep theirs (the toast says so).
+  const roleAgent = (role: PlanRole, agent: AgentRef | null): void =>
+    void act(() => api.setRoleAgent(plan.id, role, agent)).then((said) => {
       if (typeof said === 'string') toast(client, said, 'success');
     });
   const more: ActionItem[] = [
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
     { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'milestone' : 'milestones'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
-    ...(plan.status !== 'done' ? [{ label: 'Agent for Its Work', submenu: agentMenuItems(agents, plan.agent, workAgent), onSelect: () => undefined }] : []),
     { label: 'When to Run Tests', submenu: TESTS_AT.map((t) => ({ label: TESTS_AT_INFO[t].label, hint: TESTS_AT_INFO[t].hint, checked: plan.testsAt === t, onSelect: () => void act(() => api.setTestsAt(plan.id, t), t === 'end' ? 'From now on, milestone checks skip the test suites; they all run once, in the final step' : 'From now on, each milestone’s check runs the full suites once, on its combined work') })), onSelect: () => undefined },
     ...(review === 'reviewing' ? [{ label: 'Approve Without Waiting', onSelect: approvePlan }] : []),
     ...(review !== 'off' && review !== 'reviewing' ? [{ label: review === 'none' ? 'Verify the Plan' : 'Verify the Plan Again', onSelect: () => verify(false) }] : []),
@@ -345,6 +342,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     ...(moveTo ? [moveTo] : []),
     { label: 'Copy as Markdown', separate: true, onSelect: () => void copyText(markdownOf(view)) },
     { label: 'Planning Style…', onSelect: () => openSheet({ kind: 'plan_style' }) },
+    // How it runs and when its tests run, in one sheet (plans/PlanSettingsSheet.tsx).
+    ...(plan.status !== 'done' ? [{ label: 'Plan Settings…', onSelect: () => openSheet({ kind: 'plan_settings', planId: plan.id }) }] : []),
     ...(plan.draft ? [{ label: plan.body ? 'Discard Changes' : 'Discard Draft', danger: true, separate: true, onSelect: () => openSheet({ kind: 'confirm', title: plan.body ? 'Discard the proposed changes?' : 'Discard this draft?', message: plan.body ? 'The plan stays as you approved it.' : 'Nothing was put on the board, so nothing else changes.', confirm: 'Discard', destructive: true, run: () => void act(() => api.discard(plan.id)) }) }] : []),
     ...(plan.body ? [{ label: 'Delete Plan…', danger: true, separate: !plan.draft, onSelect: () => openSheet({ kind: 'confirm', title: `Delete “${titleOf(plan)}”?`, message: 'Its tasks stay on the board; only the plan goes.', confirm: 'Delete', destructive: true, run: () => void act(() => api.remove(plan.id)).then(() => openList(plan.projectId)) }) }] : []),
   ];
@@ -354,7 +353,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       <header className={p.pageHead}>
         <div className={p.headMain}>
           <div className={p.titleRow}>
-            <IconButton icon="back" label="All Plans" className={p.back} onClick={() => openList(plan.projectId)} />
+            <IconButton size="small" icon="back" label="All Plans" className={p.back} onClick={() => openList(plan.projectId)} />
             <TitleField value={titleOf(plan)} onSave={(title) => void act(() => api.edit(plan.id, [{ op: 'retitle', title }]))} />
           </div>
           {drafting ? null : (
@@ -373,11 +372,13 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           {pr ? <PlanPrChip pr={pr} /> : null}
           {/* How it runs: nothing to run while Claude writes it. A real decision: its sheet says what changes. */}
           {drafting ? null : (
-            <Button size="small" variant="quiet" icon="gauge" title={AUTONOMY_INFO[plan.autonomy].hint} onClick={() => openSheet({ kind: 'plan_mode', planId: plan.id })}>
-              Runs on {AUTONOMY_INFO[plan.autonomy].label}
-              {view.milestones.some((m) => m.milestone.autonomy && m.milestone.autonomy !== plan.autonomy) ? ' (mixed)' : ''}
+            <Button size="small" variant="quiet" icon={plan.fullAuto ? 'bot' : 'gauge'} title={plan.fullAuto ? FULL_AUTOPILOT_INFO.hint : AUTONOMY_INFO[plan.autonomy].hint} onClick={() => openSheet({ kind: 'plan_mode', planId: plan.id })}>
+              Runs on {plan.fullAuto ? FULL_AUTOPILOT_INFO.label : AUTONOMY_INFO[plan.autonomy].label}
+              {!plan.fullAuto && view.milestones.some((m) => m.milestone.autonomy && m.milestone.autonomy !== plan.autonomy) ? ' (mixed)' : ''}
             </Button>
           )}
+          {/* Who plans, builds and checks it (BLG-982): one name, or how many; each part changed from its menu. */}
+          {plan.status !== 'done' ? <PlanAgentsButton plan={plan} pick={roleAgent} /> : null}
           {/* The orchestrator's chat beside the plan, in and out: always here, whichever way it is. */}
           <Tip label={chat ? 'Hide the orchestrator’s chat' : 'Open the orchestrator’s chat'} keys={shortcutKeys('toggle-inspector')}>
             <Button size="small" variant="quiet" icon="claude" aria-pressed={chat} onClick={() => showChat(!chat)}>
@@ -385,7 +386,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
             </Button>
           </Tip>
           <ActionsDropdown items={more}>
-            <IconButton icon="more" label="Plan Options" />
+            <IconButton size="small" icon="more" label="Plan Options" />
           </ActionsDropdown>
           {primary?.with && !primary.busy ? (
             <SplitButton label={primary.with.label} items={primary.with.items}>
@@ -442,7 +443,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
         <div className={p.stage}>
           <div className={p.stageTools}>
             {drafting ? null : (
-              <Segmented<Display>
+              <Segmented<Display> size="small"
                 label="Show"
                 value={prefs.display}
                 onChange={(display) => setPrefs((l) => ({ ...l, display }))}

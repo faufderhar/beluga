@@ -25,6 +25,8 @@ export const PHONE: Record<Method, Side> = {
   'session.copyText': 'mac',
   'session.setPrefs': 'mac',
   'session.setPlanMode': 'mac',
+  'session.setAutopilot': 'phone',
+  'session.setBuildWith': 'mac',
   'session.setClaudeSharing': 'mac',
   'session.rename': 'mac',
   'session.zoom': 'mac',
@@ -87,6 +89,8 @@ export const PHONE: Record<Method, Side> = {
   'sharing.earlier': 'mac',
   'sharing.runHere': 'mac',
   'sharing.fork': 'mac',
+  'sharing.forkCarry': 'mac',
+  'sharing.setForkCarry': 'mac',
   'invites.create': 'mac',
   'invites.revoke': 'mac',
   'invites.copyLink': 'mac',
@@ -98,6 +102,7 @@ export const PHONE: Record<Method, Side> = {
   'remote.requestWorktree': 'mac',
   'remote.handoff': 'mac',
   'remote.canHandOff': 'mac',
+  'remote.handoffNote': 'mac',
 
   // ---- diffs, shells, files by path: code, never on the phone
   'diff.load': 'mac',
@@ -147,6 +152,9 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.remove': 'mac',
   'workspaces.commit': 'mac',
   'workspaces.merge': 'mac',
+  // The phone lands through its branch steps (companion.branchStep: land, land_on, land_off, push_main).
+  'workspaces.land': 'mac',
+  'workspaces.setLandOnBase': 'mac',
   'workspaces.prepareRemoval': 'mac',
   'workspaces.applyEnvBack': 'mac',
   'workspaces.keepEnvHere': 'mac',
@@ -191,10 +199,10 @@ export const PHONE: Record<Method, Side> = {
   'workbench.runSetup': 'mac',
   'workbench.setScript': 'mac',
   'workbench.shareScripts': 'mac',
+  'projects.setNaming': 'mac',
   'workbench.setModel': 'phone',
-  'workbench.setAgent': 'phone',
-  // A conversation's thinking effort stays on the Mac (the phone's picker has no effort meter).
   'workbench.setEffort': 'mac',
+  'workbench.setAgent': 'phone',
   'workbench.createPr': 'mac',
   'workbench.quickPr': 'mac',
   'workbench.mergeToBase': 'mac',
@@ -240,6 +248,9 @@ export const PHONE: Record<Method, Side> = {
   'env.worktree': 'mac',
   'env.setWorktree': 'mac',
   'env.carryWorktree': 'mac',
+  'env.pastedKeys': 'mac',
+  'env.keepPasted': 'mac',
+  'env.notAKey': 'mac',
   'env.overview': 'mac',
   'env.addToExample': 'mac',
   'env.exampleSync': 'mac',
@@ -251,6 +262,7 @@ export const PHONE: Record<Method, Side> = {
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',
   'attachments.addFile': 'mac',
+  'attachments.addText': 'mac',
   'attachments.expand': 'phone',
   'attachments.read': 'phone',
   'attachments.open': 'mac',
@@ -334,11 +346,27 @@ export const PHONE: Record<Method, Side> = {
   // ---- supporting Beluga: the star ask is the Mac's (it opens GitHub there)
   'support.answer': 'mac',
   // ---- usage statistics: the level is the phone's too (Settings); the ask and the onboarding are the Mac's
+  // Your ACP agents: added, removed and installed in Settings on the Mac (settings stay off the phone); the phone's pickers list the ones you added.
+  'acp.agents': 'mac',
+  'acp.catalog': 'mac',
+  'acp.add': 'mac',
+  'acp.addCommand': 'mac',
+  'acp.remove': 'mac',
+  'acp.search': 'mac',
+  'acp.install': 'mac',
   'telemetry.choose': 'phone',
   'telemetry.answer': 'mac',
   // A project's Settings sheet is the Mac's.
   'telemetry.exclude': 'mac',
   'telemetry.mark': 'mac',
+  // The install id and Reset ID are Settings › General on the Mac (settings stay off the phone).
+  'telemetry.installId': 'mac',
+  'telemetry.resetId': 'mac',
+  // ---- your own traces: Settings › Traces, with keys (settings stay off the phone)
+  'traces.list': 'mac',
+  'traces.save': 'mac',
+  'traces.remove': 'mac',
+  'traces.test': 'mac',
   // ---- your stats: the Usage tab's charts and what the composer saw (the phone keeps its plan meters)
   'stats.get': 'mac',
   'stats.leaderboard': 'mac',
@@ -460,6 +488,8 @@ export const PHONE: Record<Method, Side> = {
   'plans.setTestsAt': 'mac',
   // Who works the plan's milestones and tasks from here on (BLG-498): a pick from a list.
   'plans.setWorkAgent': 'phone',
+  'plans.setRoleAgent': 'phone',
+  'plans.setFullAuto': 'phone',
   'plans.tidyUp': 'mac',
   'plans.pass': 'phone',
   'plans.recheck': 'phone',
@@ -524,6 +554,8 @@ export const PHONE: Record<Method, Side> = {
   'git.fetch': 'mac',
   'git.fetchIfStale': 'mac',
   'git.updateMain': 'mac',
+  // The phone pushes main through a Straight to main worktree's branch step (companion.branchStep: push_main).
+  'git.pushMain': 'mac',
   'git.stashAndUpdate': 'mac',
   'git.moveAndUpdate': 'mac',
   'git.switchToDefault': 'mac',
@@ -683,6 +715,8 @@ export const PHONE: Record<Method, Side> = {
   'sentinel.moveReceive': 'mac',
   'sentinel.moveLand': 'mac',
   'sentinel.moveDrop': 'mac',
+  // A chat's schedules (BLG-399): the Info panel on the Mac, the conversation sheet on the phone (BLG-401).
+  'sentinel.forChat': 'phone',
   'sentinel.runs': 'phone',
   'sentinel.runGet': 'phone',
   'sentinel.decide': 'phone',

@@ -387,5 +387,5 @@ export function ArchiveDoneButton({ projectId }: { projectId?: string }) {
   const { api, act } = useTaskActions();
   const n = useApp((s) => doneCount(s.board, projectId));
   if (!n || !projectId) return null;
-  return <IconButton icon="archive" label={`Archive ${n} Done ${n === 1 ? 'Task' : 'Tasks'}`} onClick={() => void act(() => api.archiveDone(projectId), `Archived ${n} done ${n === 1 ? 'task' : 'tasks'}: they’re in the Archive`)} />;
+  return <IconButton size="small" icon="archive" label={`Archive ${n} Done ${n === 1 ? 'Task' : 'Tasks'}`} onClick={() => void act(() => api.archiveDone(projectId), `Archived ${n} done ${n === 1 ? 'task' : 'tasks'}: they’re in the Archive`)} />;
 }

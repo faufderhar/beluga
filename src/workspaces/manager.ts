@@ -1,3 +1,4 @@
+import { type LandResult, landOnto } from './land.js';
 import { type MergePreview, mergePreview } from './merge-preview.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { systemOpen } from '../core/os-open.js';
@@ -22,6 +23,7 @@ import { dropOpenCodeFolder, dropOpenCodeSession } from '../agent/runtime/openco
 import { dropGrokSession } from '../agent/runtime/grok/sessions.js';
 import { foldSessionCache } from '../shared/context-usage.js';
 import { dropCopilotFolder, dropCopilotSession } from '../agent/runtime/copilot/sessions.js';
+import { dropAgyFolder, dropAgySession } from '../agent/runtime/antigravity/sessions.js';
 import { addDay, dayKey, tokensOf } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { DeletePlan, MergeWait, Project, ProjectGroup, PullHead, ProjectSync, ProjectsConfig, RenameResult, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -88,6 +90,13 @@ const forkSessionOf = (source: Workspace, session: string | null | undefined): P
 });
 /** A record's agent and model from one AgentRef (its model kept as the workspace's model, as setAgent does). */
 /** Heads of a worktree's pull requests that merged (BLG-831, BLG-833): GitHub keeps them, so what's in them isn't pushed nowhere. */
+/**
+ * What a worktree's commits count against: its base. Straight to main's lands in the main folder,
+ * not on origin, so its base's own local branch (origin/main → main): landed there is landed.
+ */
+const ownBase = <T extends string | undefined>(base: T, landOnBase?: boolean): T => (landOnBase && base?.startsWith('origin/') ? base.slice('origin/'.length) : base) as T;
+const statusBase = (ws: Pick<WorkspaceRecord, 'kind' | 'base' | 'landOnBase'>): string | undefined => (ws.kind === 'main' ? undefined : ownBase(ws.base, ws.landOnBase));
+
 const shippedOf = (ws: Pick<WorkspaceRecord, 'mergedHead' | 'prShipped'>): string[] => [...new Set([ws.mergedHead, ws.prShipped?.head].filter((h): h is string => Boolean(h)))];
 
 const agentFields = (agent: AgentRef | undefined): Pick<WorkspaceRecord, 'agent' | 'model'> => {
@@ -139,8 +148,8 @@ export class WorkspaceManager {
   /** Worktree branches (root and branch) already checked for a fork pull request's head to follow: git asked once each. */
   private readonly pullHeadsChecked = new Set<string>();
 
-  /** What new branches start with (Settings › Workspaces; the session points this at your choice). */
-  branchPrefix: () => string = () => BRANCH_PREFIX;
+  /** What new branches in the project at `root` start with (its naming rule, else Settings › Workspaces; the session points this at your choice). */
+  branchPrefix: (root: string) => string = () => BRANCH_PREFIX;
 
   constructor(readonly store: WorkspaceStore = new WorkspaceStore()) {
     // No standing main conversation (BLG-70): one from before becomes a chat in its project, once.
@@ -493,7 +502,7 @@ export class WorkspaceManager {
     const find = (): Workspace | undefined => this.projects.flatMap((p) => p.workspaces).find((w) => !w.archived && w.kind !== 'chat' && real(w.path) === key);
     const read = find();
     if (!read) return false;
-    const status = await g.status(read.path, read.kind === 'main' ? undefined : read.base, shippedOf(read)).catch(() => undefined);
+    const status = await g.status(read.path, statusBase(read), shippedOf(read)).catch(() => undefined);
     if (this.refreshing) return false; // a full refresh started meanwhile: it has the newer reading
     // As it is now (a full refresh may have replaced it meanwhile), not as it was before git ran.
     const ws = find();
@@ -565,7 +574,7 @@ export class WorkspaceManager {
       }
       await this.followPullHeads(root, workspaces);
       const withStatus = await Promise.all(
-        workspaces.map(async (w) => (w.archived || w.kind === 'chat' ? w : { ...w, status: await g.status(w.path, w.kind === 'main' ? undefined : w.base, shippedOf(w)).catch(() => undefined) })),
+        workspaces.map(async (w) => (w.archived || w.kind === 'chat' ? w : { ...w, status: await g.status(w.path, statusBase(w), shippedOf(w)).catch(() => undefined) })),
       );
       // The main checkout's status (just read) says what it's on and how much is uncommitted.
       const mainStatus = withStatus.find((w) => w.kind === 'main')?.status;
@@ -620,7 +629,7 @@ export class WorkspaceManager {
     if (needed.length < 2) return { ok: true, branch: needed[0] ?? main };
     const dir = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, name);
     mkdirSync(path.dirname(dir), { recursive: true });
-    return g.combineBranches(project.root, dir, `${this.branchPrefix()}${name}`, needed);
+    return g.combineBranches(project.root, dir, `${this.branchPrefix(project.root)}${name}`, needed);
   }
 
   // ------------------------------------------------------------- a plan's branch
@@ -673,7 +682,11 @@ export class WorkspaceManager {
 
   /** Delete a branch whose work is merged into `into` (git refuses one that isn't, or that's checked out). */
   async dropBranch(projectId: string, branch: string, into: string): Promise<void> {
-    await g.deleteMergedBranch(this.repoProject(projectId).root, branch, into);
+    const { root } = this.repoProject(projectId);
+    await g.deleteMergedBranch(root, branch, into);
+    // A worktree that built on it (a task's blocked_by) now builds on where its work went: its
+    // base never names a branch that's gone (merged "into" nothing, 0 commits, no word of it).
+    for (const r of this.records) if (r.projectRoot === root && r.base === branch && r.branch !== branch) this.patchRecord(r.id, { base: into });
   }
 
   /** Merge a branch into the main folder, which must be on the default branch. */
@@ -743,7 +756,7 @@ export class WorkspaceManager {
     if (!(await g.isCommit(project.root, startPoint))) throw new WorkspaceError(`There’s no commit ${startPoint.slice(0, 12)} here`);
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    const branch = await this.freeBranch(project.root, `${this.branchPrefix()}${s}`);
+    const branch = await this.freeBranch(project.root, `${this.branchPrefix(project.root)}${s}`);
     await g.git(project.root, ['worktree', 'add', '-b', branch, dir, startPoint]);
     await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
@@ -837,18 +850,19 @@ export class WorkspaceManager {
 
   /** `opts.id`: the id it gets (from newWorktreeId), else a fresh one. */
   /** `opts.agent`: the agent it runs (unset: your default). */
-  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string; readonly agent?: AgentRef; readonly thread?: ThreadRecord } = {}): Promise<Workspace> {
+  /** `opts.landOnBase`: Straight to main (see WorkspaceRecord.landOnBase). */
+  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string; readonly agent?: AgentRef; readonly thread?: ThreadRecord; readonly landOnBase?: boolean } = {}): Promise<Workspace> {
     const project = this.projects.find((p) => p.id === projectIdOrRoot || p.root === projectIdOrRoot);
     if (!project) throw new WorkspaceError('Project not found');
     if (base !== undefined && !(await g.isCommit(project.root, base))) throw new WorkspaceError(`There's no branch called ${base}`);
     const from = base ?? project.base;
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    const branch = await this.freeBranch(project.root, `${this.branchPrefix()}${s}`);
+    const branch = await this.freeBranch(project.root, `${this.branchPrefix(project.root)}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
-    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...agentFields(opts.agent), ...(opts.thread ? { thread: opts.thread } : {}) };
+    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...agentFields(opts.agent), ...(opts.thread ? { thread: opts.thread } : {}), ...(opts.landOnBase ? { landOnBase: true } : {}) };
     this.saveRecord(record);
     const status = await g.status(dir, from).catch(() => undefined);
     return this.adopt(project, { ...record, projectId: project.id, external: false, ...(status ? { status } : {}) });
@@ -1034,7 +1048,7 @@ export class WorkspaceManager {
     const at = opts.at ?? now;
     try {
       const from = at ? await snapshotBase(source.path, at) : (opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD')));
-      const branch = await this.freeBranch(project.root, `${this.branchPrefix()}${s}`);
+      const branch = await this.freeBranch(project.root, `${this.branchPrefix(project.root)}${s}`);
       await g.addWorktree(project.root, dir, branch, from);
       await g.excludeProjectDir(dir);
       if (at) await applySnapshot(dir, at);
@@ -1106,7 +1120,7 @@ export class WorkspaceManager {
     const s = slug(name);
     const dir = this.freeDir(project, s);
     const from = opts.base ?? project.base;
-    const branch = await this.freeBranch(project.root, `${this.branchPrefix()}${s}`);
+    const branch = await this.freeBranch(project.root, `${this.branchPrefix(project.root)}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
@@ -1246,7 +1260,7 @@ export class WorkspaceManager {
     // A chat in a folder that stays (yours, or a worktree it was forked in): only what you sent it goes.
     else if (ws.kind === 'chat' && existsSync(ws.path)) await dropSent(ws.path, sentFolder(`ws:${ws.id}`, false)).catch(() => undefined);
     if (ours) {
-      // Claude Code's (your own Claude and local models alike), Codex's, OpenCode's, Grok Build's and Copilot's, whichever agent ran there.
+      // Claude Code's (your own Claude and local models alike), Codex's, OpenCode's, Grok Build's, Copilot's and Antigravity's, whichever agent ran there.
       for (const dir of new Set([sessionsDir, path.resolve(ws.path)])) await dropFolderSessions(dir).catch(() => 0);
       await dropCodexSessions({ dir: sessionsDir }).catch(() => 0);
       if (ws.sessionRuntime === 'opencode') {
@@ -1255,11 +1269,16 @@ export class WorkspaceManager {
       }
       if (ws.sessionRuntime === 'grok' && ws.sessionId) await dropGrokSession(ws.sessionId).catch(() => false);
       if (ws.sessionRuntime === 'copilot') await dropCopilotFolder(sessionsDir).catch(() => 0);
+      if (ws.sessionRuntime === 'antigravity') {
+        if (ws.sessionId) await dropAgySession(ws.sessionId).catch(() => false);
+        await dropAgyFolder(sessionsDir).catch(() => 0);
+      }
     } else if (ws.kind === 'chat' && this.ownSession(ws)) {
       if (ws.sessionRuntime === 'codex') await dropCodexSessions({ threadId: ws.sessionId! }).catch(() => 0);
       else if (ws.sessionRuntime === 'opencode') await dropOpenCodeSession(ws.sessionId!).catch(() => false);
       else if (ws.sessionRuntime === 'grok') await dropGrokSession(ws.sessionId!).catch(() => false);
       else if (ws.sessionRuntime === 'copilot') await dropCopilotSession(ws.sessionId!).catch(() => false);
+      else if (ws.sessionRuntime === 'antigravity') await dropAgySession(ws.sessionId!).catch(() => false);
       else await dropSession(sessionsDir, ws.sessionId!).catch(() => undefined);
     }
     this.records = this.records.filter((r) => r.id !== id);
@@ -1345,6 +1364,11 @@ export class WorkspaceManager {
    * the workspace's model. The stored session stays filed under its runtime: a different runtime
    * starts its own conversation (see session-carry.ts resumeFor).
    */
+  /** Whether a workspace or chat runs on this runtime (its own agent; one that follows your default doesn't count). */
+  usesRuntime(runtime: string): boolean {
+    return this.records.some((r) => r.agent?.runtime === runtime);
+  }
+
   setAgent(id: string, agent: AgentRef | undefined): void {
     this.require(id);
     // Another agent's model may not take the effort picked for the last one: Settings' again.
@@ -1369,8 +1393,8 @@ export class WorkspaceManager {
     this.patchRecord(id, { thread });
   }
 
-  /** Pick the thinking effort for one workspace's conversation (undefined: Settings'). */
-  setEffort(id: string, effort: Effort | undefined): void {
+  /** Pick the thinking effort for one workspace's conversation (null: Auto here; undefined: Settings'). */
+  setEffort(id: string, effort: Effort | null | undefined): void {
     this.require(id);
     this.patchRecord(id, { effort });
   }
@@ -1499,7 +1523,7 @@ export class WorkspaceManager {
 
   /** A free local branch name like beluga/<name>, beluga/<name>-2… */
   freeBranchName(projectRoot: string, name: string): Promise<string> {
-    return this.freeBranch(projectRoot, `${this.branchPrefix()}${slug(name)}`);
+    return this.freeBranch(projectRoot, `${this.branchPrefix(projectRoot)}${slug(name)}`);
   }
 
   forgetSession(id: string): void {
@@ -1523,7 +1547,7 @@ export class WorkspaceManager {
     const s = slug(name);
     // You named it meanwhile: yours stays.
     if (ws.kind !== 'worktree' || ws.nameSetByUser || !s || s === ws.name) return;
-    const prefix = this.branchPrefix();
+    const prefix = this.branchPrefix(ws.projectRoot);
     const branch = ws.branch && isOwnBranch(ws.branch, ws.name, prefix) && !(await this.onRemote(ws.path, ws.branch)) ? await this.freeBranch(ws.path, `${prefix}${s}`) : undefined;
     if (branch) await g.git(ws.path, ['branch', '-m', ws.branch!, branch]);
     this.patchRecord(id, { name: s, ...(branch ? { branch } : {}) });
@@ -1551,7 +1575,7 @@ export class WorkspaceManager {
     const kept = !old ? undefined : (await this.onRemote(ws.path, old)) ? ('pushed' as const) : undefined;
     let branch = old;
     if (old && !kept) {
-      const prefix = this.branchPrefix();
+      const prefix = this.branchPrefix(ws.projectRoot);
       const wanted = exact ?? (isOwnBranch(old, ws.name, prefix) ? `${prefix}${s}` : `${old.slice(0, old.lastIndexOf('/') + 1)}${s}`);
       branch = exact ? await this.takenOrFree(ws.path, exact, old) : await this.freeBranch(ws.path, wanted, old);
       if (branch !== old) await g.git(ws.path, ['branch', '-m', old, branch]);
@@ -1571,7 +1595,7 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only a worktree’s branch can have a pull request of its own');
     if (!(await g.followsPull(ws.path, ws.branch))) return ws.branch;
-    const wanted = `${this.branchPrefix()}${slug(ws.name) || 'pull-request'}`;
+    const wanted = `${this.branchPrefix(ws.projectRoot)}${slug(ws.name) || 'pull-request'}`;
     let branch = wanted;
     for (let i = 2; (await g.isCommit(ws.path, `refs/heads/${branch}`)) || (await this.onRemote(ws.path, branch)); i++) branch = `${wanted}-${i}`;
     await g.git(ws.path, ['branch', '-m', ws.branch, branch]);
@@ -1608,12 +1632,12 @@ export class WorkspaceManager {
 
   async review(id: string): Promise<g.Review> {
     const ws = this.require(id);
-    return g.review(ws.path, ws.base ?? this.projectOf(ws).base);
+    return g.review(ws.path, ownBase(ws.base ?? this.projectOf(ws).base, ws.landOnBase));
   }
 
   async fileDiff(id: string, file: string): Promise<string> {
     const ws = this.require(id);
-    return g.fileDiff(ws.path, ws.base ?? this.projectOf(ws).base, file);
+    return g.fileDiff(ws.path, ownBase(ws.base ?? this.projectOf(ws).base, ws.landOnBase), file);
   }
 
   async commitAll(id: string, message: string): Promise<boolean> {
@@ -1632,8 +1656,28 @@ export class WorkspaceManager {
     return result;
   }
 
+  /** Straight to main on or off for a worktree (see WorkspaceRecord.landOnBase). */
+  setLandOnBase(id: string, on: boolean): void {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only worktrees can go straight to main');
+    this.patchRecord(id, { landOnBase: on || undefined });
+  }
+
+  /**
+   * Land a worktree's work on its base in the main folder (Straight to main, workspaces/land.ts):
+   * what's left uncommitted is committed first, as `message`.
+   */
+  async land(id: string, message: string): Promise<LandResult> {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || !ws.branch || ws.archived) throw new WorkspaceError('Only worktrees can land on main');
+    await g.commitAll(ws.path, message);
+    const result = await landOnto(ws.projectRoot, ws.path, ws.branch, this.mergeTarget(ws));
+    await this.refresh();
+    return result;
+  }
+
   /** The branch a worktree merges into: its base, without the remote (undefined: whatever main is on). */
-  private mergeTarget(ws: Workspace): string | undefined {
+  mergeTarget(ws: Workspace): string | undefined {
     const base = ws.base ?? this.projectOf(ws).base;
     return base.startsWith('origin/') ? base.slice('origin/'.length) : base === 'HEAD' ? undefined : base;
   }
@@ -1643,6 +1687,8 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only worktrees can be merged');
     const into = this.mergeTarget(ws);
+    // A base that's gone (a branch it built on, merged and deleted) is said, never "0 commits, no conflicts".
+    if (into && !(await g.tryGit(ws.projectRoot, ['rev-parse', '--verify', '--quiet', `${into}^{commit}`]))) throw new WorkspaceError(`${ws.name} merges into ${into}, which isn’t there any more (merged and deleted?): nothing to compare it with`);
     return mergePreview({ folder: ws.projectRoot, from: ws.branch, ...(into ? { into } : {}), uncommitted: ws.status?.changed ?? 0 });
   }
 

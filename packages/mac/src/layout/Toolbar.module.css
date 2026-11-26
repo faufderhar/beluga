@@ -67,6 +67,16 @@
   content: '›';
   margin-left: 6px;
 }
+/* A project's own icon, small before its name (on the text's line, not its baseline). */
+.projectIcon {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  border-radius: 4px;
+  object-fit: contain;
+}
 .name {
   min-width: 0;
   overflow: hidden;
@@ -160,8 +170,7 @@
   margin-right: 6px;
 }
 .primary {
-  height: 26px;
-  padding: 0 11px 0 9px;
+  padding: 0 14px 0 11px;
   font-weight: 600;
 }
 .primary[aria-disabled='true'] {
@@ -192,4 +201,39 @@
   height: 18px;
   margin: 0 6px;
   background: var(--hairline-strong);
+}
+
+/* A phone (BLG-6): the bar keeps to the sidebar button, the title and the few buttons every page needs. */
+@media (max-width: 700px) {
+  .toolbar,
+  .noSidebar {
+    gap: 2px;
+    padding: 0 4px;
+  }
+  .lead {
+    margin-left: 0;
+  }
+  .titles {
+    padding: 0 4px;
+  }
+  .crumb {
+    display: none;
+  }
+  /* A page's own actions (Create PR, its branch, who's here) on a second row: the title keeps the first. */
+  .toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--titlebar-h);
+  }
+  .right {
+    display: contents;
+  }
+  .extra:not(:empty) {
+    order: 10;
+    flex: 1 0 100%;
+    margin: 0;
+    padding: 0 4px 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
 }

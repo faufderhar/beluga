@@ -130,6 +130,12 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
     expect(modeChange(v, 'step').from).toMatch(/^From now on nothing starts by itself/);
   });
 
+  it('switching off Step by Step says nothing starts until you press Start', () => {
+    const v = planView(active({ autonomy: 'step' }), NO_BOARD);
+    expect(modeChange(v, 'autopilot').now).toBe('Nothing starts until you press Start.');
+    expect(modeChange(v, 'gated').now).toBe('Nothing starts until you press Start.');
+  });
+
   it('parallel milestones share a row (and a column of the bar)', () => {
     expect(milestoneRows(single)).toEqual([['api', 'ui'], ['ship']]);
     expect(barColumns(planView(active(), NO_BOARD)).map((c) => c.map((b) => b.id))).toEqual([['api', 'ui'], ['ship']]);

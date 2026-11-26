@@ -1,9 +1,9 @@
 import type { TelemetryLevel } from '@beluga/core/telemetry-store.js';
-import { LEVELS } from '../lib/telemetry.js';
+import { LEVELS, PRIVACY_LABEL, openPrivacyNotice } from '../lib/telemetry.js';
 import s from './telemetry-levels.module.css';
 
-/** Off, Limited, On: one radio group, each with a line saying what it sends. */
-export function TelemetryLevels({ value, onChange, name = 'telemetry-level' }: { readonly value: TelemetryLevel; readonly onChange: (level: TelemetryLevel) => void; readonly name?: string }) {
+/** Off, Essential, On: one radio group, each with a line saying what it sends. No value: none picked yet. */
+export function TelemetryLevels({ value, onChange, name = 'telemetry-level' }: { readonly value: TelemetryLevel | undefined; readonly onChange: (level: TelemetryLevel) => void; readonly name?: string }) {
   return (
     <div className={s.levels} role="radiogroup" aria-label="Usage statistics">
       {LEVELS.map((l) => (
@@ -19,5 +19,14 @@ export function TelemetryLevels({ value, onChange, name = 'telemetry-level' }: {
         </label>
       ))}
     </div>
+  );
+}
+
+/** "Privacy notice": who gets usage statistics, why, for how long, your rights (docs/privacy.md, in the browser). */
+export function PrivacyNoticeLink() {
+  return (
+    <button type="button" className={s.privacy} onClick={openPrivacyNotice}>
+      {PRIVACY_LABEL}
+    </button>
   );
 }

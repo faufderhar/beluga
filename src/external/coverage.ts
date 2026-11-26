@@ -12,14 +12,17 @@ import type { Method } from '../ipc/api.js';
  */
 export type ExternalAccess = 'covered' | 'gated' | 'ui_only' | { readonly refused: string };
 
+/** Adding an ACP agent runs (or downloads) a program on this computer. */
+const INSTALLS = 'It downloads or runs a program on this computer: a person adds agents, in Settings.';
 const APPROVALS = 'An approval is a person\'s answer: no agent says yes to a step or a request.';
+const AUTOPILOT = 'Full Autopilot answers approvals for the person (BLG-981): only the person turns it on.';
 const GRANTS = 'An agent never reads or changes a grant, its own or another agent\'s.';
 const SECRET_VALUES = 'It holds or returns a secret value.';
 const ENV_LIST = 'It replaces the whole list of variables, and an agent cannot read the values it would have to keep.';
 const PAIRING = 'A person pairs a phone, with the phone in hand.';
 const SIGN_IN = 'A sign-in is a person\'s, in a browser.';
 const PHONE_LINK = 'The phone\'s own link: an agent uses the chat, file and board tools for the same work.';
-const YOUR_MAC = 'The owner gave agents the sidebar\'s chats, not the Your Mac chats (BLG-243).';
+const YOUR_MAC = 'The owner gave agents the sidebar\'s chats, not the computer’s own assistant chats (BLG-243).';
 const OTHERS_RUNS = 'It stops runs that are not this agent\'s: beluga_chat_interrupt stops its own.';
 const INBOX = 'The inbox marks what a person has read, and an agent\'s mark would hide it from them.';
 const NO_SCOPE = 'A file name does not say which chat the image is in, so a grant cannot check it.';
@@ -41,6 +44,8 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'session.copyText': 'ui_only',
   'session.setPrefs': 'gated',
   'session.setPlanMode': 'covered',
+  'session.setAutopilot': { refused: AUTOPILOT },
+  'session.setBuildWith': { refused: 'Who builds what a chat plans is the person’s pick in its mode menu; plan_set_role_agent changes a plan’s builder.' },
   'session.setClaudeSharing': 'gated',
   'session.rename': 'gated',
   'session.zoom': 'ui_only',
@@ -90,6 +95,8 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'sharing.earlier': 'gated',
   'sharing.runHere': 'gated',
   'sharing.fork': 'gated',
+  'sharing.forkCarry': { refused: NO_TOOL },
+  'sharing.setForkCarry': { refused: 'Which git-ignored files and secrets go to a friend is the owner\'s pick, ticked file by file (BLG-1017).' },
   'invites.create': 'gated',
   'invites.revoke': 'gated',
   'invites.copyLink': 'ui_only',
@@ -133,6 +140,8 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'workspaces.remove': 'covered',
   'workspaces.commit': 'covered',
   'workspaces.merge': 'covered',
+  'workspaces.land': { refused: NO_TOOL },
+  'workspaces.setLandOnBase': { refused: NO_TOOL },
   'workspaces.prepareRemoval': 'covered',
   'workspaces.applyEnvBack': 'gated',
   'workspaces.keepEnvHere': 'gated',
@@ -171,9 +180,8 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'workbench.setScript': 'covered',
   'workbench.shareScripts': 'gated',
   'workbench.setModel': 'covered',
+  'workbench.setEffort': 'covered',
   'workbench.setAgent': 'covered',
-  // A conversation's thinking effort. No external tool sets it yet.
-  'workbench.setEffort': { refused: NO_TOOL },
   'workbench.createPr': 'covered',
   'workbench.quickPr': 'covered',
   'workbench.mergeToBase': 'covered',
@@ -215,6 +223,9 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'env.worktree': { refused: SECRET_VALUES },
   'env.setWorktree': { refused: ENV_LIST },
   'env.carryWorktree': 'gated',
+  'env.pastedKeys': { refused: SECRET_VALUES },
+  'env.keepPasted': { refused: SECRET_VALUES },
+  'env.notAKey': { refused: SECRET_VALUES },
   'env.overview': 'gated',
   'env.addToExample': 'gated',
   'env.exampleSync': 'gated',
@@ -224,6 +235,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'env.checkEndpoints': 'gated',
   'attachments.add': 'ui_only',
   'attachments.addFile': 'ui_only',
+  'attachments.addText': 'ui_only',
   'attachments.reattach': 'ui_only',
   'attachments.expand': 'ui_only',
   'attachments.read': { refused: NO_SCOPE },
@@ -288,10 +300,23 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'stripe.refresh': 'gated',
   'support.answer': 'gated',
   // Consent to usage statistics is the person's own, made at a screen: never an agent's.
+  'acp.agents': 'ui_only',
+  'acp.catalog': 'ui_only',
+  'acp.search': 'ui_only',
+  'acp.add': { refused: INSTALLS },
+  'acp.addCommand': { refused: INSTALLS },
+  'acp.remove': { refused: INSTALLS },
+  'acp.install': { refused: INSTALLS },
   'telemetry.choose': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
   'telemetry.answer': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
   'telemetry.exclude': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
   'telemetry.mark': { refused: 'Only Beluga\'s own screens report these.' },
+  'telemetry.installId': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
+  'telemetry.resetId': { refused: 'Usage statistics are your own choice, made in Beluga itself.' },
+  'traces.list': { refused: 'Where your traces go is set in Beluga itself (Settings › Traces).' },
+  'traces.save': { refused: 'Where your traces go is set in Beluga itself (Settings › Traces).' },
+  'traces.remove': { refused: 'Where your traces go is set in Beluga itself (Settings › Traces).' },
+  'traces.test': { refused: 'Where your traces go is set in Beluga itself (Settings › Traces).' },
   'claudeCode.steps': 'gated',
   'claudeCode.step': 'gated',
   'claudeCode.findAgent': 'gated',
@@ -369,6 +394,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'sentinel.test': 'covered',
   'sentinel.stop': 'covered',
   'sentinel.pause': 'gated',
+  'sentinel.forChat': { refused: NO_TOOL },
   'sentinel.runs': 'covered',
   'sentinel.runGet': 'covered',
   'sentinel.ask': 'covered',
@@ -412,6 +438,8 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'plans.setParallel': 'covered',
   'plans.setTestsAt': 'covered',
   'plans.setWorkAgent': 'covered',
+  'plans.setRoleAgent': 'covered',
+  'plans.setFullAuto': { refused: AUTOPILOT },
   'plans.tidyUp': 'covered',
   'plans.pass': 'covered',
   'plans.recheck': 'covered',
@@ -459,6 +487,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'git.fetch': 'covered',
   'git.fetchIfStale': 'covered',
   'git.updateMain': 'covered',
+  'git.pushMain': 'covered',
   'git.stashAndUpdate': 'covered',
   'git.moveAndUpdate': 'covered',
   'git.switchToDefault': 'covered',
@@ -521,6 +550,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'session.react': 'covered',
   'host.cancelSteer': 'covered',
   'remote.canHandOff': 'covered',
+  'remote.handoffNote': { refused: 'The person sharing asks for a handoff note from the Share sheet; an outside agent can write its own' },
   'workspaces.rename': 'covered',
   'workspaces.regenerateTitle': 'covered',
   'workspaces.deletePlan': 'covered',
@@ -632,6 +662,7 @@ export const EXTERNAL_ACCESS: Record<Method, ExternalAccess> = {
   'plans.moveUndo': { refused: COMPUTERS },
   'projects.clone': { refused: NO_TOOL },
   'projects.origin': { refused: NO_TOOL },
+  'projects.setNaming': { refused: NO_TOOL },
   'projects.myRepos': { refused: NO_TOOL },
   'revenuecat.connect': { refused: SECRET_VALUES },
   'revenuecat.disconnect': { refused: NO_TOOL },

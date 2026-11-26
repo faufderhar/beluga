@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
+import type { PushMainOutcome } from '@beluga/workspaces/push-main.js';
 import type { StashUpdateOutcome, UpdateOutcome } from '@beluga/workspaces/sync.js';
 import type { Project } from '@beluga/workspaces/types.js';
 import { Alert } from '../../components/Alert.js';
@@ -57,7 +58,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
   const { client } = useBeluga();
   const actions = useActions();
   const sync = project.sync;
-  const [busy, setBusy] = useState<'update' | 'switch' | 'claude' | 'fork'>();
+  const [busy, setBusy] = useState<'update' | 'push' | 'switch' | 'claude' | 'fork'>();
   const [dialog, setDialog] = useState<Dialog>();
   const now = useNow(30_000);
   const claude = useClaudeUpdating(project);
@@ -71,7 +72,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
   if (!sync) return null;
   const upstream = sync.upstream ?? `origin/${branch}`;
 
-  const run = async <T,>(what: 'update' | 'switch' | 'claude' | 'fork', job: () => Promise<T>): Promise<T | undefined> => {
+  const run = async <T,>(what: 'update' | 'push' | 'switch' | 'claude' | 'fork', job: () => Promise<T>): Promise<T | undefined> => {
     setBusy(what);
     try {
       return await job();
@@ -110,6 +111,12 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
   };
 
   const update = (): void => void run('update', () => api.git.updateMain(project.id)).then((out) => out && decide(out));
+  /** Push main (the core says how it went); main's commits and origin's clashing is your agent's to bring together. */
+  const push = (): void =>
+    void run('push', () => api.git.pushMain(project.id) as Promise<PushMainOutcome>).then((out) => {
+      if (out?.kind === 'conflict') setDialog({ kind: 'claude', title: `${out.branch} and ${out.upstream} changed the same lines`, message: `${out.upstream} has new commits that clash with ${out.branch}’s own in ${out.files.slice(0, 3).join(', ')}${out.files.length > 3 ? '…' : ''}. Nothing was pushed or changed. Bringing them together takes a merge or a rebase.` });
+      else if (out?.kind === 'busy') decide(out);
+    });
   const syncFork = (): void =>
     void run('fork', () => api.git.syncFork(project.id)).then((out) => {
       if (out?.kind === 'synced') decide(out.update);
@@ -146,7 +153,10 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
   };
 
   const diverged = sync.ahead > 0 && sync.behind > 0;
-  const showUpdate = Boolean(sync.upstream) && (line.canUpdate || diverged || Boolean(sync.operation));
+  const showPush = Boolean(sync.upstream) && Boolean(line.canPush) && !sync.operation;
+  // Push brings origin's new commits in under main's own, so with both it's the one step.
+  const showUpdate = Boolean(sync.upstream) && (line.canUpdate || diverged || Boolean(sync.operation)) && !(showPush && diverged);
+  const remote = sync.remote ?? 'origin';
   const fork = project.fork;
   const original = fork ? `${fork.owner}/${fork.repo}` : '';
   // Only when there's something to bring in (unknown counts too: GitHub didn't say).
@@ -180,9 +190,16 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
         </div>
       ) : null}
       <div className={s.bar}>
+        {showPush ? (
+          <Tip label={`Send ${plural(sync.ahead, 'commit')} on ${branch} to ${upstream}${sync.behind ? `, on top of its ${plural(sync.behind, 'new commit')}` : ''}. Never forced`}>
+            <Button size="small" variant="primary" icon="up" disabled={busy === 'push' || Boolean(claude)} onClick={push}>
+              {busy === 'push' ? 'Pushing…' : `Push ${branch} to ${remote}`}
+            </Button>
+          </Tip>
+        ) : null}
         {showUpdate ? (
           <Tip label={diverged ? `Both sides moved on: choose how to bring them together` : `Fetch ${upstream} and fast-forward ${branch}${sync.onDefault ? '' : ' (the folder stays where it is)'}`}>
-            <Button size="small" variant="primary" icon="download" disabled={busy === 'update' || Boolean(claude)} onClick={update}>
+            <Button size="small" variant={showPush ? undefined : 'primary'} icon="download" disabled={busy === 'update' || Boolean(claude)} onClick={update}>
               {busy === 'update' ? 'Updating…' : `Update ${branch}`}
             </Button>
           </Tip>

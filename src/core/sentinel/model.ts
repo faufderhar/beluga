@@ -4,8 +4,9 @@ import { EFFORTS, type Effort } from '../../shared/settings-schema.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
-import { ASSISTANT_TITLE } from '../../shared/assistant.js';
+import { ASSISTANT_TITLE, THE_COMPUTER } from '../../shared/assistant.js';
 import { chatMentionsAsTitles } from '../../shared/chat-ref.js';
+import { knownOr } from '../../shared/known-or.js';
 
 /**
  * Sentinel (docs/sentinel.md): watchers that run on a schedule, by hand, or when something
@@ -15,7 +16,7 @@ import { chatMentionsAsTitles } from '../../shared/chat-ref.js';
 
 // ---------------------------------------------------------------- triggers
 
-export const TRIGGER_KINDS = ['schedule', 'manual', 'after', 'beluga', 'github', 'stripe', 'uptime', 'sentry', 'webhook'] as const;
+export const TRIGGER_KINDS = ['schedule', 'once', 'manual', 'after', 'beluga', 'github', 'stripe', 'uptime', 'sentry', 'webhook'] as const;
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
 export const SCHEDULE_EVERY = ['minutes', 'hours', 'day', 'other-day', 'week', 'month'] as const;
@@ -41,6 +42,15 @@ export interface ScheduleTrigger {
   /** For `month`: 1…28. */
   readonly day?: number;
   /** A slot that passed while the Mac slept or Beluga was closed: run once when it's back, or skip it. */
+  readonly missed: 'catch-up' | 'skip';
+}
+
+/** One time, at a moment ('in 5 hours'). After it ran it has no next time: the sentinel stays. */
+export interface OnceTrigger {
+  readonly kind: 'once';
+  /** The moment, as an ISO date and time with its offset ("2026-11-12T14:00:00+01:00"). */
+  readonly at: string;
+  /** The moment passed while the Mac slept or Beluga was closed: run when it's back, or skip it. */
   readonly missed: 'catch-up' | 'skip';
 }
 
@@ -103,11 +113,11 @@ export interface WebhookTrigger {
   readonly signature?: 'github' | 'stripe';
 }
 
-export type Trigger = ScheduleTrigger | ManualTrigger | AfterTrigger | BelugaTrigger | GitHubTrigger | StripeTrigger | UptimeTrigger | SentryTrigger | WebhookTrigger;
+export type Trigger = ScheduleTrigger | OnceTrigger | ManualTrigger | AfterTrigger | BelugaTrigger | GitHubTrigger | StripeTrigger | UptimeTrigger | SentryTrigger | WebhookTrigger;
 
 // ---------------------------------------------------------------- steps
 
-export const STEP_KINDS = ['claude', 'script', 'notify', 'http', 'pr', 'merge', 'message', 'friend', 'trigger', 'measure'] as const;
+export const STEP_KINDS = ['claude', 'script', 'notify', 'http', 'pr', 'merge', 'message', 'chat', 'friend', 'trigger', 'measure'] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
 interface StepBase {
@@ -212,6 +222,18 @@ export interface MessageStep extends StepBase {
   readonly text: string;
 }
 
+/**
+ * Wake one of your own chats (BLG-397): the prompt goes in as from the sentinel, the step waits for
+ * that turn and keeps the first line of its answer. Only a chat that is yours alone: one shared with
+ * a contributor is refused, and the sentinel pauses.
+ */
+export interface ChatStep extends StepBase {
+  readonly kind: 'chat';
+  /** One of your chats, as its ref ("<you>/ws:<id>"). */
+  readonly to: string;
+  readonly text: string;
+}
+
 /** Phase 2. */
 export interface FriendStep extends StepBase {
   readonly kind: 'friend';
@@ -289,7 +311,7 @@ export interface MeasureStep extends StepBase {
   readonly filesKeepDays?: number;
 }
 
-export type Step = ClaudeStep | ScriptStep | NotifyStep | HttpStep | PrStep | MergeStep | MessageStep | FriendStep | TriggerStep | MeasureStep;
+export type Step = ClaudeStep | ScriptStep | NotifyStep | HttpStep | PrStep | MergeStep | MessageStep | ChatStep | FriendStep | TriggerStep | MeasureStep;
 
 // ---------------------------------------------------------------- a sentinel
 
@@ -320,11 +342,11 @@ export const KEEP_CHATS = ['all', 'failed', 'latest'] as const;
 export type KeepChats = (typeof KEEP_CHATS)[number];
 export const DEFAULT_KEEP_CHATS: KeepChats = 'all';
 /** `keeps`: what it does, after its name ("Hourly check keeps only failed runs’ chats"). */
-export const KEEP_CHATS_INFO: Readonly<Record<KeepChats, { readonly label: string; readonly description: string; readonly keeps: string }>> = {
+export const KEEP_CHATS_INFO: Readonly<Record<KeepChats, { readonly label: string; readonly description: string; readonly keeps: string }>> = knownOr({
   all: { label: 'Every run', description: 'Each run’s chat stays, to read or carry on', keeps: 'keeps every run’s chat' },
   failed: { label: 'Failed runs only', description: 'A run that went fine puts its chat away; its report stays', keeps: 'keeps only failed runs’ chats' },
   latest: { label: 'The latest run only', description: 'Each run puts the one before’s chat away; reports stay', keeps: 'keeps only the latest run’s chat' },
-};
+}, (v) => ({ label: v, description: '', keeps: '' }));
 
 /** Whether a run that ended keeps its conversation; `latest`: the newest ended run with one. */
 export function keepsChat(keep: KeepChats, run: Pick<Run, 'id' | 'state'>, latest: string | undefined): boolean {
@@ -365,6 +387,22 @@ export interface Sentinel {
   readonly recipe?: string;
   readonly createdAt: number;
   readonly updatedAt: number;
+}
+
+/** One of a chat's schedules (BLG-399): a sentinel whose chat step wakes that chat, as its Info panel lists it. */
+export interface ChatSchedule {
+  readonly id: string;
+  readonly name: string;
+  readonly icon: string;
+  readonly trigger: Trigger;
+  readonly paused: boolean;
+  readonly pausedWhy?: string;
+  /** When it runs next (on, with a schedule or a once trigger). */
+  readonly nextAt?: number;
+  /** What its first chat step to that chat sends. */
+  readonly prompt: string;
+  /** A run of it is going. */
+  readonly running: boolean;
 }
 
 /** A step as given: without an id or a name, it gets them. */
@@ -521,6 +559,21 @@ function cutTo(text: string, room: number): string {
 }
 
 export const isLive = (state: RunState): boolean => state === 'queued' || state === 'running' || state === 'needs-you';
+
+/**
+ * A chat's schedules (BLG-399): the sentinels with a chat step that wakes it, given as its ref
+ * ("<owner>/<channel>"), in the order they were made. The daemon's sentinel.forChat and the Mac's
+ * Info panel both read it.
+ */
+export function chatSchedules(state: Pick<SentinelState, 'items' | 'nextAt' | 'runs'>, ref: string): ChatSchedule[] {
+  return state.items.flatMap((s) => {
+    const step = s.steps.find((st) => st.kind === 'chat' && st.to === ref);
+    if (step?.kind !== 'chat') return [];
+    const next = state.nextAt[s.id];
+    const running = state.runs.some((r) => r.sentinelId === s.id && isLive(r.state));
+    return [{ id: s.id, name: s.name, icon: s.icon, trigger: s.trigger, paused: s.paused, ...(s.pausedWhy ? { pausedWhy: s.pausedWhy } : {}), ...(next !== undefined && !s.paused ? { nextAt: next } : {}), prompt: step.text, running }];
+  });
+}
 
 // ---------------------------------------------------------------- the state
 
@@ -907,8 +960,9 @@ export const slugOf = (name: string): string =>
 
 export const sentinelLabel = (s: Pick<Sentinel, 'name'>): string => `sentinel:${slugOf(s.name)}`;
 
-export const TRIGGER_INFO: Readonly<Record<TriggerKind, { readonly label: string; readonly phase: 1 | 2 | 3 }>> = {
+export const TRIGGER_INFO: Readonly<Record<TriggerKind, { readonly label: string; readonly phase: 1 | 2 | 3 }>> = knownOr({
   schedule: { label: 'On a schedule', phase: 1 },
+  once: { label: 'One time', phase: 1 },
   manual: { label: 'Only when you press Run', phase: 1 },
   after: { label: 'After another sentinel', phase: 2 },
   beluga: { label: 'When something happens in Beluga', phase: 3 },
@@ -917,31 +971,32 @@ export const TRIGGER_INFO: Readonly<Record<TriggerKind, { readonly label: string
   uptime: { label: 'When a site stops answering', phase: 3 },
   sentry: { label: 'When Sentry sees something', phase: 3 },
   webhook: { label: 'When something posts to its URL', phase: 3 },
-};
+}, (v) => ({ label: v, phase: 3 }));
 
-export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; readonly hint: string; readonly needs: Access; readonly phase: 1 | 2 | 3 | 5 }>> = {
+export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; readonly hint: string; readonly needs: Access; readonly phase: 1 | 2 | 3 | 5 }>> = knownOr({
   claude: { label: 'Ask your agent', hint: 'The agent reads, writes a brief, fixes, makes tasks', needs: 'look', phase: 1 },
   script: { label: 'Run a script', hint: 'One shell line or a script, in the project or your home folder', needs: 'look', phase: 1 },
-  notify: { label: 'Notify me', hint: 'On the Mac, and the phone if you like, with the report', needs: 'look', phase: 1 },
+  notify: { label: 'Notify me', hint: `On ${THE_COMPUTER}, and the phone if you like, with the report`, needs: 'look', phase: 1 },
   http: { label: 'Call a service', hint: 'A web request: Groqbot, Slack, Discord, any URL', needs: 'look', phase: 2 },
   pr: { label: 'Open a pull request', hint: 'From the worktree the run’s agent step made', needs: 'work', phase: 2 },
   merge: { label: 'Merge if acceptable', hint: 'When the checks pass and you’ve approved', needs: 'ship', phase: 2 },
   message: { label: 'Message a chat', hint: 'A friend or a group, as you', needs: 'look', phase: 2 },
+  chat: { label: 'Wake one of your chats', hint: 'Sends a prompt into one of your own chats and keeps the answer’s first line', needs: 'look', phase: 5 },
   friend: { label: 'Ask a friend’s agent', hint: 'As you; their trust applies', needs: 'look', phase: 2 },
   trigger: { label: 'Run another sentinel', hint: 'Starts it with this run’s last output', needs: 'look', phase: 2 },
   measure: { label: 'Keep the numbers', hint: 'Numbers or rows from the step before, a source, or the agent, kept over time', needs: 'look', phase: 5 },
-};
+}, (v) => ({ label: v, hint: '', needs: 'ship', phase: 5 }));
 
 /** The steps and triggers this Beluga runs (phase 5: every one); later ones show, but a run says they aren't available yet. */
 export const SENTINEL_PHASE = 5;
 export const stepAvailable = (kind: StepKind): boolean => STEP_INFO[kind].phase <= SENTINEL_PHASE;
 export const triggerAvailable = (kind: TriggerKind): boolean => TRIGGER_INFO[kind].phase <= SENTINEL_PHASE;
 
-export const ACCESS_INFO: Readonly<Record<Access, { readonly label: string; readonly sentence: string }>> = {
+export const ACCESS_INFO: Readonly<Record<Access, { readonly label: string; readonly sentence: string }>> = knownOr({
   look: { label: 'Look', sentence: 'Your agent can look and tell you' },
   work: { label: 'Work', sentence: 'Your agent can change code in a worktree and open pull requests' },
   ship: { label: 'Ship', sentence: 'Your agent can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved' },
-};
+}, (v) => ({ label: v, sentence: '' }));
 
 /** Access ranked: Look < Work < Ship. */
 export const accessRank = (a: Access): number => RANK[a];
@@ -959,7 +1014,7 @@ export function pausedWords(s: Pick<Sentinel, 'paused' | 'pausedWhy'>): string |
 export const CLAUDE_CHANGED_BANNER = 'Your agent changed what this sentinel can do. Turn On to let it run.';
 
 /** Steps whose change by Claude pauses the sentinel (they run things, call out, or ship). */
-export const GUARDED_STEPS: ReadonlySet<StepKind> = new Set(['script', 'http', 'pr', 'merge']);
+export const GUARDED_STEPS: ReadonlySet<StepKind> = new Set(['script', 'http', 'pr', 'merge', 'chat']);
 
 /** A guarded step, or a Keep the numbers step that runs a source (a query, a command, a request). */
 const isGuarded = (st: Step): boolean => GUARDED_STEPS.has(st.kind) || (st.kind === 'measure' && st.from === 'source');
@@ -978,6 +1033,8 @@ const stable = (v: unknown): string =>
 const stepTargets = (st: Step): string[] =>
   st.kind === 'message'
     ? [`message:${st.to}`]
+    : st.kind === 'chat'
+      ? [`chat:${st.to}`]
     : st.kind === 'friend'
       ? [`friend:${st.peerId}`]
       : st.kind === 'trigger'
@@ -994,6 +1051,7 @@ const stepTargets = (st: Step): string[] =>
 const triggerTarget = (t: Trigger): string => {
   switch (t.kind) {
     case 'schedule':
+    case 'once':
     case 'manual':
       return t.kind;
     case 'after':
@@ -1093,7 +1151,7 @@ export function stepRefusal(access: Access, kind: StepKind, where?: ClaudeWhere)
   return `Needs ${ACCESS_INFO[needs].label} access`;
 }
 
-export const RUN_STATE_INFO: Readonly<Record<RunState, { readonly label: string; readonly tone: 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error' }>> = {
+export const RUN_STATE_INFO: Readonly<Record<RunState, { readonly label: string; readonly tone: 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error' }>> = knownOr({
   queued: { label: 'Queued', tone: 'neutral' },
   running: { label: 'Running', tone: 'claude' },
   'needs-you': { label: 'Needs you', tone: 'info' },
@@ -1101,11 +1159,20 @@ export const RUN_STATE_INFO: Readonly<Record<RunState, { readonly label: string;
   skipped: { label: 'Skipped', tone: 'muted' },
   failed: { label: 'Failed', tone: 'error' },
   stopped: { label: 'Stopped', tone: 'muted' },
-};
+}, (v) => ({ label: v, tone: 'muted' }));
 
 // ---------------------------------------------------------------- sentences
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** A one-time trigger's moment, in the Mac's local time: "Once, Thu 12 Nov 14:00". */
+function onceSentence(at: string): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return 'Once';
+  return `Once, ${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 /** "07:00" → "7:00". */
 export function clockText(at: string): string {
@@ -1172,6 +1239,8 @@ export function scheduleSentence(trigger: Trigger, nameOf: (id: string) => strin
       }
       return at;
     }
+    case 'once':
+      return onceSentence(trigger.at);
     case 'manual':
       return 'Only when you press Run';
     case 'after': {
@@ -1237,7 +1306,7 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
       if (step.code?.trim()) return `Runs its ${SCRIPT_LANGUAGE_INFO[step.language ?? 'sh'].label} script (${step.code.split('\n').length} lines) in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
       return `Runs \`${quoteLine(step.command, 50)}\` in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
     case 'notify':
-      return step.phone ? 'Tells you on the Mac and the phone' : 'Tells you on the Mac';
+      return step.phone ? `Tells you on ${THE_COMPUTER} and the phone` : `Tells you on ${THE_COMPUTER}`;
     case 'http':
       return step.preset && step.preset !== 'url' ? `${SERVICE_PRESETS[step.preset].label}: ${step.method} ${hostOf(step.url) || 'its address'}` : `${step.method} ${hostOf(step.url) || 'a URL'}`;
     case 'pr':
@@ -1247,6 +1316,10 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
     case 'message': {
       const name = nameOf(step.to);
       return name ? `Messages ${name}` : `Messages ${step.to.startsWith('group:') ? 'a group' : 'a friend'}`;
+    }
+    case 'chat': {
+      const name = nameOf(step.to);
+      return name ? `Wakes your chat “${name}”` : 'Wakes one of your chats';
     }
     case 'friend': {
       const name = nameOf(step.peerId);

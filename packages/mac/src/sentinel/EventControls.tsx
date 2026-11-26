@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import type { BelugaTrigger, GitHubTrigger, Sentinel, SentryTrigger, StripeTrigger, Trigger, UptimeTrigger, WebhookAddress, WebhookTrigger } from '@beluga/core/sentinel/model.js';
+import { isoLocal } from '../chat/schedule-model.js';
+import type { BelugaTrigger, GitHubTrigger, OnceTrigger, Sentinel, SentryTrigger, StripeTrigger, Trigger, UptimeTrigger, WebhookAddress, WebhookTrigger } from '@beluga/core/sentinel/model.js';
 import { TextInput } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
@@ -46,6 +47,31 @@ export function EventControls({ item, save }: { item: Sentinel; save: Save }) {
     </>
   );
 }
+
+/** A once trigger's moment (BLG-400): a date and time on the Mac's clock, kept with its offset. */
+export function OnceControls({ t, set }: { t: OnceTrigger; set: (next: OnceTrigger) => void }) {
+  return (
+    <div className={s.controlRow}>
+      <span className={s.controlLabel}>At</span>
+      <input
+        type="datetime-local"
+        className={s.time}
+        aria-label="On what day and at what time"
+        value={localInput(t.at)}
+        onChange={(e) => {
+          const at = new Date(e.target.value).getTime();
+          if (!Number.isNaN(at)) set({ ...t, at: isoLocal(at) });
+        }}
+      />
+    </div>
+  );
+}
+
+/** An ISO moment as a datetime-local input's value ("2026-11-12T19:30"), on the Mac's clock. */
+const localInput = (iso: string): string => {
+  const ts = new Date(iso).getTime();
+  return Number.isNaN(ts) ? '' : isoLocal(ts).slice(0, 16);
+};
 
 /** A project's GitHub repository ("acme/bob-api"), read from its remote (no network). */
 function useRepo(projectId: string | undefined): string | undefined {

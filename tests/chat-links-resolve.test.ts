@@ -59,6 +59,16 @@ describe('resolveChat, your own worktrees and project chats', () => {
     expect(resolveChat(state, own('ws:wt-1')).state).toBe('working');
   });
 
+  it('says a chat is working while a thread under it works, and idle when its threads are done', () => {
+    const threads = (status: string) =>
+      stateWith({
+        projects: [{ id: 'p1', name: 'Beluga', root: '/p', workspaces: [ws('chat-1', 'A chat', { kind: 'chat' }), ws('t1', 'A thread', { kind: 'chat', thread: { parent: 'ws:chat-1', parentTitle: 'A chat', root: 'ws:chat-1', depth: 1, task: 't', startedAt: 1, owed: [] } }), ws('t2', 'Its thread', { kind: 'chat', thread: { parent: 'ws:t1', parentTitle: 'A thread', root: 'ws:chat-1', depth: 2, task: 't', startedAt: 1, owed: [] } })] }],
+        log: [agentAt('ws:chat-1', 'done'), agentAt('ws:t1', 'done'), agentAt('ws:t2', status)],
+      });
+    expect(resolveChat(threads('started'), own('ws:chat-1')).state).toBe('working');
+    expect(resolveChat(threads('done'), own('ws:chat-1')).state).toBe('idle');
+  });
+
   it.each(['done', 'error', 'denied'])('says %s is idle', (status) => {
     const state = stateWith({ log: [agentAt('ws:wt-1', status)] });
     expect(resolveChat(state, own('ws:wt-1')).state).toBe('idle');

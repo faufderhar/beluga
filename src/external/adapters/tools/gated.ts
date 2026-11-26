@@ -1,4 +1,5 @@
 import type { MethodRow, Scope } from './method-tool.js';
+import { THE_COMPUTER, THIS_COMPUTER } from '../../../shared/assistant.js';
 
 /**
  * What was only a person's until the owner chose a card for each (BLG-244). Class gated: one card at
@@ -34,11 +35,11 @@ export const GATED_ROWS: readonly MethodRow[] = [
   { name: 'sharing_share_with_friend', method: 'sharing.shareWithFriend', params: ['share'], scope: none, wants: 'share with a friend: {share}', description: 'Share with a friend: share. A person is asked each time.' },
   { name: 'sharing_unshare_friend', method: 'sharing.unshareFriend', params: ['share'], scope: none, wants: 'stop sharing with a friend: {share}', description: 'Stop sharing with a friend: share. A person is asked each time.' },
   { name: 'sharing_leave_project', method: 'sharing.leaveProject', params: ['owner', 'project'], scope: none, wants: 'leave {owner}\'s project {project}', description: 'Leave owner\'s project project. A person is asked each time.' },
-  { name: 'sharing_copy_project', method: 'sharing.copyProject', params: ['owner', 'project'], scope: none, wants: 'copy {owner}\'s project {project} to this Mac', description: 'Copy owner\'s project project to this Mac. A person is asked each time.' },
+  { name: 'sharing_copy_project', method: 'sharing.copyProject', params: ['owner', 'project'], scope: none, wants: `copy {owner}'s project {project} to ${THIS_COMPUTER}`, description: `Copy owner's project project to ${THIS_COMPUTER}. A person is asked each time.` },
   { name: 'sharing_scratch', method: 'sharing.scratch', params: ['owner', 'worktree'], scope: none, wants: 'read the scratch folder of {owner}\'s worktree {worktree}', description: 'Read the scratch folder of owner\'s worktree worktree. A person is asked each time.' },
   { name: 'sharing_earlier', method: 'sharing.earlier', params: ['owner', 'worktree'], scope: none, wants: 'read earlier messages of {owner}\'s worktree {worktree}', description: 'Read earlier messages of owner\'s worktree worktree. A person is asked each time.' },
   { name: 'sharing_run_here', method: 'sharing.runHere', params: ['owner', 'worktree', 'message'], scope: none, wants: 'run your agent here about {owner}\'s worktree: {message}', description: 'Run your agent here about owner\'s worktree: message. A person is asked each time.' },
-  { name: 'sharing_fork', method: 'sharing.fork', params: ['owner', 'worktree', 'name'], scope: none, wants: 'fork {owner}\'s worktree {worktree} to this Mac', description: 'Fork owner\'s worktree worktree to this Mac. A person is asked each time.' },
+  { name: 'sharing_fork', method: 'sharing.fork', params: ['owner', 'worktree', 'name'], scope: none, wants: `fork {owner}'s worktree {worktree} to ${THIS_COMPUTER}`, description: `Fork owner's worktree worktree to ${THIS_COMPUTER}. A person is asked each time.` },
   { name: 'invites_create', method: 'invites.create', params: ['options'], scope: none, wants: 'make an invite link that lets someone in: {options}', description: 'Make an invite link that lets someone in: options. A person is asked each time.' },
   { name: 'invites_revoke', method: 'invites.revoke', params: ['invite'], scope: none, wants: 'take back invite {invite}', description: 'Take back invite invite. A person is asked each time.' },
   { name: 'invites_let_in', method: 'invites.letIn', params: ['invite', 'can'], scope: none, wants: 'let in the person who knocked with {invite}, with access {can}', description: 'Let in the person who knocked with invite, with access can. A person is asked each time.' },
@@ -128,11 +129,11 @@ export const GATED_ROWS: readonly MethodRow[] = [
   { name: 'team_answer_knock', method: 'team.answerKnock', params: ['knock', 'how'], scope: none, wants: 'answer a teammate\'s knock: {how}', description: 'Answer a teammate\'s knock: how. A person is asked each time.' },
   { name: 'companion_devices_remove', method: 'companion.devices.remove', params: ['device'], scope: none, wants: 'remove phone {device}', description: 'Remove phone device. A person is asked each time.' },
   { name: 'companion_phone_use', method: 'companion.phone.use', params: ['device', 'use'], scope: none, wants: 'set how freely agents may use phone {device} to {use}', description: 'Set how freely agents may use phone device to use. A person is asked each time.' },
-  { name: 'companion_phone_pair_adb', method: 'companion.phone.pairAdb', params: ['device'], scope: none, wants: 'pair this Mac\'s adb with phone {device}', description: 'Pair this Mac\'s adb with phone device. A person is asked each time.' },
+  { name: 'companion_phone_pair_adb', method: 'companion.phone.pairAdb', params: ['device'], scope: none, wants: `pair ${THIS_COMPUTER}'s adb with phone {device}`, description: `Pair ${THIS_COMPUTER}'s adb with phone device. A person is asked each time.` },
   { name: 'companion_phone_wifi', method: 'companion.phone.wifi', params: ['device', 'on'], scope: none, wants: 'turn Wireless debugging on phone {device} on or off: {on}', description: 'Turn Wireless debugging on phone device on or off: on. A person is asked each time.' },
   { name: 'companion_phone_pair_cable', method: 'companion.phone.pairCable', params: [], scope: none, wants: 'pair the phone on the cable', description: 'Pair the phone on the cable. A person is asked each time.' },
   { name: 'companion_phone_settings', method: 'companion.phone.settings', params: ['device', 'page'], scope: none, wants: 'open a settings page on phone {device}: {page}', description: 'Open a settings page on phone device: page. A person is asked each time.' },
-  { name: 'voice_models', method: 'voice.models', params: [], scope: none, wants: 'read the Mac\'s voice models', description: 'Read the Mac\'s voice models. A person is asked each time.' },
+  { name: 'voice_models', method: 'voice.models', params: [], scope: none, wants: `read ${THE_COMPUTER}'s voice models`, description: `Read ${THE_COMPUTER}'s voice models. A person is asked each time.` },
   { name: 'voice_prepare', method: 'voice.prepare', params: ['model'], scope: none, wants: 'get the voice model {model}', description: 'Get the voice model model. A person is asked each time.' },
   { name: 'voice_transcribe', method: 'voice.transcribe', params: ['audio', 'options'], scope: none, wants: 'write down a recording', description: 'Write down a recording. A person is asked each time.' },
   { name: 'files_version', method: 'files.version', params: ['location'], scope: none, wants: 'read the version of a shared file: {location}', description: 'Read the version of a shared file: location. A person is asked each time.' },
@@ -155,5 +156,5 @@ export const GATED_ROWS: readonly MethodRow[] = [
   { name: 'files_read_image', method: 'files.readImageFile', params: ['location'], scope: none, wants: 'read a picture from a share: {location}', description: 'Read a picture from a share: location. A person is asked each time.' },
   { name: 'gateway_list', method: 'gateway.list', params: [], scope: none, wants: 'read the requests to and from your friends', description: 'Read the requests to and from your friends. A person is asked each time.' },
   { name: 'gateway_image', method: 'gateway.image', params: ['task', 'name'], scope: none, wants: 'read a picture from request {task}', description: 'Read a picture from request task. A person is asked each time.' },
-  { name: 'terminal_import_detect', method: 'terminalImport.detect', params: [], scope: none, wants: 'read which other terminals are on this Mac', description: 'Read which other terminals are on this Mac. A person is asked each time.' },
+  { name: 'terminal_import_detect', method: 'terminalImport.detect', params: [], scope: none, wants: `read which other terminals are on ${THIS_COMPUTER}`, description: `Read which other terminals are on ${THIS_COMPUTER}. A person is asked each time.` },
 ];

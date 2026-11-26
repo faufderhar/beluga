@@ -7,7 +7,9 @@ import { cx } from '../components/ui.js';
 import { type DropVerdict, type Sending, envAsk, planDrop, sendFiles, sentShare } from './attachments.js';
 import { openSheet } from '../lib/sheets.js';
 import { currentMachines } from '../machines/use-machines.js';
-import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-model.js';
+import { type Box, MAX_DROPPED, appDropScale, dropHits, droppedFiles, leftOutWords, sameBox } from './drop-model.js';
+import { boxTakesFiles, carriesFiles } from '../lib/file-drop.js';
+import { keyPlatform } from '../lib/shortcuts-model.js';
 import { imageLinksIn } from '@beluga/shared/attachment-links.js';
 import { type RefKey, boxRef, plainRefs, refKey, referencedImages, withoutRef } from './image-refs.js';
 import { keepPreview, openLightbox, pendingImage, previewOf } from './images.js';
@@ -16,6 +18,8 @@ import { boxChats, plainWords } from './chat-box.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
 import img from './images.module.css';
+import { thisComputer } from '../lib/os-words.js';
+import { MAX_PASTE_CHARS, byteSize, isLongPaste, lineCount, pastedInline, pastedLabel, pastedWords, sizeWords } from './pasted-text.js';
 
 /**
  * What goes with a message besides its words, the same in every message box (a conversation's
@@ -37,8 +41,39 @@ const waitingImages = new Map<string, readonly number[]>();
  * Other files (their paths were pasted) waiting to go with the message, per conversation. A copy
  * of a chat (`copy`, BLG-152) goes as its words: the computer it goes to can't read a path here.
  */
-type WaitingFile = PathInfo & { readonly copy?: string };
+type WaitingFile = PathInfo & { readonly copy?: string; readonly pasted?: string };
 const waitingFiles = new Map<string, readonly WaitingFile[]>();
+
+/**
+ * A very long paste (BLG-988) waits as a chip at once, under a temporary path ("paste:N"), while
+ * Beluga keeps it as a .txt; then the chip has the file's path. Each temporary path → its saving,
+ * for as long as it goes on (it never rejects: one Beluga couldn't keep goes as its words).
+ */
+const savingPastes = new Map<string, Promise<void>>();
+let nextPaste = 1;
+const isTempPaste = (p: string): boolean => p.startsWith('paste:');
+
+/** A folder's path as the message says it: with a slash at its end, so it reads as one. */
+const folderPath = (p: string): string => (/[\\/]$/.test(p) ? p : `${p}${p.includes('\\') && !p.includes('/') ? '\\' : '/'}`);
+
+/** A file chip's tooltip: its path, or for a paste what happens to it. */
+const chipTitle = (f: WaitingFile): string =>
+  f.kind === 'folder'
+    ? `Goes as its location: ${folderPath(f.path)}`
+    : f.pasted === undefined
+      ? f.path
+      : savingPastes.has(f.path)
+        ? 'Keeping it as a file…'
+        : isTempPaste(f.path)
+          ? 'Goes as text'
+          : `Goes as its first lines and ${f.path}`;
+
+/** A waiting file as the message says it: its path (a folder's with a slash), a chat's copy as its words, a paste as its first lines and its file. */
+const fileWords = (f: WaitingFile): string => {
+  if (f.copy) return f.copy;
+  if (f.pasted !== undefined) return isTempPaste(f.path) ? pastedInline(f.pasted) : pastedWords(f.pasted, f.path);
+  return `\`${f.kind === 'folder' ? folderPath(f.path) : f.path}\``;
+};
 /** The file name each image came with (the end of it shows on its chip in the words). */
 const imageNames = new Map<number, string>();
 /** The name Beluga saved each image under (for opening it full size before it goes). */
@@ -107,6 +142,11 @@ export interface Attachments {
   readonly dropProps: Pick<React.HTMLAttributes<HTMLElement>, 'onDragOver' | 'onDragLeave' | 'onDrop'>;
   /** For the text field. */
   readonly onPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  /**
+   * A paste still being kept as a file: `then` runs once it is (Send calls it, then sends). False
+   * when nothing is (send now). Several calls while it saves run `then` once.
+   */
+  readonly whenSaved: (then: () => void) => boolean;
   /** Add image files (a paste, a drop). */
   readonly attach: (files: readonly File[]) => Promise<void>;
   /**
@@ -206,6 +246,52 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     waitingImages.set(key, next);
     if (memoNow.current === key) setImagesState(next);
   };
+  /** The file waiting as `from` in `key`'s box, changed (left alone if it was removed or sent meanwhile). */
+  const changeFileIn = (key: string, from: string, change: (f: WaitingFile) => WaitingFile): void => {
+    const now = waitingFiles.get(key) ?? [];
+    if (!now.some((f) => f.path === from)) return;
+    const next = now.map((f) => (f.path === from ? change(f) : f));
+    waitingFiles.set(key, next);
+    if (memoNow.current === key) setFilesState(next);
+  };
+
+  /**
+   * A very long paste: a chip at once (nothing goes in the words), kept as a .txt behind it by the
+   * computer the chat runs on. Not kept (an older Beluga there, no room): it goes as its words.
+   */
+  const addPasted = (pasted: string): void => {
+    const temp = `paste:${nextPaste++}`;
+    const key = memo;
+    const chip: WaitingFile = { path: temp, name: pastedLabel(lineCount(pasted)), kind: 'file', size: byteSize(pasted), image: false, pasted };
+    setFiles([...(waitingFiles.get(memo) ?? []), chip]);
+    const done = api.attachments.addText(pasted).then(
+      (saved) => {
+        savingPastes.delete(temp);
+        changeFileIn(key, temp, (f) => ({ ...f, path: saved.path, size: saved.size }));
+      },
+      (err: unknown) => {
+        savingPastes.delete(temp);
+        changeFileIn(key, temp, (f) => ({ ...f }));
+        toast(client, `Couldn't keep the paste as a file, so it goes as text: ${errorText(err)}`, 'warn');
+      },
+    );
+    savingPastes.set(temp, done);
+  };
+
+  // A Send waiting on a paste being kept (one at a time).
+  const held = useRef(false);
+  const whenSaved = (then: () => void): boolean => {
+    const pending = (waitingFiles.get(memo) ?? []).flatMap((f) => savingPastes.get(f.path) ?? []);
+    if (!pending.length) return false;
+    if (!held.current) {
+      held.current = true;
+      void Promise.all(pending).then(() => {
+        held.current = false;
+        then();
+      });
+    }
+    return true;
+  };
 
   /**
    * An image waits at once, under a temporary number (its thumbnail too when there's a `preview`),
@@ -281,12 +367,14 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
       return { n: added.n, file: added.file, name: f.name };
     });
 
-  /** Files on this Mac: images wait as thumbnails (referenced at `at`, else where the cursor is), others as chips. */
+  /** Files and folders on this Mac: images wait as thumbnails (referenced at `at`, else where the cursor is), the rest as chips. */
   const addPaths = async (picked: readonly PathInfo[], at?: number): Promise<void> => {
-    const others = picked.filter((f) => !f.image);
+    // A folder named like a picture ("shots.png") is still a folder.
+    const isImage = (f: PathInfo): boolean => f.image && f.kind === 'file';
+    const others = picked.filter((f) => !isImage(f));
     if (others.length) setFiles([...(waitingFiles.get(memo) ?? []), ...others.filter((f) => !(waitingFiles.get(memo) ?? []).some((w) => w.path === f.path))]);
     let cursor = at;
-    for (const f of picked.filter((x) => x.image)) cursor = placeRef(addImageFile(f), cursor);
+    for (const f of picked.filter(isImage)) cursor = placeRef(addImageFile(f), cursor);
   };
 
   /**
@@ -319,8 +407,11 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     } catch (err) {
       return toast(client, `Couldn't add what you dropped: ${errorText(err)}`, 'error');
     }
-    const { files: picked, skipped } = droppedFiles(infos);
-    if (skipped) toast(client, picked.length ? `Only files go with a message: ${skipped} left out` : 'Only files go with a message (not folders)', 'warn');
+    // A folder goes by its location, which means nothing on that computer: it stays here.
+    const dropped = droppedFiles(infos, { folders: false });
+    const picked = dropped.files;
+    const left = leftOutWords(dropped, thisComputer());
+    if (left) toast(client, left, 'warn');
     if (!picked.length) return;
     // The env send's rules (BLG-854): keys and credential folders stay here; an env file asks first.
     let checks: readonly DropVerdict[];
@@ -330,7 +421,7 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
       return toast(client, `Couldn't add what you dropped: ${errorText(err)}`, 'error');
     }
     const plan = planDrop(picked, checks);
-    for (const r of plan.refused) toast(client, `${r.name} stays on this Mac: ${r.reason}`, 'warn');
+    for (const r of plan.refused) toast(client, `${r.name} stays on ${thisComputer()}: ${r.reason}`, 'warn');
     const go = async (files: readonly PathInfo[], env: boolean): Promise<void> => {
       const arrived = await sendFiles(
         (machine, n, file, off) => home.call('machines.upload.send', machine, n, file, off, env ? { env: true } : undefined),
@@ -346,7 +437,7 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     if (plan.ask.length) openSheet(envAsk(plan.ask, currentMachines().find((m) => m.id === there)?.name ?? 'that computer', () => void go(plan.ask, true)));
   };
 
-  /** Paths dropped from Finder: the files among them go as a paste of their paths would. */
+  /** Paths dropped from Finder: files go as a paste of their paths would, folders by their location. */
   const dropPaths = async (paths: readonly string[]): Promise<void> => {
     if (machine) return sendThere(machine, paths);
     let infos: readonly PathInfo[];
@@ -355,8 +446,10 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     } catch (err) {
       return toast(client, `Couldn't add what you dropped: ${errorText(err)}`, 'error');
     }
-    const { files: picked, skipped } = droppedFiles(infos);
-    if (skipped) toast(client, picked.length ? `Only files go with a message: ${skipped} left out` : 'Only files go with a message (not folders)', 'warn');
+    const dropped = droppedFiles(infos);
+    const picked = dropped.files;
+    const left = leftOutWords(dropped, thisComputer());
+    if (left) toast(client, left, 'warn');
     if (!picked.length) return;
     await addPaths(picked);
     box.current?.focus();
@@ -376,11 +469,10 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
       if (!el || el.disabled || el.readOnly) return undefined;
       const r = (el.closest('[data-drop-zone]') ?? el.parentElement)?.getBoundingClientRect();
       const at = r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : undefined;
-      return dropHits(at, x, y, window.devicePixelRatio || 1) ? at : undefined;
+      return dropHits(at, x, y, appDropScale()) ? at : undefined;
     };
-    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
-      const un = await getCurrentWebview().onDragDropEvent((e) => {
-        const p = e.payload;
+    void import('../lib/file-drop.js').then(async ({ onFileDrop }) => {
+      const un = await onFileDrop((p) => {
         if (p.type === 'leave') return setDragOver(undefined);
         const here = zoneAt(p.position.x, p.position.y);
         if (p.type === 'drop') {
@@ -509,7 +601,10 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     const others = waitingFiles.get(memo) ?? [];
     // The chips' names stay in the box: out they go as "[image N]".
     const words = plainRefs(typed);
-    const out = pictures.length || others.length ? [words, unplaced.map((n) => boxRef(shownOf(n))).join(' '), [others.filter((f) => !f.copy).map((f) => `\`${f.path}\``).join('\n'), ...others.flatMap((f) => (f.copy ? [f.copy] : []))].filter(Boolean).join('\n\n')].filter(Boolean).join('\n\n') : words;
+    // Paths first (one per line), then copies and pastes (each its own block).
+    const isPath = (f: WaitingFile): boolean => !f.copy && f.pasted === undefined;
+    const fileBlock = [others.filter(isPath).map(fileWords).join('\n'), ...others.filter((f) => !isPath(f)).map(fileWords)].filter(Boolean).join('\n\n');
+    const out = pictures.length || others.length ? [words, unplaced.map((n) => boxRef(shownOf(n))).join(' '), fileBlock].filter(Boolean).join('\n\n') : words;
     if (pictures.length) setImages([]);
     if (others.length) setFiles([]);
     return {
@@ -552,9 +647,10 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
       {files.length ? (
         <div className={s.fileChips} role="list" aria-label="Files to send">
           {files.map((f) => (
-            <span key={f.path} role="listitem" className={s.fileChip} title={f.path}>
-              <Icon name="file" size={11} />
+            <span key={f.path} role="listitem" className={cx(s.fileChip, savingPastes.has(f.path) && s.fileSaving)} title={chipTitle(f)} aria-busy={savingPastes.has(f.path)}>
+              <Icon name={f.kind === 'folder' ? 'folder' : f.pasted !== undefined ? 'fileText' : 'file'} size={11} />
               <span className={s.fileName}>{f.name}</span>
+              {f.pasted !== undefined ? <span className={s.fileProgress}>{sizeWords(f.size)}</span> : null}
               <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((x) => x.path !== f.path))}>
                 <Icon name="x" size={9} />
               </button>
@@ -577,6 +673,10 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
       )
     : null;
 
+  // Files the app hands over by path (above) are its, not this box's too: once each (Windows).
+  const ownsFileDrag = (types: readonly string[]): boolean =>
+    !carriesFiles(types) || boxTakesFiles({ platform: keyPlatform(), inApp: inApp(), hearsAppDrops: finderDrops });
+
   return {
     images: pendingImages,
     files,
@@ -585,6 +685,7 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     dropTarget,
     dropProps: {
       onDragOver: (e) => {
+        if (!ownsFileDrag(e.dataTransfer.types)) return;
         if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/')) || (webServed() && [...e.dataTransfer.types].includes('Files'))) {
           e.preventDefault();
           setDropping(true);
@@ -592,6 +693,7 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
       },
       onDragLeave: () => setDropping(false),
       onDrop: (e) => {
+        if (!ownsFileDrag(e.dataTransfer.types)) return setDropping(false);
         const dropped = imagesOf(e.dataTransfer.items);
         const others = webServed() ? othersOf(e.dataTransfer.files) : [];
         setDropping(false);
@@ -603,13 +705,21 @@ export function useAttachments({ channel, box, text, setText, chipLinks, finderD
     },
     onPaste: (e) => {
       // For your stats (the Usage tab): how much text you pasted, never what.
-      const chars = e.clipboardData.getData('text/plain').length;
+      const words = e.clipboardData.getData('text/plain');
+      const chars = words.length;
       if (chars) void api.stats.note({ kind: 'paste', chars: Math.min(chars, 10_000_000), channel }).catch(() => undefined);
       const pasted = imagesOf(e.clipboardData.items);
+      // A very long text goes as a file (BLG-988): a chip now, kept behind it. Not a command, and not one too long to keep.
+      if (!pasted.length && isLongPaste(words) && chars <= MAX_PASTE_CHARS && !text().trimStart().startsWith('/')) {
+        e.preventDefault();
+        addPasted(words);
+        return;
+      }
       if (!pasted.length) return void pastePaths(e);
       e.preventDefault();
       void attach(pasted);
     },
+    whenSaved,
     attach,
     take,
     onRefKey,

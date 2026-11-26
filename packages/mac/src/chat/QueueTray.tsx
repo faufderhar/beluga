@@ -125,7 +125,13 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
               </span>
               {q.origin ? (
                 <span className={s.fromChat} data-queue-from={q.origin.ref}>
-                  From <InlineCode text={`chat:${q.origin.ref}`} fallback={q.origin.title} /> · {q.origin.agent.label}, an agent
+                  {q.origin.sentinel ? (
+                    <>From Sentinel {q.origin.sentinel.name}</>
+                  ) : (
+                    <>
+                      From <InlineCode text={`chat:${q.origin.ref}`} fallback={q.origin.title} /> · {q.origin.agent.label}, an agent
+                    </>
+                  )}
                 </span>
               ) : who ? (
                 <span className={s.who}>{who}</span>

@@ -11,7 +11,6 @@ import { AgentsAlert } from './AgentsAlert.js';
 import { ArchivedSheet, InboxRedirect, ModelSheet, WelcomeSheet } from './ChoiceSheets.js';
 import { ClearAlert } from './ClearAlert.js';
 import { ConfirmAlert } from './ConfirmAlert.js';
-import { HandoffSheet } from './HandoffSheet.js';
 import { ProjectSettingsSheet } from './ProjectSettingsSheet.js';
 import { PullRequestSheet } from './PullRequestSheet.js';
 import { RemoteWorktreeSheet } from './RemoteWorktreeSheet.js';
@@ -46,7 +45,6 @@ export const NATIVE_MENUS: NativeMenus = {
   scripts: ProjectSettingsSheet,
   pr: PullRequestSheet,
   templates: TemplatesSheet,
-  handoff: HandoffSheet,
   remote_ws: RemoteWorktreeSheet,
   model: ModelSheet,
   welcome: WelcomeSheet,

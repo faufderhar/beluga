@@ -30,6 +30,7 @@ import s from './Inspector.module.css';
 import { fileManager } from '../lib/os-words.js';
 import { ThreadsSection } from '../threads/ThreadsSection.js';
 import { Panel } from './inspector-parts.js';
+import { ChatSchedules, useAssistantChannel } from '../chat/ChatSchedules.js';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -359,6 +360,11 @@ function Inbox() {
   );
 }
 
+/** The Schedules section of the Your Mac chat that shows. */
+function AssistantSchedules({ chat }: { chat: string | undefined }) {
+  return <ChatSchedules channel={useAssistantChannel(chat)} />;
+}
+
 export function Inspector() {
   const view = useApp((st) => st.view);
   return (
@@ -367,6 +373,7 @@ export function Inspector() {
       <div className={s.scroll}>
         <NeedsYou />
         <ClaudeCodeInspector />
+        {view.kind === 'workspace' ? <ChatSchedules channel={`ws:${view.id}`} /> : view.kind === 'assistant' ? <AssistantSchedules chat={view.chat} /> : null}
         {view.kind === 'workspace' ? (
           <WorkspaceDetails id={view.id} />
         ) : view.kind === 'conversation' ? (

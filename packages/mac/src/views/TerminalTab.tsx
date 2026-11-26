@@ -1,4 +1,5 @@
 import * as Context from '@radix-ui/react-context-menu';
+import { nativeContext } from '../lib/native-menu.js';
 import { type ReactNode, useRef, useState } from 'react';
 import { ContextRoot } from '../components/ContextRoot.js';
 import { Icon } from '../components/Icon.js';
@@ -92,10 +93,15 @@ export function TerminalTab({ termKey, label, on, before, after, className, onCl
   if (!renamable && !onClose) return tab;
   return (
     <ContextRoot>
-      <Context.Trigger asChild>{tab}</Context.Trigger>
+      <Context.Trigger
+        asChild
+        onContextMenu={nativeContext(() => [...(renamable ? [{ label: 'Rename…', onSelect: () => setEditing(true) }] : []), ...(onClose ? [{ label: 'Close', danger: true, onSelect: onClose }] : [])])}
+      >
+        {tab}
+      </Context.Trigger>
       <Context.Portal>
         {/* Focus stays with the name field Rename… opens, instead of going back to the tab. */}
-        <Context.Content className={m.menu} style={{ minWidth: 160 }} onCloseAutoFocus={(e) => e.preventDefault()}>
+        <Context.Content sticky="always" collisionPadding={8} className={m.menu} style={{ minWidth: 160 }} onCloseAutoFocus={(e) => e.preventDefault()}>
           {renamable ? (
             <Context.Item className={m.item} onSelect={() => setEditing(true)}>
               <span className={m.label}>Rename…</span>

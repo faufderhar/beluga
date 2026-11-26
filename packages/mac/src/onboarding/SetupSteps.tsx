@@ -2,11 +2,12 @@ import { motion } from 'motion/react';
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { STARTERS, type FireLook, DEFAULT_FIRE, presetOf, starterOf } from '../chat/fire-look.js';
+import { STARTERS, type FireLook, presetOf, starterOf } from '../chat/fire-look.js';
 import { Preview } from '../dialogs/FireSettings.js';
 import { Switch } from '../dialogs/settings-controls.js';
 import { previewRequestPopup } from '../gateway/request-native.js';
-import { useApi, useApp } from '../lib/beluga.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import type { SettingsPane } from '../lib/settings-search.js';
 import { askNotificationPermission, openNotificationSettings, useNotificationAccess } from '../lib/sounds/access.js';
 import { ACCENTS, type Accent, type UiPrefs, baseNow, getPrefs, pickTheme, setPrefs, usePrefs } from '../lib/prefs.js';
 import { type AppTheme, THEMES, themeFor } from '../lib/themes.js';
@@ -91,10 +92,10 @@ export function Look() {
   return (
     <div className={s.setup}>
       <h2 className={s.title}>
-        <Words text="Make it yours." />
+        <Words text="Pick how Beluga looks." />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        Pick a look and a theme. It changes as you choose, and Settings has them whenever you want another.
+        Light, dark or matching your system, then a theme and an accent color. The window changes as you click.
       </Rise>
       <div className={s.looks} role="radiogroup" aria-label="Appearance">
         {LOOKS.map((l, i) => {
@@ -150,6 +151,7 @@ export function Look() {
           ))}
         </div>
       </Rise>
+      <AllSettings pane="appearance" label="All Appearance Settings…" delay={0.6} />
     </div>
   );
 }
@@ -180,9 +182,47 @@ function SetupRow({ label, detail, children, index }: { readonly label: string; 
   );
 }
 
+/** Under a settings step: that step's whole page in Settings, opened over the welcome (which waits behind it). */
+export function AllSettings({ pane, label, delay = 0.55 }: { readonly pane: SettingsPane; readonly label: string; readonly delay?: number }) {
+  const { ui } = useBeluga();
+  return (
+    <Rise delay={delay} className={s.allSettings}>
+      <button type="button" className={s.textLink} onClick={() => ui.patch({ settings: pane })}>
+        <Icon name="gear" size={11} /> {label}
+      </button>
+    </Rise>
+  );
+}
+
 /**
- * The message box's fire: two pixel fires or none, tried in a box like the real one as you pick.
- * Someone still on the default starts on Arcade; a look of their own is left alone until they pick.
+ * When the fire burns, in one choice (Settings › Fire & Confetti keeps these as two, Where and
+ * When it burns): all the time on Max, all the time on every effort, or only while you type.
+ */
+type When = 'max' | 'everywhere' | 'typing';
+const WHEN: Readonly<Record<When, Pick<FireLook, 'where' | 'show'>>> = {
+  max: { where: 'max', show: 'always' },
+  everywhere: { where: 'everywhere', show: 'always' },
+  typing: { where: 'everywhere', show: 'typing' },
+};
+const WHEN_OPTIONS: ReadonlyArray<{ value: When; label: string }> = [
+  { value: 'max', label: 'On Max Only' },
+  { value: 'everywhere', label: 'Always' },
+  { value: 'typing', label: 'While Typing' },
+];
+const WHEN_DETAIL: Readonly<Record<When, string>> = {
+  max: 'Only on Max effort, so it tells you you’re on Max.',
+  everywhere: 'With every model and every effort.',
+  typing: 'Only while you type, then it goes out.',
+};
+
+/** How much room each fire has above its box: enough for the two starters' flames, not the tallest a custom one can reach. */
+const FIRE_ROOM = 130;
+
+/**
+ * The message box's fire: the pixel fire and the flame side by side, each burning in a box like the
+ * real one. Click one (or type in it) to pick it; the switch turns the fire off. Settings › Fire &
+ * Confetti, a click away, has the sliders, colours and timing. A look of someone's own (tuned in
+ * Settings) picks neither until they choose.
  */
 export function Fire() {
   const look = usePrefs().maxFire;
@@ -190,42 +230,53 @@ export function Fire() {
     const next = { ...getPrefs().maxFire, ...patch };
     setPrefs({ maxFire: { ...next, preset: presetOf(next) } });
   };
-  useEffect(() => {
-    const now = getPrefs().maxFire;
-    const untouched = (['preset', 'show', 'typing', 'popDelete', 'border'] as const).every((k) => now[k] === DEFAULT_FIRE[k]);
-    if (untouched) set(STARTERS[0]!.set);
-  }, []);
-  const picked = starterOf(look);
-  const starter = STARTERS.find((x) => x.id === picked);
+  // Burning only while typing is a "when", not another fire: the fire it burns is still Pixel or Flame.
+  const typing = look.show === 'typing';
+  const picked = starterOf(typing ? { ...look, show: 'always' } : look);
+  const fires = STARTERS.filter((x) => x.id !== 'none');
+  const on = picked !== 'none';
+  /** A fire's look, burning when this step says (always, or while typing). */
+  const lit = (x: (typeof STARTERS)[number]): Partial<FireLook> => (typing && x.id !== 'none' ? { ...x.set, show: 'typing' } : x.set);
+  const choose = (id: string): void => {
+    if (picked !== id) set(lit(STARTERS.find((x) => x.id === id)!));
+  };
+  const when: When = typing ? 'typing' : look.where === 'max' ? 'max' : 'everywhere';
   return (
-    <div className={s.setup}>
+    <div className={cx(s.setup, s.fireSetup)}>
       <h2 className={s.title}>
-        <Words text="Set your words on fire." />
+        <Words text="Pick a fire for your message box." />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        On Max effort, the box you type in burns. Pick one and type below to try it; Settings › Fire & Confetti has the rest.
+        On Max effort, flames burn around the box you type in. Type in either one to try it.
       </Rise>
-      <Rise delay={0.3} className={s.fireTry}>
-        <Preview look={look} className={s.fireStage} />
-      </Rise>
+      <div className={s.fires} role="radiogroup" aria-label="Fire">
+        {fires.map((x, i) => {
+          const chosen = picked === x.id;
+          return (
+            <motion.div key={x.id} className={s.fireOption} data-on={chosen ? '' : undefined} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: EASE_OUT, delay: 0.3 + i * 0.08 }} onPointerDown={() => choose(x.id)}>
+              <Preview look={{ ...look, ...lit(x), preset: presetOf({ ...look, ...lit(x) }) }} room={FIRE_ROOM} className={s.fireStage} label={`Try the ${x.name} fire`} onFocus={() => choose(x.id)} />
+              <button type="button" role="radio" aria-checked={chosen} className={s.firePick} onClick={() => choose(x.id)}>
+                <span className={s.radio}>{chosen ? <motion.span layoutId="fire-dot" className={s.radioDot} transition={SPRING} /> : null}</span>
+                <span className={s.fireText}>
+                  <span className={s.fireName}>{x.name}</span>
+                  <span className={s.fireBlurb}>{x.blurb}</span>
+                </span>
+              </button>
+            </motion.div>
+          );
+        })}
+      </div>
       <Glass radius={16} width="100%" className={s.fireRows}>
-        <SetupRow index={0} label={starter?.name ?? 'Your own'} detail={starter?.blurb ?? 'Tuned in Settings. Pick one to change it.'}>
-          <Choice label="Fire" value={picked ?? ''} onChange={(id) => set(STARTERS.find((x) => x.id === id)!.set)} options={STARTERS.map((x) => ({ value: x.id, label: x.name }))} />
+        <SetupRow index={0} label="Fire around the message box" detail={on ? (picked ? 'Pick the other one above to switch.' : 'Your own look, from Settings. Pick one above to replace it.') : 'Off: a plain box, nothing flies.'}>
+          <Switch label="Fire around the message box" on={on} onChange={(v) => set(STARTERS.find((x) => x.id === (v ? 'flame' : 'none'))!.set)} />
         </SetupRow>
-        {picked !== 'none' ? (
-          <SetupRow index={1} label="Where it burns" detail={look.where === 'max' ? 'Only on Max effort, so it tells you you’re on Max.' : 'With every model and effort.'}>
-            <Choice
-              label="Where it burns"
-              value={look.where}
-              onChange={(where) => set({ where })}
-              options={[
-                { value: 'max', label: 'On Max Only' },
-                { value: 'everywhere', label: 'Everywhere' },
-              ]}
-            />
+        {on ? (
+          <SetupRow index={1} label="When it burns" detail={WHEN_DETAIL[when]}>
+            <Choice label="When it burns" value={when} onChange={(w) => set(WHEN[w])} options={WHEN_OPTIONS} />
           </SetupRow>
         ) : null}
       </Glass>
+      <AllSettings pane="fire" label="All Fire Settings…" />
     </div>
   );
 }
@@ -256,10 +307,10 @@ export function Popups() {
   return (
     <div className={s.setup}>
       <h2 className={s.title}>
-        <Words text="Never miss it when your agent needs you." />
+        <Words text="Know when your agent needs you." />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        When your agent asks you something, a plan waits on your decision, or a friend asks your agent, a small card shows in the corner of your screen, over whatever you’re doing, full-screen apps too. It never takes the keyboard from you.
+        When your agent asks a question, a plan waits for your decision or a friend sends a request, a small card appears in the corner of your screen, even over full-screen apps. It never takes the keyboard away from what you’re typing.
       </Rise>
       <Glass radius={16} width="100%" className={s.rows}>
         <SetupRow index={0} label="Show on-screen popups when something needs me" detail="Needs no permission. Off: you still get notifications.">
@@ -298,6 +349,7 @@ export function Popups() {
           )}
         </SetupRow>
       </Glass>
+      <AllSettings pane="notifications" label="All Notification Settings…" />
     </div>
   );
 }
@@ -324,10 +376,10 @@ export function Setup() {
   return (
     <div className={s.setup}>
       <h2 className={s.title}>
-        <Words text="A few good defaults." />
+        <Words text="Check a few settings." />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        Already set to what works best for most people. Change anything now, or later in Settings.
+        These are set the way most people keep them. Change any of them now, or later in Settings.
       </Rise>
       <Glass radius={16} width="100%" className={s.rows}>
         <SetupRow index={0} label="Your name" detail="What friends see when you work together.">
@@ -364,6 +416,7 @@ export function Setup() {
           />
         </SetupRow>
       </Glass>
+      <AllSettings pane="general" label="All Settings…" />
     </div>
   );
 }

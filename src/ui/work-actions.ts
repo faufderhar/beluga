@@ -17,7 +17,7 @@ type NotifyKey = 'desktop' | 'sound' | 'done' | 'needsYou' | 'problems' | 'peopl
 
 /**
  * Options in the settings sections, the inbox, the model picker and the workspace menus
- * (PR, scripts, templates, handoff, remote worktrees). Returns false when it isn't one of these.
+ * (PR, scripts, templates, remote worktrees). Returns false when it isn't one of these.
  */
 export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, index: number): boolean {
   const { client, patchUi, typeInto } = ctx;
@@ -147,10 +147,6 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
   }
   if (id.startsWith('wsact:') && menu.kind === 'ws_more') {
     ctx.runUiAction({ type: 'ws', id: menu.id, action: id.slice('wsact:'.length) as WorkspaceAction });
-    return true;
-  }
-  if (id.startsWith('ho:') && menu.kind === 'handoff') {
-    void api.remote.handoff(menu.id, id.slice(3));
     return true;
   }
   if (id.startsWith('rws:') && menu.kind === 'remote_ws') {

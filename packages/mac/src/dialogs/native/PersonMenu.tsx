@@ -1,4 +1,5 @@
 import * as Context from '@radix-ui/react-context-menu';
+import { type NativeRow, nativeContext } from '../../lib/native-menu.js';
 import { type ReactNode, useState } from 'react';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
 import { defaultAgentOf } from '@beluga/protocol.js';
@@ -28,12 +29,15 @@ export function PersonContextMenu({ index, children }: { index: number; children
   const [removing, setRemoving] = useState<{ name: string; guest: boolean; run: () => void }>();
   const [running, setRunning] = useState(false);
   const peer = useApp((st) => st.peers[index]);
+  const model = usePersonMenu(index, setRemoving, () => setRunning(true));
   return (
     <>
       <ContextRoot>
-        <Context.Trigger asChild>{children}</Context.Trigger>
+        <Context.Trigger asChild onContextMenu={nativeContext(() => (model ? nativeRowsOf(model, setRemoving) : []))}>
+          {children}
+        </Context.Trigger>
         <Context.Portal>
-          <Context.Content className={m.menu} collisionPadding={8}>
+          <Context.Content sticky="always" collisionPadding={8} className={m.menu}>
             <Items index={index} onRemove={setRemoving} onRun={() => setRunning(true)} />
           </Context.Content>
         </Context.Portal>
@@ -55,13 +59,16 @@ export function PersonContextMenu({ index, children }: { index: number; children
   );
 }
 
-function Items({ index, onRemove, onRun }: { index: number; onRemove: (r: { name: string; guest: boolean; run: () => void }) => void; onRun: () => void }) {
+type Remove = (r: { name: string; guest: boolean; run: () => void }) => void;
+
+/** What the menu offers for someone in your room (undefined when they've gone): the web menu and the Mac's draw it. */
+function usePersonMenu(index: number, onRemove: Remove, onRun: () => void) {
   const api = useApi();
   const actions = useActions();
   const { client, ui } = useBeluga();
   const state = useApp((st) => st);
   const peer = state.peers[index];
-  if (!peer) return null;
+  if (!peer) return undefined;
   const menu = { kind: 'person', index } as const;
   const pick = (id: string): void => {
     const i = optionIndex(client.store.getState(), menu, id);
@@ -88,6 +95,29 @@ function Items({ index, onRemove, onRun }: { index: number; onRemove: (r: { name
   const trust = trustOf(state, peer.peerId);
   const friend = state.network.friends.some((f) => f.peerId === peer.peerId);
   const host = state.self?.host === true;
+  return { peer, me, guest, friend, host, trust, items, menu, ui, client, api, pick };
+}
+
+/** The same, as the Mac's own menu's rows (lib/native-menu.ts). */
+function nativeRowsOf(model: NonNullable<ReturnType<typeof usePersonMenu>>, onRemove: Remove): NativeRow[] {
+  const { peer, me, guest, friend, host, trust, items, menu, ui, client, api, pick } = model;
+  return [
+    { label: me ? 'Show My Card' : `Show ${peer.name}’s Card`, onSelect: () => ui.openMenu(menu) },
+    ...(!me && !guest
+      ? [
+          { label: 'Trust', hint: TRUST_INFO[trust].label, disabled: true, separate: true },
+          friend ? { label: 'Change in Their Card…', onSelect: () => openFriendCard(client, peer.peerId) } : { label: 'Add as Friend', hint: 'Trust is set on a friend’s card', onSelect: () => void befriend(client, peer.peerId, peer.name) },
+        ]
+      : []),
+    ...items.map((it, i): NativeRow => ({ label: it.label, ...(i === 0 ? { separate: true } : {}), onSelect: it.run })),
+    ...(!me && (host || guest) ? [{ label: `Remove ${peer.name}…`, danger: true, onSelect: () => onRemove({ name: peer.name, guest: Boolean(guest), run: () => (guest ? void api.invites.remove(peer.peerId) : pick('person-remove')) }) }] : []),
+  ];
+}
+
+function Items({ index, onRemove, onRun }: { index: number; onRemove: Remove; onRun: () => void }) {
+  const model = usePersonMenu(index, onRemove, onRun);
+  if (!model) return null;
+  const { peer, me, guest, friend, host, trust, items, menu, ui, client, api, pick } = model;
   return (
     <>
       <Context.Item className={m.item} onSelect={() => ui.openMenu(menu)}>

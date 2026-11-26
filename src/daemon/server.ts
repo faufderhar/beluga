@@ -6,6 +6,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Session } from '../core/session.js';
 import { type Cap, type DaemonFrame, IPC_VERSION, encodeFrame, parseClientFrame } from '../ipc/protocol.js';
 import type { PtyProcess, TerminalManager } from '../terminal/index.js';
+import { FlowGate } from '../terminal/flow.js';
 import { ClientRegistry, type ConnectedClient } from './clients.js';
 import { dispatchCall } from './dispatch.js';
 import { companionOf } from '../companion/registry.js';
@@ -38,6 +39,12 @@ export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const MAX_HELLO_BYTES = 64 * 1024;
 /** Unsent bytes a screen may fall behind by before it's dropped (it reconnects and catches up). */
 const MAX_BUFFERED_BYTES = 64 * 1024 * 1024;
+
+/** One terminal shown on one screen: what it drew (`ack`), and how to stop streaming to it. */
+interface TermStream {
+  readonly ack: (chars: number) => void;
+  readonly stop: () => void;
+}
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const byteLength = (raw: Buffer | ArrayBuffer | Buffer[]): number => (Array.isArray(raw) ? raw.reduce((n, b) => n + b.length, 0) : raw.byteLength);
@@ -227,7 +234,7 @@ export class DaemonServer {
 
   private accept(ws: WebSocket, preauthorized?: 'web' | 'machine'): void {
     let client: ConnectedClient | undefined;
-    const attached = new Map<string, () => void>();
+    const attached = new Map<string, TermStream>();
     const send = (frame: DaemonFrame): void => {
       if (ws.readyState !== ws.OPEN) return;
       // A screen that stopped reading (asleep, hung) would make Beluga hold everything for it.
@@ -242,7 +249,7 @@ export class DaemonServer {
     const helloTimer = setTimeout(() => ws.close(4001, 'No hello'), this.opts.helloTimeoutMs ?? 5000);
     helloTimer.unref?.();
     const detachAll = (): void => {
-      for (const off of attached.values()) off();
+      for (const s of attached.values()) s.stop();
       attached.clear();
       for (const off of mirrors.values()) off();
       mirrors.clear();
@@ -303,16 +310,19 @@ export class DaemonServer {
           return;
         }
         case 'term_attach': {
-          attached.get(frame.term)?.();
+          attached.get(frame.term)?.stop();
           const pty = this.opts.terminals?.get(frame.term);
           if (!pty) return send({ t: 'term_status', term: frame.term, running: false, exited: { code: null } });
           if (!this.termOwner.has(frame.term)) this.termOwner.set(frame.term, me.id);
           this.termViewers.set(frame.term, new Set([...(this.termViewers.get(frame.term) ?? []), me.id]));
-          attached.set(frame.term, this.stream(pty, frame.term, send));
+          attached.set(frame.term, this.stream(pty, frame.term, send, frame.flow === true));
           return;
         }
+        case 'term_ack':
+          attached.get(frame.term)?.ack(frame.chars);
+          return;
         case 'term_detach':
-          attached.get(frame.term)?.();
+          attached.get(frame.term)?.stop();
           attached.delete(frame.term);
           this.leaveTerm(frame.term, me.id);
           return;
@@ -373,7 +383,6 @@ export class DaemonServer {
     ws.on('error', () => undefined);
   }
 
-  /** A program's output to one screen: what it wrote lately, then as it comes, then how it ended. */
   /** A screen stops showing a terminal: if it answered the program's queries, another screen does now. */
   private leaveTerm(term: string, clientId: string): void {
     const viewers = this.termViewers.get(term);
@@ -387,22 +396,44 @@ export class DaemonServer {
     else this.termOwner.delete(term);
   }
 
-  private stream(pty: PtyProcess, term: string, send: (frame: DaemonFrame) => void): () => void {
-    const backlog = pty.backlog();
-    if (backlog) send({ t: 'term_data', term, data: backlog });
+  /**
+   * A program's output to one screen: what it wrote lately, then as it comes, then how it ended.
+   * With `flow`, the screen acks what it drew and the program waits while it's far behind (BLG-963).
+   */
+  private stream(pty: PtyProcess, term: string, send: (frame: DaemonFrame) => void, flow: boolean): TermStream {
+    let letGo: (() => void) | undefined;
+    const gate = flow
+      ? new FlowGate(
+          () => (letGo = pty.hold()),
+          () => {
+            letGo?.();
+            letGo = undefined;
+          },
+        )
+      : undefined;
+    const out = (data: string): void => {
+      send({ t: 'term_data', term, data });
+      gate?.sent(data.length);
+    };
+    const backlog = pty.replay();
+    if (backlog) out(backlog);
     send({ t: 'term_status', term, running: pty.running, ...(pty.exited ? { exited: pty.exited } : {}) });
-    const offData = pty.onData((data) => send({ t: 'term_data', term, data }));
+    const offData = pty.onData(out);
     const offExit = pty.onExit((exited) => send({ t: 'term_status', term, running: false, exited }));
-    return () => {
-      offData();
-      offExit();
+    return {
+      ack: (chars) => gate?.acked(chars),
+      stop: () => {
+        offData();
+        offExit();
+        gate?.dispose();
+      },
     };
   }
 
   private async call(client: ConnectedClient, id: string, method: string, raw: readonly unknown[]): Promise<DaemonFrame> {
-    if (!mayCall(client.kind, method)) return { t: 'result', id, ok: false, error: 'External agents are managed from the Mac app or `beluga mcp` on the computer Beluga runs on' };
+    if (!mayCall(client.kind, method)) return { t: 'result', id, ok: false, error: 'External agents are managed from the Beluga app or `beluga mcp` on the computer Beluga runs on' };
     // A browser's session can't mint, revoke or move browser sessions: a stolen cookie can't outlive its revoke.
-    if (client.kind === 'web' && WEB_ADMIN.has(method)) return { t: 'result', id, ok: false, error: 'Browsers are let in and revoked from the Mac app or `beluga web` on the computer Beluga runs on' };
+    if (client.kind === 'web' && WEB_ADMIN.has(method)) return { t: 'result', id, ok: false, error: 'Browsers are let in and revoked from the Beluga app or `beluga web` on the computer Beluga runs on' };
     // Your app driving this computer: what src/machines/coverage.ts refuses it (BLG-776).
     if (client.kind === 'machine' && machineRefuses(method)) return { t: 'result', id, ok: false, error: MACHINE_REFUSED };
     return { t: 'result', id, ...(await dispatchCall(this.session, client.id, method, raw)) };

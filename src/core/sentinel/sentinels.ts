@@ -23,6 +23,8 @@ import { safeName } from '../../net/mesh/files.js';
 import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, readOutput, toNumber } from './metrics.js';
 import { type SentinelTest, type SourcePreview, describePreviews, previewBroken, previewFailed, previewOf } from './preview.js';
 import {
+  type ChatSchedule,
+  chatSchedules,
   type MeasureStep,
   type ScriptStep,
   APPROVAL_MS,
@@ -79,13 +81,15 @@ import { agentLabel, agentName } from '../../shared/agent-label.js';
 import { defaultAgentOf } from '../../protocol.js';
 import { dashboardAskBrief, describeSentinels, sentinelAskBrief, sentinelChatBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
-import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, type SourceFetch, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
-import { MetricUnitSchema, StepInputSchema } from './schema.js';
+import { type ActiveRun, NO_CHAT_WAKE, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelWake, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, type SourceFetch, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
+import { MetricUnitSchema, StepInputSchema, pastOnce } from './schema.js';
+import { withThisChat } from './wake.js';
 import type { ToolDraft, ToolPatch, ToolStep } from './tool-draft.js';
 import { Triggers, isEventTrigger } from './triggers/index.js';
 import type { TriggerDeps, TriggerEvent } from './triggers/types.js';
 import { newSecret } from './triggers/webhook.js';
 import { SentinelMover, type SentinelMovePort } from './move-work.js';
+import { THE_COMPUTER, THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Sentinels (docs/sentinel.md): the sentinels and their runs, kept in ~/.beluga/sentinel.json and
@@ -118,6 +122,8 @@ export interface SentinelsDeps {
   readonly fetch?: typeof fetch;
   readonly github?: SentinelGitHub;
   readonly chat?: SentinelChat;
+  /** Your own chats, for Wake one of your chats (BLG-397). Without it, such a step fails. */
+  readonly wake?: SentinelWake;
   readonly friends?: SentinelFriends;
   /** How often pending checks are looked at again (15 s). */
   readonly pollMs?: number;
@@ -269,6 +275,11 @@ export class Sentinels {
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.github ? { github: deps.github } : {}),
       ...(deps.chat ? { chat: deps.chat } : {}),
+      ...(deps.wake ? { wake: deps.wake } : {}),
+      pause: (id, why) => {
+        const was = this.items.find((i) => i.id === id);
+        if (was && !was.paused) this.replace({ ...was, paused: true, pausedWhy: why, updatedAt: this.now() });
+      },
       ...(deps.friends ? { friends: deps.friends } : {}),
       ...(deps.pollMs !== undefined ? { pollMs: deps.pollMs } : {}),
       startOther: (id, from, output) => this.startFrom(id, from, output),
@@ -355,6 +366,22 @@ export class Sentinels {
     return s;
   }
 
+  /**
+   * A chat's schedules (BLG-399): the sentinels with a chat step that wakes it, given as its channel
+   * (one of yours) or its ref. In the order they were made.
+   */
+  forChat(chat: string): ChatSchedule[] {
+    // Nothing can wake a chat here: no chat has any.
+    if (!this.deps.wake) return [];
+    const ref = chat.includes('/') ? chat : `${this.deps.selfId()}/${chat}`;
+    const nextAt: Record<string, number> = {};
+    for (const s of this.items) {
+      const at = this.nextAtOf(s);
+      if (at !== undefined) nextAt[s.id] = at;
+    }
+    return chatSchedules({ items: this.items, nextAt, runs: this.runs }, ref);
+  }
+
   /** A sentinel's whole index, newest first. */
   runsOf(ref: string): RunSummary[] {
     const id = this.need(ref).id;
@@ -396,9 +423,12 @@ export class Sentinels {
   create(draft: SentinelDraft): Sentinel {
     if (this.items.length >= MAX_SENTINELS) throw new Error(`Up to ${MAX_SENTINELS} sentinels: delete one you don’t need first`);
     const at = this.now();
+    const past = pastOnce(draft.trigger, at);
+    if (past) throw new Error(past);
     const access = draft.access ?? 'look';
     const projectId = this.projectIdOf(draft.projectId ?? undefined);
     const steps = this.stepsOf(draft.steps ?? [], access);
+    this.checkChats(steps);
     const item: Sentinel = {
       id: short('sn'),
       name: oneLine(draft.name, 80) || 'New sentinel',
@@ -421,15 +451,35 @@ export class Sentinels {
     return item;
   }
 
+  /** A sentinel that wakes a chat waits where nothing can wake one: its trigger starts nothing and counts no failure. */
+  private chatsOff(s: Sentinel): boolean {
+    return s.steps.some((st) => st.kind === 'chat') && !this.deps.wake;
+  }
+
+  /** Wake one of your chats: refused where nothing can wake one, and for a chat that is not yours alone. */
+  private checkChats(steps: readonly Step[]): void {
+    for (const st of steps) {
+      if (st.kind !== 'chat') continue;
+      if (!this.deps.wake) throw new Error(capitalFirst(NO_CHAT_WAKE));
+      const refusal = st.to ? this.deps.wake.refusal(st.to) : undefined;
+      if (refusal) throw new Error(capitalFirst(refusal));
+    }
+  }
+
   /** Change a sentinel; it saves at once (the page has no Save button). */
   update(ref: string, patch: SentinelPatch): Sentinel {
     const was = this.need(ref);
     const access = patch.access ?? was.access;
     const steps = patch.steps ? this.stepsOf(patch.steps, access) : was.steps;
+    if (patch.steps) this.checkChats(steps);
     if (patch.access && !patch.steps) this.checkAccess(steps, access);
     const projectId = patch.projectId === null ? undefined : patch.projectId !== undefined ? this.projectIdOf(patch.projectId) : was.projectId;
     const { projectId: _p, ...rest } = was;
     const triggerChanged = patch.trigger !== undefined && JSON.stringify(patch.trigger) !== JSON.stringify(was.trigger);
+    // Only a new moment is checked: `missed` alone can change after a one-time trigger ran.
+    const newMoment = patch.trigger?.kind === 'once' && (was.trigger.kind !== 'once' || Date.parse(was.trigger.at) !== Date.parse(patch.trigger.at));
+    const past = newMoment ? pastOnce(patch.trigger, this.now()) : undefined;
+    if (past) throw new Error(past);
     const next: Sentinel = {
       ...rest,
       ...(patch.name !== undefined ? { name: oneLine(patch.name, 80) || was.name } : {}),
@@ -476,6 +526,9 @@ export class Sentinels {
   pause(ref: string, paused: boolean): Sentinel {
     const was = this.need(ref);
     if (was.paused === paused) return was;
+    // A one-time trigger whose moment passed would be on and never run.
+    const past = paused ? undefined : pastOnce(was.trigger, this.now());
+    if (past) throw new Error(past);
     const { pausedWhy: _why, ...rest } = was;
     const next: Sentinel = paused ? { ...rest, paused: true, updatedAt: this.now() } : { ...rest, paused: false, failures: 0, lastScheduledAt: this.now(), updatedAt: this.now() };
     this.replace(next);
@@ -584,7 +637,7 @@ export class Sentinels {
   /** Something an event trigger saw: a run, unless it's paused, or a run of its own (or of a sentinel that led to it) made it. */
   private fireEvent(id: string, e: TriggerEvent): void {
     const s = this.items.find((i) => i.id === id);
-    if (!s || s.paused || this.closed) return;
+    if (!s || s.paused || this.closed || this.chatsOff(s)) return;
     let chain: string[] | undefined;
     if (e.from) {
       // The run that made it keeps its chain after it ended (a merge, a task done later).
@@ -777,7 +830,7 @@ export class Sentinels {
     this.lastTick = now;
     this.expireWaiting();
     for (const s of this.items) {
-      if (s.paused || s.trigger.kind !== 'schedule') continue;
+      if (s.paused || (s.trigger.kind !== 'schedule' && s.trigger.kind !== 'once') || this.chatsOff(s)) continue;
       const due = dueNow(s.trigger, s.lastScheduledAt, now, this.deps.tz ? { tz: this.deps.tz } : {});
       if (due.kind === 'wait') {
         // The clock jumped: what the window says comes next is worked out again.
@@ -788,11 +841,11 @@ export class Sentinels {
       this.replace(moved);
       const sentence = scheduleSentence(s.trigger);
       if (due.kind === 'skip') {
-        this.note(moved, 'schedule', { kind: 'schedule', summary: sentence }, 'Missed while the Mac was asleep or Beluga was closed', 'Skipped: the Mac was asleep or Beluga was closed');
+        this.note(moved, 'schedule', { kind: 'schedule', summary: sentence }, `Missed while ${THE_COMPUTER} was asleep or Beluga was closed`, `Skipped: ${THE_COMPUTER} was asleep or Beluga was closed`);
         continue;
       }
       try {
-        this.start(moved.id, 'schedule', { kind: 'schedule', summary: due.late ? `${sentence} (caught up: the Mac was asleep or Beluga was closed)` : sentence });
+        this.start(moved.id, 'schedule', { kind: 'schedule', summary: due.late ? `${sentence} (caught up: ${THE_COMPUTER} was asleep or Beluga was closed)` : sentence });
       } catch {
         // Deleted or paused meanwhile.
       }
@@ -807,15 +860,15 @@ export class Sentinels {
     // A conversation where your Claude changes a sentinel (sentinel.ask): the sentinel as material.
     const asked = this.askChannels.get(channel);
     const sentinel = asked ? this.items.find((i) => i.id === asked) : undefined;
-    if (sentinel) return { tools: this.toolsFor(undefined, sentinel.id), dashboard: this.dashboardTools(undefined), brief: sentinelAskBrief(sentinel, this.items, RECIPES), inRun: false };
+    if (sentinel) return { tools: this.toolsFor(undefined, sentinel.id, undefined, undefined, false, channel), dashboard: this.dashboardTools(undefined), brief: sentinelAskBrief(sentinel, this.items, RECIPES), inRun: false };
     // One where it builds a dashboard (Add a Tile by description): the dashboard, the numbers and the
     // sentinels as material; a sentinel it makes to fetch what nothing keeps yet is noted as the ask's.
     const building = this.dashboardChannels.get(channel);
     const dashboard = building ? this.dashboards.get(building) : undefined;
-    if (dashboard) return { tools: this.toolsFor(undefined, undefined, (id) => this.madeFor(dashboard.id, id)), dashboard: this.dashboardTools(undefined, dashboard.id), brief: dashboardAskBrief(dashboard, this.metricList(), this.items, RECIPES), inRun: false };
+    if (dashboard) return { tools: this.toolsFor(undefined, undefined, (id) => this.madeFor(dashboard.id, id), undefined, false, channel), dashboard: this.dashboardTools(undefined, dashboard.id), brief: dashboardAskBrief(dashboard, this.metricList(), this.items, RECIPES), inRun: false };
     // The Sentinel chat (§12): how Sentinel works, and all of it as it is now.
-    if (isSentinelChat(channel)) return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined), brief: sentinelChatBrief(this.items, this.dashboards.list(), this.metricList(), RECIPES, (sn) => this.lastLine(sn)), inRun: false };
-    return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined), brief: sentinelNote(), inRun: false };
+    if (isSentinelChat(channel)) return { tools: this.toolsFor(undefined, undefined, undefined, undefined, false, channel), dashboard: this.dashboardTools(undefined), brief: sentinelChatBrief(this.items, this.dashboards.list(), this.metricList(), RECIPES, (sn) => this.lastLine(sn)), inRun: false };
+    return { tools: this.toolsFor(undefined, undefined, undefined, undefined, false, channel), dashboard: this.dashboardTools(undefined), brief: sentinelNote(), inRun: false };
   }
 
   /** An external agent's sentinel and dashboard tools: the lists show only what `visible` holds. They have the same limits as your own agent's: never turning one on. */
@@ -1320,7 +1373,7 @@ export class Sentinels {
   }
 
   private nextAtOf(s: Sentinel): number | undefined {
-    if (s.paused || s.trigger.kind !== 'schedule') return undefined;
+    if (s.paused || (s.trigger.kind !== 'schedule' && s.trigger.kind !== 'once')) return undefined;
     return nextRunAt(s.trigger, s.lastScheduledAt, this.now(), this.deps.tz);
   }
 
@@ -1611,7 +1664,7 @@ export class Sentinels {
     const exact = m.rows.find((r) => sameRow(r, row));
     const alike = exact ? [exact] : m.rows.filter((r) => Object.keys(row).length > 0 && Object.entries(row).every(([k, v]) => (r[k] ?? null) === (v ?? null)));
     const kept = alike.length === 1 ? alike[0] : undefined;
-    if (!kept) throw new Error(alike.length > 1 ? `Several of ${m.label}’s rows look like that one: run it from the Mac` : `That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
+    if (!kept) throw new Error(alike.length > 1 ? `Several of ${m.label}’s rows look like that one: run it from ${THE_COMPUTER}` : `That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
     const target = this.need(col.sentinel);
     const words = col.button?.trim() || col.label?.trim() || `Run ${target.name}`;
     return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
@@ -1627,7 +1680,7 @@ export class Sentinels {
     const bytes = runId ? this.folders.readDocument(runId, name) : undefined;
     if (!bytes) throw new Error(`${name} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
     const read = documentRead(name, documentMime(name), bytes, max);
-    if (!read) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
+    if (!read) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on ${THE_COMPUTER}`);
     return { ...read, runId, ...(m.rowsAt ? { at: m.rowsAt } : {}) };
   }
 
@@ -1652,7 +1705,7 @@ export class Sentinels {
     const { name, bytes } = await this.fetchStorage(sentinel, metric, column, value);
     const copy = safeFileName(`storage-${name}`);
     const file = m.rowsRunId && this.folders.writeDocument(m.rowsRunId, copy, bytes) ? this.folders.documentPath(m.rowsRunId, copy) : undefined;
-    if (!file) throw new Error(`Couldn’t save ${name} on this Mac for “${s.name}”`);
+    if (!file) throw new Error(`Couldn’t save ${name} on ${THIS_COMPUTER} for “${s.name}”`);
     return file;
   }
 
@@ -1794,7 +1847,7 @@ export class Sentinels {
   dataFolder(sentinel: string, runId?: string): string {
     const s = this.need(sentinel);
     const dir = runId ? (this.runs.some((x) => x.id === runId && x.sentinelId === s.id) ? this.folders.folder(runId) : undefined) : this.metricFiles.root ? path.join(this.metricFiles.root, safeName(s.id)) : undefined;
-    if (!dir || !existsSync(dir)) throw new Error(runId ? 'That run kept no files on this Mac' : `“${s.name}” keeps no numbers on this Mac yet`);
+    if (!dir || !existsSync(dir)) throw new Error(runId ? `That run kept no files on ${THIS_COMPUTER}` : `“${s.name}” keeps no numbers on ${THIS_COMPUTER} yet`);
     return dir;
   }
 
@@ -2120,7 +2173,9 @@ export class Sentinels {
 
   // ------------------------------------------------------------------ Claude's tools
 
-  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void, visible: (sentinel: Sentinel) => boolean = () => true, external = false): SentinelTools {
+  /** `here`: the chat that calls the tools (a chat step's `to: "this chat"` is its ref); none inside a sentinel run or for an external agent. */
+  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void, visible: (sentinel: Sentinel) => boolean = () => true, external = false, here?: string): SentinelTools {
+    const thisChat = <S extends { readonly kind: string; readonly to?: string }>(steps: readonly S[]): S[] => withThisChat(steps, this.deps.selfId(), here);
     // Changes nobody watches (a sentinel run's, an external agent's) pause a sentinel they widen.
     const unwatched = Boolean(active) || external;
     const line = (s: Sentinel): string => {
@@ -2139,7 +2194,8 @@ export class Sentinels {
           }
         : {}),
       list: () => describeSentinels(this.items.filter(visible), line),
-      create: (d: ToolDraft) => {
+      create: (given: ToolDraft) => {
+        const d: ToolDraft = { ...given, steps: thisChat(given.steps) };
         const { name: _n, ...refs } = this.fromToolPatch({ trigger: d.trigger, steps: d.steps });
         const draft: SentinelDraft = { ...fromToolDraft(d), ...refs };
         const made = (s: Sentinel): string => `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. Its steps: ${s.steps.map((st) => `${st.name} (step ${st.id})`).join(', ') || 'none'}. It runs once the user turns it on from its page (you can’t).${heedPlan(s)}`;
@@ -2192,7 +2248,8 @@ export class Sentinels {
         const s = this.need(ref);
         return `“${s.name}” (${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}) ${s.paused ? 'is paused' : 'is on'}${line(s)}. As material:\n${sentinelMaterial(s)}`;
       },
-      update: (ref: string, patch: ToolPatch) => {
+      update: (ref: string, given: ToolPatch) => {
+        const patch: ToolPatch = given.steps ? { ...given, steps: thisChat(given.steps) } : given;
         if (active?.sentinel.id === this.get(ref)?.id) throw new Error('This run is that sentinel’s: it can’t change itself while it runs');
         const said = (s: Sentinel, paused: boolean): string => {
           const changed = Object.keys(patch).filter((k) => patch[k as keyof ToolPatch] !== undefined);

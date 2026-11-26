@@ -241,7 +241,7 @@ test('its background commands: listed with how they run, and their output follow
   // The panel of its worktree has it too.
   // Background, below the rest.
   await page.getByRole('tablist', { name: 'Panel bottom' }).getByRole('tab', { name: 'Background', exact: true }).click();
-  const panel = page.locator('#panel-body-bottom');
+  const panel = page.locator('[data-panel-dock="true"]:visible');
   await expect(panel.getByRole('region', { name: 'Output of Watch the webhook tests' })).toContainText('Tests  2 passed (2)');
   await shot(page, 'panel-background');
 });

@@ -1,5 +1,6 @@
 import type { Issue } from '../board/model.js';
 import type { PlanBody, PlanStatus } from '../plans/model.js';
+import { COMPUTER_WORD } from '../../shared/assistant.js';
 
 /**
  * Team boards in the shared state (core/team, docs/tasks-and-plans.md "Sharing with friends —
@@ -240,7 +241,7 @@ export function andNames(names: readonly string[]): string {
 }
 
 /** The plain words under an offer: what teaming up shares, and what it doesn't. */
-export const OFFER_DETAIL = 'Tasks, who is on which issue and the plans you choose to share stay in step. Chats and worktrees stay on your own Mac.';
+export const OFFER_DETAIL = `Tasks, who is on which issue and the plans you choose to share stay in step. Chats and worktrees stay on your own ${COMPUTER_WORD}.`;
 
 /** A teammate on a task: one of their worktrees does it, or it's theirs (or their Claude's). */
 export interface TeammateOn {

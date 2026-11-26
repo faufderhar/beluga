@@ -146,8 +146,8 @@ export function FindBar({ items, logRef, onGo }: { items: readonly LogItem[]; lo
         {find.query.trim() ? (matches.length ? `${at + 1} of ${matches.length}` : 'No matches') : ''}
       </span>
       <span className={s.steps}>
-        <IconButton icon="chevronUp" label="Previous match" keys={shortcutKeys('conv-find-prev')} disabled={!matches.length} onClick={() => step(-1)} />
-        <IconButton icon="chevronDown" label="Next match" keys={shortcutKeys('conv-find-next')} disabled={!matches.length} onClick={() => step(1)} />
+        <IconButton size="small" icon="chevronUp" label="Previous match" keys={shortcutKeys('conv-find-prev')} disabled={!matches.length} onClick={() => step(-1)} />
+        <IconButton size="small" icon="chevronDown" label="Next match" keys={shortcutKeys('conv-find-next')} disabled={!matches.length} onClick={() => step(1)} />
       </span>
       <button type="button" className={s.done} onClick={close}>
         Done

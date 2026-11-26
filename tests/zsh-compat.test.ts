@@ -52,7 +52,7 @@ describe('zsh compat for Claude runs', () => {
   });
 
   // Windows has no /bin/sh. The file is a no-op in bash; this checks a real one.
-  it.skipIf(!existsSync('/bin/sh'))('does nothing in bash', () => {
+  it.skipIf(process.platform === 'win32' || !existsSync('/bin/sh'))('does nothing in bash', () => {
     const out = execFileSync('/bin/sh', ['-c', `${ZSH_COMPAT}echo ok`], { encoding: 'utf8' });
     expect(out).toBe('ok\n');
   });

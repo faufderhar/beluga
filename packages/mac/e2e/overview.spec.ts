@@ -220,3 +220,81 @@ test('the Chats header’s ••• shows archived chats in the Overview', asyn
   await row(page, text).getByRole('button', { name: /^Restore/ }).click();
   await expect(sidebar(page).getByRole('button', { name: text, exact: true })).toBeVisible({ timeout: 15_000 });
 });
+
+test('⌘-click and Shift-click pick several rows; Delete asks once for all of them, and Esc lets go', async ({ page }) => {
+  await segment(page, 'All').click();
+  // A plan's row stands for its tasks: it can't be picked to delete here.
+  const rows = page.locator('[data-row]:not([data-plan-item])');
+  const pickedRows = page.locator('[data-row][data-picked="true"]');
+  const bar = page.getByRole('toolbar', { name: 'Selected workspaces' });
+  await expect(bar).toBeHidden();
+
+  // ⌘-click picks a row without opening it; Shift-click picks every row down to another.
+  await rows.nth(0).click({ modifiers: ['Meta'] });
+  await expect(rows.nth(0)).toHaveAttribute('data-picked', 'true');
+  await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
+  await rows.nth(2).click({ modifiers: ['Shift'] });
+  await expect(pickedRows).toHaveCount(3);
+  await expect(bar).toContainText('selected');
+
+  // ⌘-click again takes one away.
+  await rows.nth(1).click({ modifiers: ['Meta'] });
+  await expect(pickedRows).toHaveCount(2);
+
+  // One question for the lot, in red, and nothing goes until you say so.
+  await bar.getByRole('button', { name: 'Delete…' }).click();
+  const alert = page.getByRole('alertdialog', { name: /^Delete .* (permanently|and unpushed work)\?$/ });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText('You can’t undo this.');
+  await alert.getByRole('button', { name: 'Cancel' }).click();
+  await expect(alert).toBeHidden();
+  await expect(pickedRows).toHaveCount(2);
+
+  // ⌘⌫ asks the same; Esc in the list lets them all go.
+  await rows.nth(0).focus();
+  await page.keyboard.press('Meta+Backspace');
+  await expect(alert).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(alert).toBeHidden();
+  await rows.nth(0).focus();
+  await page.keyboard.press('Escape');
+  await expect(bar).toBeHidden();
+
+  // ⌘A picks every row shown that can be deleted.
+  await rows.nth(0).focus();
+  await page.keyboard.press('Meta+a');
+  await expect(pickedRows).toHaveCount(await rows.count());
+  await expect(page.locator('[data-plan-item][data-picked="true"]')).toHaveCount(0);
+  // A plain click opens a row and lets the others go.
+  await rows.nth(0).click();
+  await expect(page.getByRole('tablist', { name: 'Show' })).toBeHidden({ timeout: 20_000 });
+});
+
+test('deleting picked chats deletes every one of them', async ({ page }) => {
+  // Two chats of this test's own, so the demo's stay as the other tests expect them.
+  const names = ['Bulk delete probe one', 'Bulk delete probe two'];
+  for (const name of names) {
+    await sidebar(page).getByRole('button', { name: 'New chat (not tied to a project)' }).click();
+    await expect(composer(page)).toBeVisible();
+    await composer(page).fill(name);
+    await composer(page).press('Enter');
+    await expect(sidebar(page).getByRole('button', { name, exact: true })).toBeVisible({ timeout: 15_000 });
+  }
+  await overview(page);
+  await segment(page, 'All').click();
+  await page.getByRole('searchbox', { name: 'Search workspaces' }).fill('bulk delete probe');
+  const rows = page.locator('[data-row]');
+  await expect(rows).toHaveCount(2);
+  await rows.nth(0).focus();
+  await page.keyboard.press('Meta+a');
+  const bar = page.getByRole('toolbar', { name: 'Selected workspaces' });
+  await expect(bar).toContainText('2 chats selected');
+  await bar.getByRole('button', { name: 'Delete…' }).click();
+  const alert = page.getByRole('alertdialog', { name: 'Delete 2 chats permanently?' });
+  await expect(alert).toContainText('deletes their conversations');
+  await alert.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(alert).toBeHidden();
+  await expect(rows).toHaveCount(0, { timeout: 20_000 });
+  await expect(bar).toBeHidden();
+  for (const name of names) await expect(sidebar(page).getByRole('button', { name, exact: true })).toHaveCount(0);
+});

@@ -126,8 +126,8 @@ export function DocFind({ root, version }: { root: RefObject<HTMLElement | null>
         {query.trim() ? (count ? `${current + 1} of ${count}` : 'No matches') : ''}
       </span>
       <span className={f.steps}>
-        <IconButton icon="chevronUp" label="Previous match" keys={chordLabel('Shift+Cmd+G')} disabled={!count} onClick={() => setAt((a) => a - 1)} />
-        <IconButton icon="chevronDown" label="Next match" keys={chordLabel('Cmd+G')} disabled={!count} onClick={() => setAt((a) => a + 1)} />
+        <IconButton size="small" icon="chevronUp" label="Previous match" keys={chordLabel('Shift+Cmd+G')} disabled={!count} onClick={() => setAt((a) => a - 1)} />
+        <IconButton size="small" icon="chevronDown" label="Next match" keys={chordLabel('Cmd+G')} disabled={!count} onClick={() => setAt((a) => a + 1)} />
       </span>
       <button type="button" className={f.done} onClick={close}>
         Done

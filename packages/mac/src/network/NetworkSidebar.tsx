@@ -135,6 +135,8 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
     <ActionsContext items={() => friendItems(f, groups, { open: () => openDm(client, f.peerId), card: () => openFriendCard(client, f.peerId), say, addTo, room })}>
       <Row
         data-friend-row={f.peerId}
+        // A worktree's or a chat's row dropped here: its chip in your message to them (layout/chat-drag.tsx).
+        data-drop-row={dmId(f.peerId)}
         data-person-row={bits ? f.peerId : undefined}
         selected={selected}
         icon={
@@ -254,6 +256,7 @@ function GroupRow({ g }: { g: GroupView }) {
     <ActionsContext items={() => groupItems(g, { open: () => openGroup(client, g.id), rename: () => setRenaming(true), copyLink: () => void copyLink().catch(() => undefined), read: () => void client.api.network.read(groupId(g.id)) })}>
       <Row
         data-group-row={g.id}
+        data-drop-row={g.active ? groupId(g.id) : undefined}
         selected={selected}
         className={g.active ? undefined : s.left}
         icon={main ? <span className={s.mainIcon}><Icon name="people" size={12} /></span> : <GroupAvatar name={g.name} id={g.id} size={18} muted={!g.active} />}
@@ -340,7 +343,7 @@ export function FriendsSection() {
   const offers = incomingOffers(net.offers);
   const strangers = useApp((st) => notFriendsYet(st.peers, { selfId: st.self?.peerId, friends: st.network.friends, guests: st.guests }), sameDeep);
   return (
-    <Section id="friends" title="Friends" action={net.enabled ? <IconButton icon="plus" label="Add a friend" onClick={() => openNet({ kind: 'add_friend' })} /> : undefined}>
+    <Section id="friends" title="Friends" action={net.enabled ? <IconButton size="small" icon="plus" label="Add a friend" onClick={() => openNet({ kind: 'add_friend' })} /> : undefined}>
       <div className={s.sidebarList}>
         {offers.map((o) => (
           <OfferRow key={o.peerId} o={o} />
@@ -448,7 +451,7 @@ export function GroupsSection() {
   const groups = sortGroups(net.groups).filter((g) => g.id !== net.main);
   const main = net.main ? net.groups.find((g) => g.id === net.main) : undefined;
   return (
-    <Section id="net-groups" title="Channels" action={<IconButton icon="plus" label="New channel" onClick={() => openNet({ kind: 'new_group' })} />}>
+    <Section id="net-groups" title="Channels" action={<IconButton size="small" icon="plus" label="New channel" onClick={() => openNet({ kind: 'new_group' })} />}>
       <div className={s.sidebarList}>
         {roomChat ? <RoomChatRow /> : null}
         {main ? <GroupRow g={main} /> : <MainRow />}

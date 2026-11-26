@@ -1,12 +1,13 @@
 import { sideCalls } from '../side-calls.js';
 import type { AgentBackend, AgentRunInput, TerminalSink } from '../types.js';
 import type { Complete, RuntimeId } from './types.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /** Runtimes' names, for the words a routed call says when one can't do something. */
-const RUNTIME_LABELS: Readonly<Record<string, string>> = { codex: 'Codex', opencode: 'OpenCode', copilot: 'Copilot', grok: 'Grok Build' };
+const RUNTIME_LABELS: Readonly<Record<string, string>> = { codex: 'Codex', opencode: 'OpenCode', copilot: 'Copilot', grok: 'Grok Build', antigravity: 'Antigravity' };
 
 /** The side calls a backend may offer (agent/side-calls.ts). */
-export type SideCallBackend = Pick<AgentBackend, 'nameTask' | 'titlePlan' | 'titleChat' | 'answerChat' | 'fixSetup' | 'fixRun' | 'workOutScripts' | 'draftTask' | 'describeProject' | 'reviewPr'>;
+export type SideCallBackend = Pick<AgentBackend, 'nameTask' | 'titlePlan' | 'titleChat' | 'answerChat' | 'fixSetup' | 'fixRun' | 'workOutScripts' | 'draftTask' | 'describeProject' | 'reviewPr' | 'standIn'>;
 
 /**
  * Where a side call goes (BLG-503): `own`, your default agent's runtime's one-shot call (Codex's),
@@ -67,7 +68,7 @@ export function routedBackend(fallback: AgentBackend, fallbackRuntime: RuntimeId
     run: (input: AgentRunInput) => {
       const id = input.place?.agent?.runtime ?? fallbackRuntime;
       const backend = pick(id);
-      if (!backend) return Promise.reject(new Error(`${input.place?.agent?.label ?? id} isn't set up on this Mac. Pick another agent for this worktree.`));
+      if (!backend) return Promise.reject(new Error(`${input.place?.agent?.label ?? id} isn't set up on ${THIS_COMPUTER}. Pick another agent for this worktree.`));
       return backend.run(input);
     },
     // The agent's own terminal on a conversation (BLG-534): its runtime's, as its turns are.

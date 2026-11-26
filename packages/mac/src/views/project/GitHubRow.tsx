@@ -92,7 +92,7 @@ export function GitHubRow({ projectId }: { projectId: string }) {
           Connect GitHub for details…
         </button>
       )}
-      {info ? <IconButton icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub again'} className={cx(s.ghRefresh, loading && s.spinning)} onClick={() => void refresh()} /> : null}
+      {info ? <IconButton size="small" icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub again'} className={cx(s.ghRefresh, loading && s.spinning)} onClick={() => void refresh()} /> : null}
       {connect ? (
         <ConnectGitHub
           onClose={() => setConnect(false)}

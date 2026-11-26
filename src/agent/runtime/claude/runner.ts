@@ -4,7 +4,8 @@ import { query, type Options, type Query } from '@anthropic-ai/claude-agent-sdk'
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf, withImagePaths } from '../../../core/attachments.js';
 import { buildPrompt, summarizeTool } from '../../prompt.js';
 import { runInstructions } from '../../run-instructions.js';
-import { SECRET_DECLINED, confineSearch, decideTool, denyReason, isYourRun } from '../../policy.js';
+import { SECRET_DECLINED, confineSearch, decideTool, denyReason, isYourRun, planFileOf } from '../../policy.js';
+import { NO_PLAN_TEXT, claudePlansDir, planText } from './plan-text.js';
 import { baseEnv } from '../../../core/peer-run.js';
 import { gateTool } from '../../tool-gate.js';
 import { syncProbes } from '../../sync-main.js';
@@ -24,13 +25,15 @@ import { claudeComplete } from './complete.js';
 import { askBtw } from './btw.js';
 import { claudeTerminal } from './terminal.js';
 import { claudeLaunch } from './launch-args.js';
-import { chromeGate, isChromeTool } from '../../chrome.js';
+import { chromeGate, chromeOffByFlags, isChromeTool } from '../../chrome.js';
+import { chromeLaunch, chromeNote, withChrome } from './chrome-status.js';
+import { holdSignIn, signInChanges, signedInWith } from './sign-in-env.js';
 import { ViewShelf } from '../../view-tools.js';
 import { runToolSuites } from '../../run-tools.js';
 import { sdkServers } from './sdk-mount.js';
 import { ownerMcpServers } from './owner-mcp.js';
-import { McpConnect, claudeMcpSession } from './mcp-connect.js';
-import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from '../../types.js';
+import { MCP_APPS_HOST_ENV, McpConnect, claudeMcpSession } from './mcp-connect.js';
+import type { AgentBackend, AgentRunInput, FollowUp, HarnessFacts, LiveStatus, RoomBridge, RunProcess, Steer } from '../../types.js';
 import { keepLines, trackedSpawn } from './claude-process.js';
 import { keptBashInput } from '../../../workspaces/test-procs.js';
 import { SCRATCH_DIR } from '../../../shared/scratch-dir.js';
@@ -123,7 +126,7 @@ export function withSignInHint(failure: RunFailure, launchEnv: Readonly<Record<s
 }
 
 /**
- * How long a run stays open after answering for a command or watch the main conversation left
+ * How long a run stays open after its last turn for a command or watch the main conversation left
  * running (no agents): long enough for the full tests or a build to end and wake Claude, short
  * enough that a server it left up doesn't hold the run for hours.
  */
@@ -151,6 +154,19 @@ export function ownerSettings(input: Pick<AgentRunInput, 'ownerMcp' | 'guest'>):
 /** MCP Apps follow your MCP servers: a run that loads them (yours, or Full trust; never a guest's) keeps apps on its steps. */
 export function tracksMcpApps(input: Pick<AgentRunInput, 'ownerMcp' | 'guest'>): boolean {
   return Boolean(input.ownerMcp && !input.guest);
+}
+
+/**
+ * A run whose apps you watch says so to its MCP servers: with CLAUDE_CODE_MCP_APPS_HOST, Claude Code
+ * declares the `io.modelcontextprotocol/ui` extension at `initialize`, so a server sends what it
+ * keeps for its views only (a result's `_meta`, which the model never reads; docs/mcp-apps.md). Such
+ * a server may also tell the model you already see the data, so a run whose answer is all anyone
+ * reads (a Sentinel run, an external agent's) goes without it (`appsShown`). Set over the launch
+ * environment, or over the daemon's own when the run inherits it.
+ */
+export function withAppsHost(launchEnv: Readonly<Record<string, string>> | undefined, input: Pick<AgentRunInput, 'ownerMcp' | 'guest' | 'appsShown'>, env: NodeJS.ProcessEnv = process.env): Readonly<Record<string, string>> | undefined {
+  if (!input.appsShown || !tracksMcpApps(input)) return launchEnv;
+  return { ...(launchEnv ?? env), ...MCP_APPS_HOST_ENV } as Record<string, string>;
 }
 
 export interface ClaudeBackendOptions {
@@ -186,10 +202,17 @@ export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | und
 }
 
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
-export function usageOf(modelUsage: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>, cost: number, session: string) {
+export function usageOf(
+  modelUsage: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>,
+  cost: number,
+  session: string,
+  /** The result's own usage: how many of its output tokens were thinking (usage statistics send the count, never the words). */
+  usage?: { readonly output_tokens_details?: { readonly thinking_tokens?: number } | null } | null,
+) {
   const all = Object.values(modelUsage);
   const sum = (pick: (u: (typeof all)[number]) => number): number => all.reduce((n, u) => n + (pick(u) || 0), 0);
-  return { input: sum((u) => u.inputTokens), output: sum((u) => u.outputTokens), cacheRead: sum((u) => u.cacheReadInputTokens), cacheWrite: sum((u) => u.cacheCreationInputTokens), cost, session };
+  const thinking = usage?.output_tokens_details?.thinking_tokens;
+  return { input: sum((u) => u.inputTokens), output: sum((u) => u.outputTokens), cacheRead: sum((u) => u.cacheReadInputTokens), cacheWrite: sum((u) => u.cacheCreationInputTokens), cost, session, ...(typeof thinking === 'number' && thinking > 0 ? { thinking } : {}) };
 }
 
 /** Claude Code's name for a model, without its "(recommended)": the picker says "Default", not "Default (recommended)". */
@@ -219,6 +242,19 @@ export function imageContent(text: string, files: readonly string[]): PromptCont
 }
 
 /** The text of the tool results in a message from Claude Code (what its commands printed). */
+/** Claude Code's first message of a run, as what it says about itself: names only (its tools, its MCP servers). */
+export function harnessFacts(init: { readonly claude_code_version?: unknown; readonly permissionMode?: unknown; readonly tools?: unknown; readonly mcp_servers?: unknown }): HarnessFacts {
+  const names = (list: unknown, of: (v: unknown) => unknown): string[] => (Array.isArray(list) ? list.map(of).filter((n): n is string => typeof n === 'string' && Boolean(n)).map((n) => n.slice(0, 128)) : []);
+  const tools = names(init.tools, (t) => t);
+  const servers = names(init.mcp_servers, (s) => (s as { name?: unknown } | null)?.name);
+  return {
+    ...(typeof init.claude_code_version === 'string' ? { version: init.claude_code_version.slice(0, 40) } : {}),
+    ...(typeof init.permissionMode === 'string' ? { permissionMode: init.permissionMode.slice(0, 40) } : {}),
+    ...(tools.length ? { tools } : {}),
+    ...(servers.length ? { mcpServers: servers } : {}),
+  };
+}
+
 function toolOutput(content: unknown): string {
   if (!Array.isArray(content)) return '';
   return content.map((b) => (b && typeof b === 'object' && 'type' in b && b.type === 'tool_result' && 'content' in b ? resultText(b.content) : '')).join('\n');
@@ -295,7 +331,11 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const syncMain = askOnly ? place?.syncMain : undefined;
       // A hidden worktree to fix a conflict in (a plan's head Claude, in its main-folder conversation).
       const fixup = place?.fixup;
-      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, yourRun: isYourRun(input), askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}), ...(place?.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
+      // Claude Code's plan folder, where it writes its plan in plan mode (also from a main folder: #607).
+      const plans = claudePlansDir(claudeLaunchEnv(input) ?? process.env);
+      /** The plan file this run last wrote (planFileOf). */
+      let planFile: string | undefined;
+      const policy = { cwd, plans, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, yourRun: isYourRun(input), askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}), ...(place?.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
       // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
       const stderr: string[] = [];
       const keepStderr = (data: string): void => keepLines(stderr, data, STDERR_KEEP);
@@ -332,7 +372,15 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       // zsh-compat.sh makes Claude Code's zsh take the bash it writes (zsh-compat.ts); the prompt says what's left.
       const baseLaunchEnv = claudeLaunchEnv(input);
       const compat = zshCompatEnv(baseLaunchEnv ?? process.env);
-      const launchEnv = withZshCompat(baseLaunchEnv, compat);
+      // A project's or chat's Anthropic key is for its code: Claude Code keeps its own sign-in, and with it
+      // Claude in Chrome and the claude.ai connectors; its commands still get the key (sign-in-env.ts, BLG-1027).
+      // A local model's endpoint key is Claude Code's own sign-in there, never held back.
+      const holds = Boolean(compat.CLAUDE_ENV_FILE) && inheritsDaemonEnv(input) && !input.signsInFromEnv;
+      const launchEnv = withAppsHost(holds ? holdSignIn(withZshCompat(baseLaunchEnv, compat), input.env) : withZshCompat(baseLaunchEnv, compat), input);
+      const signIn = signedInWith(launchEnv ?? process.env);
+      const browser = chromeLaunch({ allowed: Boolean(input.chrome), noChromeFlag: chromeOffByFlags(input.launchArgs?.claude), ...(signIn ? { signIn, signInFromPlace: signInChanges(input.env).includes(signIn) } : {}) });
+      // mcp_servers lists Claude in Chrome as this session has it, and mcp_sign_in reconnects it here.
+      const tooled: AgentRunInput = input.mcpTools ? { ...input, mcpTools: withChrome(input.mcpTools, { launch: browser, servers: () => q.mcpServerStatus(), reconnect: (name) => q.reconnectMcpServer(name), enable: (name) => q.toggleMcpServer(name, true) }) } : input;
       const failure = (end: RunEnd): RunFailedError => new RunFailedError(withSignInHint(classifyRun(end), launchEnv, inheritsDaemonEnv(input)));
       const options: Options = {
         cwd,
@@ -345,7 +393,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(launch.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
         ...(Object.keys(launch.extraArgs).length ? { extraArgs: launch.extraArgs } : {}),
         // Your own MCP servers first, so a name of Beluga's always means Beluga's.
-        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), ...sdkServers(runToolSuites(input, bridge, shelf, cwd)) },
+        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), ...sdkServers(runToolSuites(tooled, bridge, shelf, cwd)) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -354,6 +402,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               hooks: [
                 async (hookInput) => {
                   if (hookInput.hook_event_name !== 'PreToolUse') return {};
+                  // It runs now: until here it waited behind the calls before it (usage statistics: BLG-1029).
+                  input.onToolRun?.(hookInput.tool_use_id, Date.now());
                   if (INTERACTIVE.has(hookInput.tool_name)) return {}; // answered in canUseTool
                   const toolInput = (hookInput.tool_input ?? {}) as Record<string, unknown>;
                   const veto = input.vetTool?.(hookInput.tool_name, toolInput);
@@ -368,6 +418,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   const judged = confined ?? toolInput;
                   const decision = decideTool(hookInput.tool_name, judged, policy);
                   if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, judged, policy));
+                  // The plan file it writes: what the card shows when ExitPlanMode brings no plan text.
+                  planFile = planFileOf(hookInput.tool_name, judged, policy) ?? planFile;
                   // A sub-agent is told where its own scratch folder is, so what it makes shows on its page.
                   const scratched = scratchRoot ? withAgentScratch(hookInput.tool_name, judged, hookInput.tool_use_id, scratchRoot) : undefined;
                   // In a worktree, what's kept on purpose is made to outlive the turn (see workspaces/test-procs.ts).
@@ -394,7 +446,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: runInstructions(input, opts.bridge.selfName(), opts.agentOf?.(input) ?? input.place?.agent, claudeShellSetup(baseLaunchEnv ?? process.env, compat)) },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: runInstructions(input, opts.bridge.selfName(), opts.agentOf?.(input) ?? input.place?.agent, claudeShellSetup(baseLaunchEnv ?? process.env, compat)) + chromeNote(browser, Boolean(input.chrome)) },
         ...ownerSettings(input),
         ...skills,
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
@@ -415,7 +467,6 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         },
       };
 
-      let lastText = '';
       const ask = async (question: ClaudeQuestion): Promise<ClaudeAnswer> => (input.askUser ? input.askUser(question) : { kind: 'skip' });
       const answerQuestion = async (toolInput: Record<string, unknown>) => {
         const question = toQuestion(toolInput);
@@ -430,8 +481,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           askedToDefine = true;
           return { behavior: 'deny' as const, message: 'Before asking for approval, call mcp__beluga_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then call ExitPlanMode again.' };
         }
-        const plan = typeof toolInput.plan === 'string' && toolInput.plan.trim() ? toolInput.plan : lastText || '(Claude proposed a plan)';
-        const answer = await ask({ kind: 'plan', plan: plan.slice(0, 60_000) });
+        // Its plan, never the last thing it said: that's a chat line, not the plan (#607).
+        const answer = await ask({ kind: 'plan', plan: planText(toolInput, plans, planFile) ?? NO_PLAN_TEXT });
         if (answer.kind === 'plan' && answer.approve) {
           input.planTask?.approved();
           // Approved: leave plan mode so Claude can do the work.
@@ -456,13 +507,15 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const apps = tracksMcpApps(input) ? new McpAppTracker({ servers: () => q.mcpServerStatus() }, (record) => stepTo?.(record)) : undefined;
       const recorder = new StepRecorder({ cwd, emit: (record) => stepTo?.(apps ? apps.decorate(record) : record) });
       recorder.begin();
+      /** Kept open after answering, for background work: follow-ups are offered until the run ends. */
+      let keptOpen = false;
       let limit: NodeJS.Timeout | undefined;
       let quiet: NodeJS.Timeout | undefined;
       const finish = (): void => {
         if (prompts.closed) return;
         clearTimeout(limit);
         clearTimeout(quiet);
-        if (limit) input.onFollowUps?.(undefined); // only if follow-ups were offered
+        if (keptOpen) input.onFollowUps?.(undefined); // only if follow-ups were offered
         input.onSteer?.(undefined);
         turns.failPending('Claude finished before getting to this message');
         prompts.close();
@@ -484,6 +537,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         const uuid = prompts.push(content(followUp), { steer: steer && !turns.between, uuid: followUp.promptId });
         if (uuid === false) return false;
         turns.queue(followUp, uuid, steer && !turns.between);
+        if (turns.between) armLimit();
         return uuid;
       };
       const send = (followUp: FollowUp): boolean => deliver(followUp, false) !== false;
@@ -502,18 +556,29 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       let interrupting: string | undefined;
       /** The message an interrupt is for: its own turn, never folded into the interrupted one. */
       let interruptFor: string | undefined;
+      /**
+       * Between turns only: how long the run waits for the work that is live now. Counted again from
+       * each turn's end, each turn Claude Code begins and each message sent between turns. A turn in
+       * progress is never cut off: its end counts again.
+       */
+      const armLimit = (): void => {
+        if (!keptOpen || prompts.closed) return;
+        clearTimeout(limit);
+        limit = setTimeout(() => turns.between && finish(), background.agents || interrupting !== undefined || turns.waiting ? BACKGROUND_LIMIT_MS : SHELL_LIMIT_MS);
+        limit.unref();
+      };
       /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
       const settle = (): void => {
         if (interrupting === undefined && !background.busy && !turns.waiting) return finish();
-        if (limit) return;
-        limit = setTimeout(finish, background.agents || interrupting !== undefined || turns.waiting ? BACKGROUND_LIMIT_MS : SHELL_LIMIT_MS);
-        limit.unref();
-        input.onFollowUps?.(send);
+        const offered = keptOpen;
+        keptOpen = true;
+        armLimit();
+        if (!offered) input.onFollowUps?.(send);
       };
       const done = (): boolean => turns.between && !background.busy && !turns.waiting;
       const watchQuiet = (): void => {
         clearTimeout(quiet);
-        if (!limit || !done()) return;
+        if (!keptOpen || !done()) return;
         quiet = setTimeout(() => done() && finish(), QUIET_MS);
         quiet.unref();
       };
@@ -602,7 +667,12 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           lastEventAt = Date.now();
           background.observe(msg as Parameters<BackgroundAgents['observe']>[0]);
           watchQuiet();
-          if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
+          if (msg.type === 'system' && msg.subtype === 'init') {
+            remember(msg.session_id);
+            input.onHarness?.(harnessFacts(msg));
+            // A turn begins, though the router only sees it at its first word: the limit must not close it meanwhile.
+            armLimit();
+          }
           // Claude Code retrying the API (busy, a limit, no network): said on the working line, not a silent "Starting" (BLG-403).
           if (msg.type === 'system' && msg.subtype === 'api_retry') input.onEvent('progress', retryWords(msg.error_status, msg.attempt, msg.max_retries, Boolean(msg.no_response)));
           if (msg.type === 'rate_limit_event') {
@@ -649,8 +719,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             thinking = last === 'thinking' || last === 'redacted_thinking';
             for (const block of msg.message.content) {
               if (block.type === 'text' && block.text.trim()) {
-                lastText = block.text.trim();
-                route?.onEvent('text', shelf.expand(lastText));
+                route?.onEvent('text', shelf.expand(block.text.trim()));
               }
               if (block.type === 'tool_use' && subagents.isLaunch(block)) launches.add(block.id);
               if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
@@ -668,7 +737,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             remember(msg.session_id);
             await report.result(msg.modelUsage, breakdownReader(q));
             const turn = turns.current();
-            turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
+            turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id, msg.usage as Parameters<typeof usageOf>[3])));
             // A turn that ended on an API error (a usage limit, an outage) is a failure, whatever its subtype.
             const ok = msg.subtype === 'success' && !msg.is_error;
             if (!ok) failedResult = msg.subtype === 'success' ? msg.result : [`Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`, ...(msg.errors ?? [])].join('\n');

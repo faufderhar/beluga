@@ -9,6 +9,7 @@ import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { openSheet } from '../../lib/sheets.js';
 import { sameDeep } from '../../lib/stable.js';
 import s from './env-asks.module.css';
+import { thisComputer } from '../../lib/os-words.js';
 
 const NONE: readonly EnvChange[] = [];
 const NO_SENDS: readonly EnvSendAsk[] = [];
@@ -34,7 +35,7 @@ function EnvSendRow({ ask }: { ask: EnvSendAsk }) {
           <code key={f}>{f}</code>
         ))}
         for {ask.projectName}
-        <span className={s.detail}> · send this Mac’s?</span>
+        <span className={s.detail}> · send {thisComputer()}’s?</span>
       </span>
       <Tip label="Sent over your encrypted link and kept only you can read it there; asked again next time">
         <Button size="small" disabled={busy} onClick={() => decide('once')}>
@@ -45,7 +46,7 @@ function EnvSendRow({ ask }: { ask: EnvSendAsk }) {
         Don’t Send
       </Button>
       <ActionsDropdown items={[{ label: 'Always for This Project', hint: 'Settings › Your Computers takes it back', onSelect: () => decide('always') }]}>
-        <IconButton icon="more" label="More for sending env files" disabled={busy} />
+        <IconButton size="small" icon="more" label="More for sending env files" disabled={busy} />
       </ActionsDropdown>
     </div>
   );
@@ -89,7 +90,7 @@ function EnvAsk({ wsId, changes, name }: { wsId: string; changes: readonly EnvCh
         </Button>
       </Tip>
       <ActionsDropdown items={[{ label: 'Keep in This Worktree Only', hint: 'asked again if it changes', onSelect: () => act(() => api.workspaces.keepEnvHere(wsId)) }]}>
-        <IconButton icon="more" label="More for these env changes" disabled={busy} />
+        <IconButton size="small" icon="more" label="More for these env changes" disabled={busy} />
       </ActionsDropdown>
     </div>
   );

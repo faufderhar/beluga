@@ -4,7 +4,7 @@
 <h1 align="center">Beluga</h1>
 
 <p align="center">
-  <b>A desktop app for every project and the agent working in each.<br>And your agent can talk to your friends' agents, computer to computer.</b>
+  <b>A desktop app that runs a coding agent on each of your tasks, side by side.<br>When your agent needs something from a friend's computer, it can ask their agent.</b>
 </p>
 
 <p align="center">
@@ -18,10 +18,11 @@
 
 ## What it does
 
-- **[Work on everything at once](#work-on-everything-at-once)**: every task gets its own worktree, branch and agent, and they all run side by side.
-- **[See every agent work](#see-every-agent-work)**: steps, sub-agents and screenshots arrive live, and you can steer mid-run.
-- **[Answers you can see](#answers-you-can-see)**: live tables, charts, diagrams and task cards right in the conversation.
-- **[Your agent, and your friends' agents](#your-agent-and-your-friends-agents)**: tag a friend and your agent asks theirs to do it on their Mac, after they click Allow.
+- **[Run several tasks at once](#run-several-tasks-at-once)**: every task gets its own worktree, branch and agent, and they all run side by side.
+- **[Screenshots and logs as they land](#screenshots-and-logs-as-they-land)**: what your agent makes on the way shows up in Scratch while it's still working.
+- **[Tables, charts and diagrams in the chat](#tables-charts-and-diagrams-in-the-chat)**: ask about your data and get a table you can sort; ask how code works and get a diagram.
+- **[Ask a friend's agent](#ask-a-friends-agent)**: tag a friend and your agent asks theirs to do it on their Mac, after they click Allow.
+- **[Invite a friend into your session](#invite-a-friend-into-your-session)**: they watch your agent work live, or talk to it with you.
 - **[Sentinel](#sentinel)**: work you describe once runs on a schedule or when something happens, and leaves a report.
 - **[Run it on a server](#run-it-on-a-server)**: put it on a computer that stays on, then use it from your phone or any browser.
 
@@ -41,7 +42,7 @@
 
 ---
 
-## Work on everything at once
+## Run several tasks at once
 
 <p align="center">
   <picture>
@@ -60,18 +61,18 @@ Describe a task and Beluga makes a fresh worktree for it: its own folder, branch
 </p>
 <p align="center"><sub><b>A worktree per task</b>: the sidebar shows who is working, what is ready to merge and what needs you. Changes, diffs, files and terminals sit beside the chat; commit, open a pull request or merge in one click.</sub></p>
 
-## See every agent work
+## Screenshots and logs as they land
 
 <p align="center">
   <picture>
-    <source media="(min-width: 700px)" srcset="assets/scenes/agents-dark.gif">
-    <img src="assets/scenes/agents-dark-still.png" alt="An agent at work on api feat/rate-limits: its steps arrive one by one beside three sub-agents and a screenshot, then you steer it mid-run and it switches course" width="720">
+    <source media="(min-width: 700px)" srcset="assets/scenes/scratch-dark.gif">
+    <img src="assets/scenes/scratch-dark-still.png" alt="Asked to check the login page on a phone, the agent is still working while a screenshot at 375 px, the console log and the layout as JSON land in its Scratch folder one by one, each a click to open" width="720">
   </picture>
 </p>
 
-Steps arrive as your agent works: the files it reads, the commands it runs, the sub-agents and background tasks it starts. Say something mid-run and it changes course.
+Ask your agent to check a page or run the tests, and what it makes on the way lands in the **Scratch** tab as it goes: the screenshot it just took, the test log, the JSON an API sent back. Open any of it while the run is still going; you don't wait for the end. Your agent attaches the best of it to the task as proof.
 
-The **Scratch** tab shows what your agent makes along the way (screenshots of the page it just checked, test runs, logs, the JSON an API sent back) as each file lands, so you see what your agent sees, not just what it says about it. Your agent attaches the best of it to the task as proof.
+Every file it reads and command it runs shows up in the conversation too. If it heads the wrong way, send a message and it changes course without starting over.
 
 <p align="center">
   <picture>
@@ -81,7 +82,7 @@ The **Scratch** tab shows what your agent makes along the way (screenshots of th
 </p>
 <p align="center"><sub><b>Scratch</b>: a test log that grows to 27 passed, a screenshot of the login page and an API response, live. The folder stays out of git.</sub></p>
 
-## Answers you can see
+## Tables, charts and diagrams in the chat
 
 <p align="center">
   <picture>
@@ -118,7 +119,7 @@ Ask about your data and your agent finds the database, connects and runs the que
 
 Plain Markdown gets the same care: tables sort and turn into charts, JSON folds, terminal output keeps its colors, math is typeset and Mermaid becomes a real diagram.
 
-<h3 align="center">And your words are on fire!</h3>
+<h3 align="center">Fire around the message box on Max effort</h3>
 
 <p align="center">
   <picture>
@@ -126,9 +127,9 @@ Plain Markdown gets the same care: tables sort and turn into charts, JSON folds,
     <img src="assets/mac/fire-still.png" alt="On Max effort the dark message box burns with red pixel fire: pixels fly from the caret as you type, the fire flares gold when you type fast, and the words you delete burst into falling pixels" width="600">
   </picture>
 </p>
-<p align="center"><sub><b>Max effort</b> sets the message box on fire: pixels fly as you type, it flares when you rush, and what you delete bursts. Pick another fire, or have it on everywhere, in <b>Settings › Fire &amp; Confetti</b>.</sub></p>
+<p align="center"><sub><b>Max effort</b> puts fire around the message box, so you can see at a glance which effort you're on: pixels fly as you type, it flares when you type fast, and what you delete bursts. Choose pixel fire or smooth flames, or turn it off, in <b>Settings › Fire &amp; Confetti</b>.</sub></p>
 
-## Your agent, and your friends' agents
+## Ask a friend's agent
 
 <p align="center">
   <picture>
@@ -169,16 +170,27 @@ People your friend trusts can skip the pop-up. Secrets like `.env` files and key
 
 More: [what friends' agents can do](docs/network.md#what-your-friends-agents-can-do-here) · [security](docs/security.md) · [the friends network](docs/network.md)
 
+## Invite a friend into your session
+
+<p align="center">
+  <picture>
+    <source media="(min-width: 700px)" srcset="assets/scenes/together-dark.gif">
+    <img src="assets/scenes/together-dark-still.png" alt="Your agent is adding a coupon field; you press Share and invite Ada to Work here. She joins, asks the same agent to make the coupon optional, and it answers you both. Then the same with Follow, where she watches each step live" width="720">
+  </picture>
+</p>
+
+Press **Share** on a worktree and pick a friend. **Work here** lets them talk to your agent in that conversation; **Follow** lets them watch it work, step by step, as it happens. Everyone in the session shows in its header with whether they're here right now.
+
 ## Sentinel
 
 <p align="center">
   <picture>
     <source media="(min-width: 700px)" srcset="assets/scenes/sentinel-dark.gif">
-    <img src="assets/scenes/sentinel-dark-still.png" alt="A sentence becomes a sentinel: When the tests fail on GitHub, have my agent fix them in a worktree and merge once the checks pass. It is built, turned on, runs its steps and leaves a report" width="840">
+    <img src="assets/scenes/sentinel-dark-still.png" alt="Sentinel at a glance: a sentence in three colours, when, what your agent does and what you get, and the same three as cards that light up in turn as the moment comes, the agent works and a report lands. Fix the build, then Failed payments" width="760">
   </picture>
 </p>
 
-A sentinel is work you describe once, in a sentence. It waits for its moment (seven in the morning, a failing test, a Stripe payment, your site going quiet), works through its steps with your agent, and leaves you a report. It runs on your Mac, as you, with your logins.
+Write what you want done and when, in a sentence: every morning at 7, when the tests fail on GitHub, when a Stripe payment fails, when your site stops answering. Beluga turns it into a sentinel. When the moment comes, its steps run with your agent and you get a report. It runs on your Mac, as you, with your logins.
 
 <p align="center">
   <picture>
@@ -190,7 +202,7 @@ A sentinel is work you describe once, in a sentence. It waits for its moment (se
 
 - **When**: a schedule, by hand, after another sentinel, or an event from GitHub, Stripe, Sentry, a site that stops answering, or a webhook.
 - **Then**: ask your agent, run a script, call a service, open a pull request, merge, notify you, or ask a friend's agent.
-- **Safe by default**: a new sentinel starts paused, and a merge always needs green checks and your **Merge**, on the Mac or the phone.
+- **Starts paused**: a new sentinel does nothing until you turn it on, and a merge always needs green checks and your **Merge**, on the Mac or the phone.
 
 More: [Sentinel](docs/sentinel.md)
 
@@ -206,7 +218,7 @@ More: [Sentinel](docs/sentinel.md)
     <img src="assets/scenes/archive-dark-still.png" alt="Archiving fix/safari-scroll: the folder goes and the disk drops to 0.6 MB, while the branch and the conversation stay" width="420">
   </picture>
 </p>
-<p align="center"><sub><b>Earnings</b>: connect Stripe, RevenueCat or both and each project shows what it earns, next to the work ([how it counts](docs/earnings.md)). <b>Archive</b>: the folder goes, so your disk stays light; the branch and the conversation stay.</sub></p>
+<p align="center"><sub><b>Earnings</b>: connect Stripe, RevenueCat or both and each project shows what it earns, next to the work ([how it counts](docs/earnings.md)). <b>Archive</b>: the worktree's folder is deleted to free disk space; the branch and the conversation stay.</sub></p>
 
 <p align="center">
   <img src="assets/mac/hero.png" alt="Beluga for Mac: a worktree with the agent's finished run in the middle, its changes and diff in the right panel, projects and friends in the sidebar" width="900">
@@ -371,9 +383,9 @@ Your agent is Claude Code, signed in with your own subscription. It can also run
 
 The engine (projects, agents, terminals, friends) runs in the background on your computer, and the app is the window onto it. Claude runs through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview).
 
-Beluga's releases ask whether you'd share usage statistics: Off, Limited (picked for you) or On. A build from source never asks and never sends. [What each level sends](docs/telemetry.md); change it in Settings › General › Usage statistics.
+Beluga's releases ask whether you'd share usage statistics: Off, Essential or On. Nothing is picked for you, and Skip is Off. A build from source never asks and never sends. [What each level sends](docs/telemetry.md), [privacy notice](docs/privacy.md); change it in Settings › General › Usage statistics.
 
-More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [external agents](docs/external-agents.md) · [peer-to-peer connections](docs/p2p.md) · [updates](docs/updates.md) · [every action and where it is](docs/parity.md) · [earnings](docs/earnings.md) · [usage statistics](docs/telemetry.md)
+More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [external agents](docs/external-agents.md) · [peer-to-peer connections](docs/p2p.md) · [updates](docs/updates.md) · [every action and where it is](docs/parity.md) · [earnings](docs/earnings.md) · [usage statistics](docs/telemetry.md) · [privacy notice](docs/privacy.md)
 
 ## Development
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
-import { criteria, criterionLine, tally, tallyWords, unexplained } from '../src/core/board/criteria.js';
+import { criteria, criterionLine, needsChecksText, tally, tallyWords, unexplained, unreadReasonWord } from '../src/core/board/criteria.js';
 import type { Issue } from '../src/core/board/model.js';
 import { BoardWork } from '../src/core/board/work.js';
 import { taskPageView, tasksView } from '../src/companion/views.js';
@@ -45,6 +45,41 @@ describe('criteria: ticked, explained, or open', () => {
     expect(tallyWords(tally(text))).toBe('1/5 · 2 deferred · 1 not done');
     expect(tallyWords(tally('- [x] a\n- [ ] b'))).toBe('1/2');
     expect(criterionLine(criteria(text)[1]!)).toBe('- [ ] Two — deferred: suites run at the end of the plan');
+  });
+
+  it('reads the other words agents explain a criterion with', () => {
+    const text = [
+      '- [ ] A — not verified: WebKit never showed the jump',
+      '- [ ] B — untested: needs the Intel Mac',
+      '- [ ] C -- Blocked: waits on BLG-2',
+      '- [ ] D (out of scope: next task)',
+      '- [ ] E — won’t do: the user dropped it',
+      '- [ ] F — n/a: no UI',
+      '- [ ] G — postponed: after the release',
+      '- [ ] H — follow-up: BLG-3',
+    ].join('\n');
+    expect(criteria(text).map((c) => [c.text, c.state])).toEqual([
+      ['A', 'not_done'],
+      ['B', 'not_done'],
+      ['C', 'not_done'],
+      ['D', 'not_done'],
+      ['E', 'not_done'],
+      ['F', 'not_done'],
+      ['G', 'deferred'],
+      ['H', 'deferred'],
+    ]);
+    expect(criteria(text)[0]!.reason).toBe('WebKit never showed the jump');
+    expect(unexplained(text)).toEqual([]);
+    // Written back in Beluga's own words.
+    expect(criterionLine(criteria(text)[0]!)).toBe('- [ ] A — not done: WebKit never showed the jump');
+  });
+
+  it('a reason word it doesn’t read is named in the refusal, with what to write instead', () => {
+    const open = unexplained('- [ ] Headlines keep their line breaks — needs eyes: on the Intel Mac\n- [ ] Plain one');
+    expect(open.map(unreadReasonWord)).toEqual(['needs eyes', undefined]);
+    const text = needsChecksText('BLG-1', open);
+    expect(text).toContain('“needs eyes:” isn\'t a reason Beluga reads: write “— not done: why” or “— deferred: why”');
+    expect(text).toContain('- Plain one\n');
   });
 
   it('on the Mac: counted with their states, and ticking one drops its reason', () => {
@@ -175,13 +210,42 @@ describe('a merge moves it to Done only with every criterion met or explained (B
     expect(bare.board.need(bare.key).status).toBe('done');
   });
 
-  it('a merged pull request found later (the worktree gone) follows the same rule', () => {
-    const { board, tools, key } = setup();
-    const held = board.branchShipped(key, pr({ state: 'MERGED' }));
-    expect(held).toMatchObject({ status: 'in_review', needsChecks: true, mergedHeld: true });
-    expect(held.activity.at(-1)?.text).toContain('kept this out of Done: 2 criteria');
-    tools.editBrief(undefined, 'acceptance', SETTLED);
-    expect(board.need(key).status).toBe('done');
+  it('a merged pull request found later (the worktree gone): Done, naming the criteria nobody settled (BLG-1022)', () => {
+    const { board, key } = setup();
+    const done = board.branchShipped(key, pr({ state: 'MERGED' }));
+    expect(done).toMatchObject({ status: 'done', pr: { state: 'MERGED' } });
+    expect(done.needsChecks).toBeUndefined();
+    expect(done.mergedHeld).toBeUndefined();
+    expect(done.activity.at(-1)?.text).toBe(`its work is merged and its worktree is gone; 2 criteria are neither ticked nor explained (${OPEN_LINE}): moved this from In Progress to Done`);
+
+    const settled = setup();
+    settled.tools.editBrief(undefined, 'acceptance', SETTLED);
+    expect(settled.board.branchShipped(settled.key, pr({ state: 'MERGED' })).activity.at(-1)?.text).toBe('moved this from In Progress to Done');
+  });
+
+  it('held after its merge, its worktree deleted or archived: Done, since nobody is left to settle them (BLG-1022)', () => {
+    for (const how of ['deleted', 'archived'] as const) {
+      const { board, key } = setup();
+      board.prChanged('w1', pr({ state: 'MERGED' }));
+      expect(board.need(key)).toMatchObject({ status: 'in_review', mergedHeld: true });
+      board.worktreeGone('w1', true, how);
+      const done = board.need(key);
+      expect(done).toMatchObject({ status: 'done' });
+      expect(done.mergedHeld).toBeUndefined();
+      expect(done.needsChecks).toBeUndefined();
+      expect(done.worktreeGone).toBeUndefined();
+      expect(done.worktrees).toEqual(how === 'deleted' ? [] : ['w1']);
+      expect(done.activity.map((a) => a.text).slice(-2)).toEqual([
+        `its worktree was ${how}`,
+        `its work is merged and its worktree was ${how}; 2 criteria are neither ticked nor explained (${OPEN_LINE}): moved this from In Review to Done`,
+      ]);
+    }
+  });
+
+  it('not merged, its worktree deleted: still asks what to do, as before', () => {
+    const { board, key } = setup();
+    board.worktreeGone('w1', true, 'deleted');
+    expect(board.need(key)).toMatchObject({ status: 'in_progress', worktreeGone: true });
   });
 
   it('a worktree merged into main here follows the same rule', () => {

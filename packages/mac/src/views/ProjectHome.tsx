@@ -45,7 +45,9 @@ import { type Issue, STATUS_INFO } from "@beluga/core/board/model.js";
 import { StatusIcon } from "../tasks/marks.js";
 import { useTaskActions } from "../tasks/use-tasks.js";
 import { withChatWords } from "@beluga/shared/chat-ref.js";
-import { branchOptions } from "../chat/WorktreeDraft.js";
+import { ThenField, branchOptions } from "../chat/WorktreeDraft.js";
+import { liveBaseChoice, pruneBaseChoice, rememberBase } from "../chat/base-choice.js";
+import { landChoice } from "../chat/land-choice.js";
 import { useBoxSuggestions } from "../chat/BoxSuggestions.js";
 import { boxChats } from "../chat/chat-box.js";
 import { caretAfterDraw, useDraftChips } from "../chat/draft-chips.js";
@@ -203,7 +205,7 @@ function Header({ model }: { model: HomeModel }) {
       </div>
       {/* Its settings (General, Environment, Worktrees), in one sheet (BLG-926). */}
       {project.root ? (
-        <IconButton
+        <IconButton size="small"
           icon="gear"
           label="Project Settings…"
           className={s.settingsButton}
@@ -258,6 +260,8 @@ function HomeComposer({ project }: { project: Project }) {
   const [text, setText] = useState("");
   const [base, setBase] = useState<string>();
   const [name, setName] = useState("");
+  // Then (BLG-973): unset, as last time in this project.
+  const [land, setLand] = useState<boolean>();
   const [busy, setBusy] = useState(false);
   const [autonomy, setAutonomy] = useState<Autonomy>(DEFAULT_AUTONOMY);
   const plans = usePlanActions();
@@ -283,6 +287,7 @@ function HomeComposer({ project }: { project: Project }) {
     setText("");
     setName("");
     setBase(undefined);
+    setLand(undefined);
     setMode("worktree");
     setAutonomy(DEFAULT_AUTONOMY);
     ref.current?.focus();
@@ -313,9 +318,15 @@ function HomeComposer({ project }: { project: Project }) {
   const task = text.trim();
   // A plan with no goal yet opens the sheet, so the button is always ready.
   const ready = worktree
-    ? Boolean(task || name.trim() || att.images.length)
-    : plan || Boolean(task || att.images.length);
-  const chosen = base ?? branches?.base ?? project.base;
+    ? Boolean(task || name.trim() || att.images.length || att.files.length)
+    : plan || Boolean(task || att.images.length || att.files.length);
+  // Based on: picked here, else as last time in this project (BLG-1034), else its default.
+  const fallback = branches?.base ?? project.base;
+  const picked = base ?? liveBaseChoice(project.id, branches?.branches);
+  const chosen = picked ?? fallback;
+  useEffect(() => {
+    if (branches) pruneBaseChoice(project.id, branches.branches);
+  }, [project.id, branches]);
   const options = branches?.branches.length
     ? branches.branches
     : chosen
@@ -349,7 +360,9 @@ function HomeComposer({ project }: { project: Project }) {
         );
       return;
     }
-    if (plan && !task && !att.images.length) {
+    // A long paste still being kept as a file (BLG-988): this goes once it is.
+    if (att.whenSaved(() => void send(agent))) return;
+    if (plan && !task && !att.images.length && !att.files.length) {
       openSheet({ kind: "new_plan", projectId: project.id });
       return;
     }
@@ -372,10 +385,11 @@ function HomeComposer({ project }: { project: Project }) {
     }
     // Runs on one of your computers (BLG-788): the plan, worktree or chat is made there and opens at once.
     const named = name.trim();
+    const straight = (land ?? landChoice(project.id)) ? { land: true } : {};
     const there: WorkToStart = plan
       ? { kind: "plan", input: { goal: message, autonomy } }
       : worktree
-        ? { kind: "worktree", text: message, opts: { ...(base ? { base } : {}), ...(named ? { name: named } : {}), ...(agent ? { agent } : {}) } }
+        ? { kind: "worktree", text: message, opts: { ...(picked ? { base: picked } : {}), ...(named ? { name: named } : {}), ...(agent ? { agent } : {}), ...straight } }
         : { kind: "chat", text: message };
     const sent = sendToComputer(startDeps, project.id, agent?.runtime ?? myRuntime(client.store.getState().prefs), there);
     // Held (the computer Runs on names can't take it now): nothing starts, the words stay.
@@ -400,12 +414,13 @@ function HomeComposer({ project }: { project: Project }) {
       // The worktree is made in the background, its row and "Making…" page there at once (BLG-942): you can go on right away.
       setText("");
       setName("");
-      const ahead = makeAhead(client, project.id, named || message || "worktree", { ...(base ? { base } : {}), asked: message });
+      const ahead = makeAhead(client, project.id, named || message || "worktree", { ...(picked ? { base: picked } : {}), asked: message });
       void api.workspaces
         .startWorktree(project.id, message, {
-          ...(base ? { base } : {}),
+          ...(picked ? { base: picked } : {}),
           ...(named ? { name: named } : {}),
           ...(agent ? { agent } : {}),
+          ...straight,
           // Seen as its terminal (Settings › Terminal): the terminal opens on this message (BLG-553).
           ...(message.trim() && sendsToTerminal(client.store.getState(), getPrefs(), "draft", agent?.runtime) ? { terminal: true } : {}),
           ...(ahead ? { id: ahead.id } : {}),
@@ -481,7 +496,7 @@ function HomeComposer({ project }: { project: Project }) {
       {att.dropTarget}
       <div className={s.composerHead}>
         <h2 className={s.prompt}>What do you want to do in {project.name}?</h2>
-        <Segmented<Mode>
+        <Segmented<Mode> size="small"
           label="How to start"
           value={mode}
           onChange={(m) => {
@@ -569,7 +584,10 @@ function HomeComposer({ project }: { project: Project }) {
                     mono
                     label="Based on"
                     value={chosen}
-                    onChange={setBase}
+                    onChange={(b) => {
+                      rememberBase(project.id, b, fallback);
+                      setBase(b);
+                    }}
                     options={branchOptions(options, branches?.base)}
                     searchPlaceholder="Find a branch"
                   />
@@ -590,6 +608,7 @@ function HomeComposer({ project }: { project: Project }) {
                   }
                 />
               </label>
+              <ThenField projectId={project.id} base={chosen} land={land} onChange={setLand} />
             </>
           ) : plan ? (
             <span className={s.note}>
@@ -608,32 +627,35 @@ function HomeComposer({ project }: { project: Project }) {
           {/* Model and thinking effort for new conversations (a chat of its own pins effort once it exists). */}
           <ModelPicker channel="draft" />
           <span className={s.flex} />
-          {plan ? (
-            <label className={d.field}>
-              <span className={d.fieldLabel}>Runs</span>
-              <Select<Autonomy>
-                className={d.select}
-                size="small"
-                label="How it runs"
-                value={autonomy}
-                onChange={setAutonomy}
-                options={AUTONOMIES.map((a) => ({
-                  value: a,
-                  label: AUTONOMY_INFO[a].label,
-                  description: AUTONOMY_INFO[a].summary,
-                }))}
-              />
-            </label>
-          ) : null}
-          <MicButton box={ref} />
-          {worktree ? (
-            // Create Worktree, and its ▾: the same worktree worked by another agent (BLG-506).
-            <SplitButton label="Create with another agent" caretClassName={cx(d.create, ready && d.createReady)} items={startWith(undefined, (a) => void send(a))}>
-              {createButton}
-            </SplitButton>
-          ) : (
-            createButton
-          )}
+          {/* The actions keep together, on the right, when the bar takes two rows (#527). */}
+          <div className={s.actions}>
+            {plan ? (
+              <label className={d.field}>
+                <span className={d.fieldLabel}>Runs</span>
+                <Select<Autonomy>
+                  className={d.select}
+                  size="small"
+                  label="How it runs"
+                  value={autonomy}
+                  onChange={setAutonomy}
+                  options={AUTONOMIES.map((a) => ({
+                    value: a,
+                    label: AUTONOMY_INFO[a].label,
+                    description: AUTONOMY_INFO[a].summary,
+                  }))}
+                />
+              </label>
+            ) : null}
+            <MicButton box={ref} />
+            {worktree ? (
+              // Create Worktree, and its ▾: the same worktree worked by another agent (BLG-506).
+              <SplitButton label="Create with another agent" caretClassName={cx(d.create, ready && d.createReady)} items={startWith(undefined, (a) => void send(a))}>
+                {createButton}
+              </SplitButton>
+            ) : (
+              createButton
+            )}
+          </div>
         </div>
       </div>
     </section>

@@ -100,7 +100,7 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
       <div className={t.page}>
         <div className={t.pageMain} data-run-page={run.id}>
           <nav className={t.crumbs} aria-label="Where this run is">
-            <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
+            <IconButton size="small" icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
             <button type="button" className={t.crumb} onClick={() => a.openList()}>
               Sentinel
             </button>
@@ -116,7 +116,7 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
             <RunPill state={run.state} />
             {more.length ? (
               <ActionsDropdown items={more}>
-                <IconButton icon="more" label="More for this run" />
+                <IconButton size="small" icon="more" label="More for this run" />
               </ActionsDropdown>
             ) : null}
           </nav>

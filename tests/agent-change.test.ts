@@ -83,7 +83,7 @@ describe('a task’s agent, changed (BLG-498)', () => {
     await t.work.start(task.id, { claude: true });
     expect(t.made[0]!.agent).toBeUndefined();
     const said = t.work.setAgent(task.id, CODEX);
-    expect(said).toMatch(/keeps the agent it started with; Codex \(GPT-5\.5\) works .* from its next start/);
+    expect(said).toMatch(/keeps the agent it started with \(to switch it now, pick an agent in its conversation\); Codex \(GPT-5\.5\) works .* from its next start/);
     expect(t.made).toHaveLength(1);
   });
 
@@ -139,7 +139,7 @@ describe('a plan’s agent for its work, changed (BLG-498)', () => {
     await tick(10);
     expect(t.made).toHaveLength(1);
     expect(t.made[0]!.agent).toBeUndefined();
-    expect(t.plansWork.setWorkAgent(plan.id, LOCAL)).toBe('Local model (Qwen3) works what starts next; the milestone already at work keeps its agent');
+    expect(t.plansWork.setWorkAgent(plan.id, LOCAL)).toBe('Local model (Qwen3) works what starts next; the milestone already at work keeps its agent (to switch it now, pick an agent in its conversation)');
     expect(t.made).toHaveLength(1);
     t.plansWork.setWorkAgent(plan.id, null);
     expect('agent' in t.plans.need(plan.id)).toBe(false);

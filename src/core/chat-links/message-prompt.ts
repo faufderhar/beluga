@@ -13,6 +13,7 @@ const quotedTitle = (title: string, max: number): string => fenced(oneLine(title
  * not take a `/name` there for a skill. The words go in a fence as data.
  */
 export function chatMessagePrompt(origin: ChatOrigin, text: string): string {
+  if (origin.sentinel) return sentinelPrompt(origin.sentinel.name, text);
   // The title is the sender's to write: it cannot close the quote or the tag it goes in.
   const source = quotedTitle(origin.title, 200) || 'another chat';
   return withoutSkillMentions([
@@ -27,7 +28,17 @@ export function chatMessagePrompt(origin: ChatOrigin, text: string): string {
 }
 
 /** Who asks, in the words of the prompt's first line: never the user's name. */
-export const chatMessageAsker = (origin: ChatOrigin): string => withoutSkillMentions(`an agent in another chat (${quotedTitle(origin.title, 60) || 'no title'}), not your user`);
+export const chatMessageAsker = (origin: ChatOrigin): string =>
+  withoutSkillMentions(origin.sentinel ? `your user's sentinel ${quotedTitle(origin.sentinel.name, 60) || 'with no name'}, on its schedule` : `an agent in another chat (${quotedTitle(origin.title, 60) || 'no title'}), not your user`);
+
+/**
+ * A prompt from one of your user's sentinels: your user wrote it and turned the sentinel on, so it
+ * is their request. Beluga's line comes first, so its words never start the prompt (no `/name`).
+ */
+function sentinelPrompt(name: string, text: string): string {
+  const source = quotedTitle(name, 200) || 'a sentinel';
+  return withoutSkillMentions([`[Beluga: your user's sentinel “${source}” sends this prompt on its schedule. Your user set it up.]`, '', text].join('\n'));
+}
 
 /**
  * Codex starts a skill for `$name` anywhere in a text input (a real codex-cli 0.163 does).

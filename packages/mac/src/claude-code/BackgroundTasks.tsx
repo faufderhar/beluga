@@ -94,9 +94,9 @@ function Output({ item, now }: { item: TaskItem; now: number }) {
         </span>
         <span className={cx(s.state, s[`tone_${tone}`])}>{label}</span>
         <span className={s.flex} />
-        <IconButton icon="copy" label="Copy Command" onClick={() => void copyText(t.command)} />
-        {out?.file ? <IconButton icon="external" label="Open Log With Its App" onClick={() => void openWithDefaultApp(client, out.file)} /> : null}
-        {out?.file ? <IconButton icon="folder" label={revealLog} onClick={() => void revealInFinder(client, out.file)} /> : null}
+        <IconButton size="small" icon="copy" label="Copy Command" onClick={() => void copyText(t.command)} />
+        {out?.file ? <IconButton size="small" icon="external" label="Open Log With Its App" onClick={() => void openWithDefaultApp(client, out.file)} /> : null}
+        {out?.file ? <IconButton size="small" icon="folder" label={revealLog} onClick={() => void revealInFinder(client, out.file)} /> : null}
       </div>
       <div className={cx(s.command, 'selectable')} title={t.command}>
         <span className={s.prompt}>$</span> {t.command}

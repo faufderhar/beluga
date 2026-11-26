@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { type VoiceModelId, VOICE_MODEL_IDS, VOICE_MODELS, voiceKnows } from '../shared/voice-models.js';
 import type { VoiceMacView } from '../companion/protocol.js';
 import { belugaHome } from './home.js';
-import { ASSISTANT_TITLE } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, THE_COMPUTER } from '../shared/assistant.js';
 
 /**
  * Your Mac writes down what you said (BLG-140, BLG-144): on the phone (it `put`s the WAV and calls
@@ -73,7 +73,7 @@ export class MacVoice {
 
   private fetchModel(model: VoiceModelId): Promise<void> {
     const f = VOICE_MODELS[model].files.mac;
-    if (!f) return Promise.reject(new Error(`${VOICE_MODELS[model].label} doesn’t run on the Mac`));
+    if (!f) return Promise.reject(new Error(`${VOICE_MODELS[model].label} doesn’t run on ${THE_COMPUTER}`));
     const on = this.getting.get(model);
     if (on) return on.done;
     const g = { got: 0, done: Promise.resolve() };
@@ -132,7 +132,7 @@ export class MacVoice {
   async transcribe(audio: string, a: { model: VoiceModelId; language: string; prompt?: string | undefined }): Promise<{ text: string; language?: string; ms: number }> {
     try {
       const m = VOICE_MODELS[a.model];
-      if (!m.files.mac) throw new Error(`${m.label} doesn’t run on the Mac`);
+      if (!m.files.mac) throw new Error(`${m.label} doesn’t run on ${THE_COMPUTER}`);
       if (!voiceKnows(a.model, a.language)) throw new Error(`${m.label} doesn’t know that language`);
       if (!(await this.ready(a.model))) {
         void this.fetchModel(a.model).catch(() => {});

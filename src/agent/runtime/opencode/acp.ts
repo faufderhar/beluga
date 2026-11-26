@@ -63,6 +63,8 @@ export type ToolContent = { readonly type: 'content'; readonly content: { readon
 
 export interface ToolCall {
   readonly toolCallId: string;
+  /** The tool's own name, when the agent says it (Antigravity's `run_command`, `mcp_<server>_<tool>`). */
+  readonly name?: string;
   readonly title?: string;
   readonly kind?: ToolKind;
   readonly status?: ToolStatus;

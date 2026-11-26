@@ -1,9 +1,10 @@
+import { namingFor } from '../shared/naming.js';
 import { existsSync } from 'node:fs';
 import { chmod, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { type PtyProcess, type TerminalManager, defaultShell, listShells, scriptShell } from '../terminal/index.js';
+import { type PtyProcess, type TerminalManager, defaultShell, installedMonoFonts, listShells, scriptShell, watchFontDirs } from '../terminal/index.js';
 import { type ShellChoice, commandArgs, shellArgs } from '../shared/shells.js';
 import type { EnvPlace } from './env-vars.js';
 import { systemOpen } from './os-open.js';
@@ -29,6 +30,7 @@ import { CONTINUE_PROMPT } from '../shared/run-failure.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type MergedMark, type Prefs, type Store, mergedText, shippedText } from './store.js';
+import type { Effort } from '../shared/settings-schema.js';
 import { lastLogAt } from './triage/facts.js';
 import { triageKey } from './triage/model.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
@@ -40,9 +42,8 @@ import { openCode } from '../workspaces/open-code.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
-import type { Effort } from '../shared/settings-schema.js';
 import { sentinelChatOf } from './sentinel/model.js';
-import { ASSISTANT_TITLE, assistantChatOf, assistantChatTitle, isAssistant } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, assistantChatOf, assistantChatTitle, isAssistant, THE_COMPUTER, THIS_COMPUTER } from '../shared/assistant.js';
 import { type AgentRef, defaultAgentOf } from '../protocol.js';
 import type { RuntimeChoice } from '../shared/agent-runtimes.js';
 import type { HandoffMode } from '../shared/agent-handoff.js';
@@ -65,7 +66,8 @@ export interface WorkbenchDeps {
   readonly loadSavedChat?: (id: string) => void;
   readonly setPrefs: (prefs: Partial<Prefs>) => void;
   /** Ask you before something runs by itself the first time (e.g. a repo's own setup command). */
-  readonly confirm?: (title: string, detail: string) => Promise<'yes' | 'no' | 'always'>;
+  /** `channel`: the conversation it's about (a worktree's), so its notification opens there and not Your Mac. */
+  readonly confirm?: (title: string, detail: string, channel?: string) => Promise<'yes' | 'no' | 'always'>;
   /** Open a URL or a file with the system's default app. */
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked at start, and again once Claude Code moved to a newer one). */
@@ -121,6 +123,10 @@ export interface WorkbenchDeps {
   readonly envFor?: (where: EnvPlace) => Record<string, string>;
   /** The shells you can pick (injected in tests). */
   readonly listShells?: () => ShellChoice[];
+  /** The monospace fonts installed here, for the terminal's font (injected in tests). */
+  readonly listFonts?: (fresh: boolean) => Promise<string[]>;
+  /** Calls back when fonts are installed or removed; returns how to stop (injected in tests). */
+  readonly watchFonts?: (onChange: () => void) => () => void;
   /** What a project's setup should be after it failed in `dir` (a small model looks). */
   readonly fixSetup?: (dir: string, failed: string, output: string) => Promise<SetupFix | undefined>;
   /** What a project's run command should be after it failed in `dir` (a model looks). */
@@ -142,7 +148,7 @@ export function withRuntimeStatus(runtimes: readonly RuntimeChoice[], found: Rea
     if (!st) return r;
     const models = st.models.length ? st.models : r.models;
     if (st.state === 'ready') return { id: r.id, label: r.label, available: true, ...(models ? { models } : {}), state: 'ready' };
-    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on this Mac` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': '), state: st.state, ...(st.fix ? { fix: st.fix } : {}) };
+    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on ${THIS_COMPUTER}` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': '), state: st.state, ...(st.fix ? { fix: st.fix } : {}) };
   });
 }
 
@@ -281,6 +287,8 @@ const samePr = (a: PullRequest | undefined, b: PullRequest | undefined): boolean
 const repoOfPr = (url: string): string => url.replace(/\/pull\/\d+.*$/, '').toLowerCase();
 
 /** All an error said (a push's whole output, not just its line). */
+/** GitHub's answer when the branch adds nothing to its base. */
+const NOTHING_TO_PR = /No commits between/i;
 const rawOf = (err: unknown): string => (err && typeof err === 'object' && 'raw' in err && typeof err.raw === 'string' ? err.raw : err instanceof Error ? err.message : String(err));
 /** An error's first line ("no reason given" when it has none). */
 const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split('\n').find((l) => l.trim())?.trim() ?? 'no reason given';
@@ -345,6 +353,8 @@ export class Workbench {
   private readonly stopping = new Set<string>();
   /** Worktrees asked "do you want me to fix it?" right now, by `<ws>:<setup|run>` (one question at a time). */
   private readonly offered = new Set<string>();
+  /** Stops watching the font folders. */
+  private unwatchFonts?: () => void;
 
   constructor(private readonly deps: WorkbenchDeps) {}
 
@@ -360,6 +370,8 @@ export class Workbench {
     this.deps.store.dispatch({ type: 'templates', templates: loadTemplates() });
     this.deps.store.dispatch({ type: 'pr_custom', custom: Boolean(customPrPrompt()) });
     this.deps.store.dispatch({ type: 'shell_choices', shells: (this.deps.listShells ?? listShells)() });
+    this.refreshFonts(false);
+    this.unwatchFonts = (this.deps.watchFonts ?? watchFontDirs)(() => this.refreshFonts(true));
     void (this.deps.hasGh ?? hasGh)().then((ok) => {
       this.deps.store.dispatch({ type: 'gh', ok });
       if (ok) void this.refreshPrs();
@@ -384,6 +396,14 @@ export class Workbench {
   }
 
   /** Ask Claude Code for its models again (at start, and after it moved to a newer one). */
+  /** Reads which monospace fonts are installed (a Nerd Font you just added shows in Settings › Terminal). */
+  refreshFonts(fresh: boolean): void {
+    void (this.deps.listFonts ?? installedMonoFonts)(fresh).then(
+      (fonts) => this.deps.store.dispatch({ type: 'font_choices', fonts }),
+      () => undefined, // Fonts unreadable: the app falls back to the ones it knows.
+    );
+  }
+
   refreshModels(): void {
     void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
   }
@@ -395,6 +415,7 @@ export class Workbench {
     clearInterval(this.prTimer);
     clearTimeout(this.runtimeTimer);
     for (const off of this.watchers.values()) off();
+    this.unwatchFonts?.();
     this.deps.terminals?.closeAll();
   }
 
@@ -414,17 +435,19 @@ export class Workbench {
     this.deps.toast(`New conversations use ${label}`, 'success');
   }
 
-  /** Pick how hard one conversation thinks. Unset: Settings apply again. A channel with no conversation sets the default. */
-  setEffort(channel: string, effort: Effort | undefined): void {
-    const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  /**
+   * Pick how hard a conversation's agent thinks ('auto': it decides, whatever Settings says); a
+   * conversation keeps its own, so another chat's pick never changes it. `channel` undefined (or
+   * not a conversation) sets the default for new ones.
+   */
+  setEffort(channel: string | undefined, effort: Effort | 'auto'): void {
+    const id = channel?.startsWith('ws:') ? channel.slice(3) : undefined;
     if (id && this.manager.find(id)) {
-      this.manager.setEffort(id, effort);
+      this.manager.setEffort(id, effort === 'auto' ? null : effort);
       void this.deps.controller.refresh();
-      const word = effort === 'xhigh' ? 'Extra High' : effort ? `${effort[0]!.toUpperCase()}${effort.slice(1)}` : undefined;
-      this.deps.toast(word ? `${word} thinking in this conversation, from the next message` : 'This conversation follows the effort in Settings', 'success');
       return;
     }
-    this.deps.setPrefs({ effort });
+    this.deps.setPrefs({ effort: effort === 'auto' ? undefined : effort });
   }
 
   /**
@@ -466,7 +489,8 @@ export class Workbench {
       return;
     }
     const project = this.manager.list.find((p) => p.id === ws.projectId);
-    const prompt = buildPrPrompt({ branch: ws.branch, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', projectPrompt: project?.scripts?.prPrompt, extra });
+    const titleRule = namingFor(this.deps.store.getState().prefs, project).prTitle?.value;
+    const prompt = buildPrPrompt({ branch: ws.branch, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', projectPrompt: project?.scripts?.prPrompt, extra, ...(titleRule ? { titleRule } : {}) });
     if (!this.deps.store.getState().prs[ws.id]) this.prAsked.add(ws.id);
     if (!opts.auto) this.deps.controller.open(ws.id);
     const ask = (): void => this.deps.askClaude(prompt, `ws:${ws.id}`);
@@ -527,6 +551,12 @@ export class Workbench {
       try {
         pr = await (this.deps.createPr ?? createPr)(ws.path, { base: fork?.branch ?? base, head: branch, ...text, ...(opts.draft ? { draft: true } : {}), ...(opts.https ? { https: true } : {}), ...(fork ? { to: fork } : {}) });
       } catch (err) {
+        // Its work is already on the base (merged or pushed there before): there's nothing to review, so no error.
+        if (NOTHING_TO_PR.test(rawOf(err))) {
+          const message = `Nothing to open a pull request for: everything on ${branch} is already on ${fork ? `${fork.owner}/${fork.repo}’s ` : ''}${fork?.branch ?? base}`;
+          this.deps.toast(message, 'info');
+          return { ok: false, message };
+        }
         return this.troubleOr(ws, err, 'GitHub didn’t open the pull request');
       }
       this.troubles.delete(id);
@@ -645,7 +675,7 @@ export class Workbench {
         return again();
       }
       case 'link':
-        return { ok: false, message: 'Links open on the Mac' };
+        return { ok: false, message: `Links open on ${THE_COMPUTER}` };
       case 'install_gh':
       case 'gh_login':
       case 'add_ssh_key':
@@ -1575,7 +1605,7 @@ export class Workbench {
       const key = `${project.id}\n${command}`;
       let asking = this.askingSetup.get(key);
       if (!asking) {
-        asking = this.deps.confirm(title, `${command}\n\n${from}. Allow it if you trust what's in it. "Always" remembers this exact command.`).finally(() => this.askingSetup.delete(key));
+        asking = this.deps.confirm(title, `${command}\n\n${from}. Allow it if you trust what's in it. "Always" remembers this exact command.`, `ws:${ws.id}`).finally(() => this.askingSetup.delete(key));
         this.askingSetup.set(key, asking);
       }
       void asking.then((answer) => {
@@ -1609,12 +1639,12 @@ export class Workbench {
     const sources = project ? [project.root, ...project.workspaces.filter((w) => w.id !== wsId && !w.pending && setups[w.id]?.status !== 'running').map((w) => w.path)] : [];
     const session = this.openSession(setupId(wsId), ws, clonedSetup(command, ws.path, sources) ?? command);
     if (!session) return;
+    // Quiet while it runs (the command is in its Terminal tab): one short toast when it's done.
     this.deps.store.dispatch({ type: 'setup', id: wsId, run: { status: 'running', command } });
-    this.deps.toast(`Setting up ${ws.name}: ${command}`);
     this.watchExit(setupId(wsId), session, (code) => {
       if (code === 0) {
         this.deps.store.dispatch({ type: 'setup', id: wsId, run: { status: 'done', command } });
-        this.deps.toast(`${ws.name} is set up`, 'success');
+        this.deps.toast(`${project?.name ?? ws.name}'s worktree is set up`, 'success');
         return;
       }
       if (learn && this.deps.fixSetup) return void this.retrySetup(ws, command, code, session.backlog(), session.exited?.signal);
@@ -1642,7 +1672,7 @@ export class Workbench {
     const what = kind === 'run' ? 'The run' : 'The setup';
     const tail = output.replace(ANSI, '').trimEnd().slice(-FAIL_TAIL_CHARS);
     void this.deps
-      .confirm(`${what} didn't work in ${ws.name}. Do you want me to fix it?`, `${command}\nstopped with exit code ${code ?? '?'}.${tail ? `\n\n${tail}` : ''}`)
+      .confirm(`${what} didn't work in ${ws.name}. Do you want me to fix it?`, `${command}\nstopped with exit code ${code ?? '?'}.${tail ? `\n\n${tail}` : ''}`, `ws:${ws.id}`)
       .then((answer) => {
         this.offered.delete(key);
         if (answer !== 'no') return this.fixFailed(ws, kind, command, code, output);

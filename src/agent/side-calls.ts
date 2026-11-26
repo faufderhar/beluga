@@ -5,13 +5,15 @@ import { describeProject } from './project-describer.js';
 import type { Complete } from './runtime/types.js';
 import { fixRun, fixSetup, workOutScripts } from './setup-fixer.js';
 import { draftTask } from './task-drafter.js';
+import { standIn } from './stand-in.js';
 import type { AgentBackend } from './types.js';
 
-type SideCalls = Required<Pick<AgentBackend, 'nameTask' | 'titlePlan' | 'titleChat' | 'answerChat' | 'fixSetup' | 'fixRun' | 'workOutScripts' | 'draftTask' | 'describeProject' | 'reviewPr'>>;
+type SideCalls = Required<Pick<AgentBackend, 'nameTask' | 'titlePlan' | 'titleChat' | 'answerChat' | 'fixSetup' | 'fixRun' | 'workOutScripts' | 'draftTask' | 'describeProject' | 'reviewPr' | 'standIn'>>;
 
 /**
  * The one-shot calls a backend makes besides runs (BLG-441): naming worktrees and plans, drafting
- * tasks, answering a friends' chat, fixing a setup, describing a project, reviewing a pull request.
+ * tasks, answering a friends' chat, fixing a setup, describing a project, reviewing a pull request,
+ * answering for you on Full Autopilot (stand-in.ts).
  * Each goes through a runtime's `complete`, so any default agent does them, not only Claude.
  * `cwd`: the room's folder; `model`: the backend's default (only a chat answer follows it).
  */
@@ -27,5 +29,6 @@ export function sideCalls(complete: Complete, cwd: string, model?: string): Side
     draftTask: (text, ctx) => draftTask(text, ctx, { cwd, complete }),
     describeProject: (dir, project) => describeProject(dir, project, { complete }),
     reviewPr: (input) => reviewPr(input, { complete }),
+    standIn: (req) => standIn(req, { cwd, complete, ...(model ? { model } : {}) }),
   };
 }

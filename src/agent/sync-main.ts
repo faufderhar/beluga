@@ -179,9 +179,10 @@ export function syncProbes(cwd: string, target: { branch: string; upstream: stri
     midOperation: () => ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD'].some((f) => existsSync(path.join(gitDir, f))),
     conflicted: (absPath) => {
       try {
-        const out = execFileSync('git', ['diff', '--name-only', '--diff-filter=U'], { cwd, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] });
+        // -z: a name git would quote (non-ASCII, core.quotepath) comes as it is.
+        const out = execFileSync('git', ['diff', '--name-only', '-z', '--diff-filter=U'], { cwd, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] });
         return out
-          .split('\n')
+          .split('\0')
           .filter(Boolean)
           .some((f) => path.resolve(cwd, f) === path.resolve(cwd, absPath));
       } catch {

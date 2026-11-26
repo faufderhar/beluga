@@ -1,13 +1,14 @@
 import { type KeyboardEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@beluga/core/plans/model.js';
-import { agentForChoice } from '@beluga/ui/agent-choice.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, FULL_AUTOPILOT_INFO, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@beluga/core/plans/model.js';
 import { Field, FormSheet, Popup, TextArea } from '../components/FormSheet.js';
-import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
+import { Checkbox } from '../components/Alert.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { RunsOnRow } from '../chat/RunsOn.js';
 import { myRuntime } from '../chat/ModelPicker.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import { AgentRoles, ONE_AGENT, type RoleChoice, rolesInput } from './AgentRoles.js';
 import { sendToComputer, useStartDeps } from '../machines/start-there.js';
 import { useTasksPrefs } from '../tasks/use-tasks.js';
 import { modeChange } from './plans-model.js';
@@ -19,9 +20,10 @@ import { useActions } from '../lib/actions.js';
 const AUTONOMY_ICON: Record<Autonomy, IconName> = { step: 'hand', gated: 'flag', autopilot: 'wand' };
 
 /**
- * A new plan: what it's for (Claude plans from it, reading the code) and how far it runs on its
- * own. Opened from a project it's that project's (no picker). More options: who works its
- * milestones and tasks (BLG-497; your default agent unless you pick another).
+ * A new plan: what it's for (Claude plans from it, reading the code), how far it runs on its own
+ * (Autopilot can go all the way: Full Autopilot, BLG-981), and who plans, builds and checks it, as
+ * one sentence (BLG-982; your default agent for all three unless you pick others). Opened from a
+ * project it's that project's (no picker).
  */
 export function NewPlanSheet({ projectId, close }: { projectId?: string; close: () => void }) {
   const startDeps = useStartDeps();
@@ -35,11 +37,11 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
   const known = projectId !== undefined && projects.some((p) => p.id === projectId);
   const [project, setProject] = useState((known ? projectId : projects.some((p) => p.id === prefs.project) ? prefs.project : projects[0]?.id) ?? '');
   const [autonomy, setAutonomy] = useState<Autonomy>(DEFAULT_AUTONOMY);
+  const [full, setFull] = useState(false);
   const [testsAt, setTestsAt] = useState<TestsAt>('milestone');
-  const agents = useAgentEntries();
   const runtimes = useApp((s) => s.runtimes);
-  const [agent, setAgent] = useState(YOUR_AGENT);
-  const [more, setMore] = useState(false);
+  const mine = useMyAgent();
+  const [roles, setRoles] = useState<RoleChoice>(ONE_AGENT);
   if (!projects.length) {
     // The sidebar's own "Add a Project…", one click away (every OS has it; not every one has a File menu).
     const addProject = (): void => {
@@ -59,10 +61,10 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
       canSubmit={Boolean(goal.trim() && project)}
       onCancel={close}
       onSubmit={async () => {
-        const chosen = agent !== YOUR_AGENT ? agentForChoice(agent, runtimes) : undefined;
-        const input = { goal: goal.trim(), autonomy, testsAt, ...(chosen ? { agent: chosen } : {}) };
+        const agents = rolesInput(roles, runtimes, mine);
+        const input = { goal: goal.trim(), autonomy, testsAt, ...agents, ...(autonomy === 'autopilot' && full ? { fullAuto: true } : {}) };
         // Runs on one of your computers (BLG-788): the plan is made there and opens at once; held, the sheet stays.
-        const sent = sendToComputer(startDeps, project, chosen?.runtime ?? myRuntime(prefsNow()), { kind: 'plan', input });
+        const sent = sendToComputer(startDeps, project, (agents.planner ?? agents.agent)?.runtime ?? myRuntime(prefsNow()), { kind: 'plan', input });
         if (sent === 'held') return;
         close();
         if (sent === 'sent') return;
@@ -87,26 +89,25 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
           How it runs
         </div>
         <AutonomyCards value={autonomy} onChange={setAutonomy} />
+        {autonomy === 'autopilot' ? <FullAutoBox checked={full} onChange={setFull} /> : null}
+        <div className={p.newPlanLabel}>Agents</div>
+        <AgentRoles value={roles} onChange={setRoles} />
         <div className={p.newPlanRow}>
           <span className={p.newPlanLabel}>When to run tests</span>
           <Popup label="When to run tests" value={testsAt} options={TESTS_AT.map((t) => ({ value: t, label: TESTS_AT_INFO[t].label }))} onChange={setTestsAt} />
         </div>
         <div className={p.newPlanHint}>{TESTS_AT_INFO[testsAt].hint}.</div>
-        <button type="button" className={p.newPlanMore} aria-expanded={more} onClick={() => setMore(!more)}>
-          <Icon name={more ? 'chevronDown' : 'chevronRight'} size={10} />
-          More options
-        </button>
-        {more ? (
-          <>
-            <div className={p.newPlanRow}>
-              <span className={p.newPlanLabel}>Agent</span>
-              <Popup label="Agent" value={agent} options={agents} onChange={setAgent} />
-            </div>
-            <div className={p.newPlanHint}>Who works its milestones and tasks: each worktree runs this agent and model.</div>
-          </>
-        ) : null}
       </div>
     </FormSheet>
+  );
+}
+
+/** Autopilot, all the way: nothing waits for you (BLG-981). Under the cards, only with Autopilot picked. */
+export function FullAutoBox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className={p.fullAuto}>
+      <Checkbox checked={checked} onChange={onChange} label="Never wait for me" detail="A stand-in agent answers what the plan’s agents would ask you, so it keeps going. A secret, a friend’s request or a task only you can do still waits for you." />
+    </div>
   );
 }
 
@@ -134,7 +135,7 @@ function GoalBox({ value, onChange }: { value: string; onChange: (v: string) => 
 }
 
 /** Step by Step, Check-ins, Autopilot: three cards you can read without hovering (a radio group; the arrows move). */
-function AutonomyCards({ value, onChange, current }: { value: Autonomy; onChange: (a: Autonomy) => void; current?: Autonomy }) {
+export function AutonomyCards({ value, onChange, current }: { value: Autonomy; onChange: (a: Autonomy) => void; current?: Autonomy }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -181,21 +182,27 @@ export function PlanModeSheet({ planId, close }: { planId: string; close: () => 
   const view = usePlanView(plan);
   const { api, act } = usePlanActions();
   const [mode, setMode] = useState<Autonomy>(plan?.autonomy ?? DEFAULT_AUTONOMY);
+  const [full, setFull] = useState(Boolean(plan?.fullAuto));
   if (!plan || !view) return <FormSheet title="How It Runs" intro="This plan is gone." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   const mixed = plan.body?.milestones.some((m) => m.autonomy && m.autonomy !== plan.autonomy);
-  const change = mode !== plan.autonomy || mixed ? modeChange(view, mode) : undefined;
+  const fullNow = mode === 'autopilot' && full;
+  const fullChange = fullNow !== Boolean(plan.fullAuto) && mode === plan.autonomy && !mixed ? fullAutoChange(fullNow) : undefined;
+  const change = fullChange ?? (mode !== plan.autonomy || mixed ? modeChange(view, mode) : undefined);
+  const nowLabel = plan.fullAuto ? FULL_AUTOPILOT_INFO.label : AUTONOMY_INFO[plan.autonomy].label;
   return (
     <FormSheet
       title="How It Runs"
       icon="flag"
-      intro={`“${plan.body?.title ?? plan.draft?.title ?? 'This plan'}” runs on ${AUTONOMY_INFO[plan.autonomy].label} now. Pick how it runs from here on.`}
+      intro={`“${plan.body?.title ?? plan.draft?.title ?? 'This plan'}” runs on ${nowLabel} now. Pick how it runs from here on.`}
       submitLabel={change?.title ?? 'Switch'}
       canSubmit={Boolean(change)}
       width={600}
       onCancel={close}
       onSubmit={async () => {
         close();
-        await act(() => api.setAutonomy(plan.id, mode), `Runs on ${AUTONOMY_INFO[mode].label} now`);
+        if (fullNow) await act(() => api.setFullAuto(plan.id, true), `Runs on ${FULL_AUTOPILOT_INFO.label} now`);
+        else if (plan.fullAuto && mode === 'autopilot') await act(() => api.setFullAuto(plan.id, false), 'Runs on Autopilot now: questions come to you again, for as long as Settings › Agent › Autopilot says');
+        else await act(() => api.setAutonomy(plan.id, mode), `Runs on ${AUTONOMY_INFO[mode].label} now`);
       }}
     >
       <div className={p.newPlan}>
@@ -203,6 +210,7 @@ export function PlanModeSheet({ planId, close }: { planId: string; close: () => 
           How it runs
         </div>
         <AutonomyCards value={mode} onChange={setMode} current={plan.autonomy} />
+        {mode === 'autopilot' ? <FullAutoBox checked={full} onChange={setFull} /> : null}
         {change ? (
           <div className={p.modeConfirm} role="status" aria-label="What changes">
             <p>{change.from}</p>
@@ -214,6 +222,13 @@ export function PlanModeSheet({ planId, close }: { planId: string; close: () => 
       </div>
     </FormSheet>
   );
+}
+
+/** Turning Full Autopilot on or off on a plan already on Autopilot, in the words modeChange uses. */
+export function fullAutoChange(on: boolean): { readonly title: string; readonly from: string; readonly now?: string } {
+  return on
+    ? { title: 'Never Wait for Me', from: 'From now on, what the plan’s agents would ask you a stand-in agent answers, and the plan carries on. A secret or a friend’s request still waits for you.', now: 'Anything waiting on you now is answered in a moment.' }
+    : { title: 'Answer Myself Again', from: 'From now on, what the plan’s agents ask waits for you again. The plan stays on Autopilot.' };
 }
 
 /** How you like plans cut: added to Claude's planning instructions every time. */

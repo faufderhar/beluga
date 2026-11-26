@@ -110,7 +110,7 @@ function PersonCard({ person, onBack, onClose }: { person: BoardPerson; onBack: 
     );
   };
   const action = person.friend ? (
-    <Button
+    <Button size="small"
       variant="primary"
       icon="person"
       onClick={() => {
@@ -121,11 +121,11 @@ function PersonCard({ person, onBack, onClose }: { person: BoardPerson; onBack: 
       Open Profile
     </Button>
   ) : person.theyAsked ? (
-    <Button variant="primary" onClick={() => void answerOffer(client, person.peerId, person.name, true)}>
+    <Button size="small" variant="primary" onClick={() => void answerOffer(client, person.peerId, person.name, true)}>
       Accept
     </Button>
   ) : (
-    <Button variant="primary" icon="plus" disabled={busy || person.asked || !person.projectId} onClick={addFriend}>
+    <Button size="small" variant="primary" icon="plus" disabled={busy || person.asked || !person.projectId} onClick={addFriend}>
       {person.asked ? 'Asked' : 'Add Friend'}
     </Button>
   );

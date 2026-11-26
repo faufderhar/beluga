@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackgroundAgents, PromptQueue, TurnRouter, startedPrompt } from '../src/agent/live-run.js';
 import type { AgentRunInput, FollowUp, RoomBridge, Steer } from '../src/agent/types.js';
 import { endProcess } from '../src/agent/claude-process.js';
@@ -203,6 +203,158 @@ describe('live runs', () => {
     expect(await done).toBe('started\n\njob finished');
     expect(script.models).toEqual([{ model: 'opus', afterPrompts: 2 }]);
     expect(script.prompts[2]).toContain('now opus');
+  });
+});
+
+describe('how long a run stays open for background work', () => {
+  const MINUTE = 60_000;
+  const init = { type: 'system', subtype: 'init', session_id: 's1' };
+  const shells = (...ids: string[]) => ({ type: 'system', subtype: 'background_tasks_changed', tasks: ids.map((task_id) => ({ task_id, task_type: 'local_bash', description: 'job' })) });
+  const closed = (): boolean => (script.queue as PromptQueue).closed;
+  // Only these two: the polling below runs on real setImmediate.
+  beforeEach(() => void vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+  afterEach(() => void vi.useRealTimers());
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+  const until = async (met: () => boolean): Promise<void> => {
+    while (!met()) await new Promise((r) => setImmediate(r));
+  };
+
+  /** A run whose scripted Claude Code says each batch (up to three messages) when told to. */
+  function start(batches: number, turns: Turn[] = []) {
+    const gates = Array.from({ length: batches }, () => deferred<object[]>());
+    script.prompts = [];
+    script.extra = [];
+    const seen = { usage: 0, inits: 0, offers: [] as boolean[] };
+    let send: ((f: FollowUp) => boolean) | undefined;
+    const heard: string[] = [];
+    script.turns = [
+      () => gates.flatMap(({ promise }) => [0, 1, 2].map((i) => promise.then((messages) => messages[i] ?? { type: 'system', subtype: 'status' }))),
+      ...turns,
+    ];
+    const input = runInput({
+      onEvent: (kind, t) => {
+        if (kind === 'usage') seen.usage++;
+        if (kind === 'text') heard.push(t);
+      },
+      // The run's first init, then each later one.
+      onHarness: () => void seen.inits++,
+      onFollowUps: (s) => {
+        seen.offers.push(Boolean(s));
+        send = s;
+      },
+    });
+    const done = createClaudeBackend({ cwd: process.cwd(), autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    let next = 0;
+    return {
+      done,
+      seen,
+      send: (f: FollowUp) => send!(f),
+      /** A turn that ends (its `usage` and what settles after it happen in one go). */
+      async turn(...messages: object[]) {
+        const before = seen.usage;
+        gates[next++]!.resolve(messages);
+        await until(() => seen.usage > before);
+      },
+      /** Messages up to a text in a turn that goes on. */
+      async open(...messages: object[]) {
+        const before = heard.length;
+        gates[next++]!.resolve(messages);
+        await until(() => heard.length > before);
+      },
+      /** Claude Code began a turn (its init), and said nothing in it yet. */
+      async began() {
+        const before = seen.inits;
+        gates[next++]!.resolve([init]);
+        await until(() => seen.inits > before);
+      },
+    };
+  }
+
+  it('counts 45 minutes from the last turn that left a command running, not the first', async () => {
+    const run = start(2);
+    await run.turn(shells('a'), text('one'), result('one'));
+    vi.advanceTimersByTime(40 * MINUTE);
+    await run.turn(shells('b'), text('two'), result('two'));
+    vi.advanceTimersByTime(44 * MINUTE);
+    expect(closed()).toBe(false);
+    // Offered once, however often it's kept open again.
+    expect(run.seen.offers).toEqual([true]);
+    // A command that never ends (a dev server) still ends the run.
+    vi.advanceTimersByTime(MINUTE);
+    expect(closed()).toBe(true);
+    expect(run.seen.offers).toEqual([true, false]);
+    expect(await run.done).toBe('one\n\ntwo');
+  });
+
+  it('never closes the run in the middle of a turn; the limit counts again from its end', async () => {
+    const run = start(3);
+    await run.turn(shells('a'), text('one'), result('one'));
+    vi.advanceTimersByTime(44 * MINUTE);
+    await run.open(text('two'));
+    vi.advanceTimersByTime(4 * 60 * MINUTE);
+    expect(closed()).toBe(false);
+    await run.turn(result('two'));
+    vi.advanceTimersByTime(44 * MINUTE);
+    expect(closed()).toBe(false);
+    vi.advanceTimersByTime(MINUTE);
+    expect(closed()).toBe(true);
+    await run.done;
+  });
+
+  it('takes the limit of the work that is live at the last turn', async () => {
+    const run = start(2);
+    await run.turn(tasks('agent'), text('one'), result('one'));
+    vi.advanceTimersByTime(60 * MINUTE);
+    expect(closed()).toBe(false);
+    await run.turn(shells('server'), text('two'), result('two'));
+    vi.advanceTimersByTime(45 * MINUTE);
+    expect(closed()).toBe(true);
+    await run.done;
+
+    const other = start(2);
+    await other.turn(shells('server'), text('one'), result('one'));
+    await other.turn(tasks('agent'), text('two'), result('two'));
+    vi.advanceTimersByTime(179 * MINUTE);
+    expect(closed()).toBe(false);
+    vi.advanceTimersByTime(MINUTE);
+    expect(closed()).toBe(true);
+    await other.done;
+  });
+
+  it('does not close on a turn Claude Code began but has said nothing in yet', async () => {
+    const run = start(3);
+    await run.turn(shells('a', 'server'), text('one'), result('one'));
+    vi.advanceTimersByTime(44 * MINUTE);
+    await run.began();
+    vi.advanceTimersByTime(5 * MINUTE);
+    expect(closed()).toBe(false);
+    await run.turn(shells('server'), text('two'), result('two'));
+    vi.advanceTimersByTime(45 * MINUTE);
+    expect(closed()).toBe(true);
+    await run.done;
+  });
+
+  it('does not close on a message sent between turns that Claude has not started on yet', async () => {
+    const reply = deferred<object>();
+    const run = start(1, [() => [reply.promise, result('reply')]]);
+    await run.turn(shells('server'), text('one'), result('one'));
+    vi.advanceTimersByTime(44 * MINUTE);
+    const errors: string[] = [];
+    const answered = deferred<string>();
+    expect(run.send({ prompt: 'and this?', requesterName: 'kay', viaAgent: false, context: [], onEvent: () => undefined, onDone: answered.resolve, onError: (e: string) => void errors.push(e) })).toBe(true);
+    vi.advanceTimersByTime(5 * MINUTE);
+    expect(closed()).toBe(false);
+    reply.resolve(text('reply'));
+    expect(await answered.promise).toBe('reply');
+    expect(errors).toEqual([]);
+    vi.advanceTimersByTime(45 * MINUTE);
+    expect(closed()).toBe(true);
+    await run.done;
   });
 });
 

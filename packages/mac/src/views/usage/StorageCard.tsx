@@ -27,7 +27,7 @@ export function StorageCard({ rows, measuring, measured, onMeasure }: { rows: re
       label="Disk space"
       className={s.storage}
       title="Disk space"
-      aside={<IconButton icon="refresh" label={measuring ? 'Measuring…' : 'Measure Again'} className={cx(measuring && s.spinning)} disabled={measuring} onClick={onMeasure} />}
+      aside={<IconButton size="small" icon="refresh" label={measuring ? 'Measuring…' : 'Measure Again'} className={cx(measuring && s.spinning)} disabled={measuring} onClick={onMeasure} />}
     >
       <div className={cx(s.hero, waiting && s.heroWaiting)}>
         {waiting ? <Shimmer wide /> : <span className={s.heroValue}>{formatBytes(total)}</span>}

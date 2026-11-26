@@ -40,6 +40,8 @@ export const SENTINEL_API = {
   'sentinel.moveLand': { args: z.tuple([z.string().uuid(), z.string().min(1).max(200).nullish(), z.string().min(1).max(80)]) },
   // Gone from here with the tiles that showed only it: the copy runs on the other computer (or, there, a copy whose move didn't finish).
   'sentinel.moveDrop': { args: z.tuple([id]) },
+  // A chat's schedules (BLG-399): the sentinels whose chat step wakes it (its channel, or its ref) → ChatSchedule[].
+  'sentinel.forChat': { args: z.tuple([z.string().min(1).max(400)]) },
   // Its whole index (the last 200 runs), newest first, without outputs.
   'sentinel.runs': { args: z.tuple([id]) },
   // Delete what a run left (BLG-577): `chat` its agents' conversations, `run` those and the run itself

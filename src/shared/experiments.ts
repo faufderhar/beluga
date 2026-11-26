@@ -1,11 +1,17 @@
 /**
- * Experimental features (Settings › Experimental): early work that's off until you turn it on.
- * One list for the daemon (what Claude is told, what the API allows) and the screens (the pane
+ * Experimental features (Settings › Experimental): early work that's off until you turn it on,
+ * except the ones in DEFAULT_ON, which are on until you turn them off. One list for the daemon (what Claude is told, what the API allows) and the screens (the pane
  * that explains each one). Browser-safe: data only.
  */
 
 export const EXPERIMENTS = ['previews'] as const;
 export type Experiment = (typeof EXPERIMENTS)[number];
+
+/** Experiments that are on by default: the switch stays, as an off switch. */
+export const DEFAULT_ON: readonly Experiment[] = [];
+
+/** How the list says "off" for an experiment that is on by default ("-<id>"). */
+const offMark = (id: Experiment): string => `-${id}`;
 
 export interface ExperimentInfo {
   readonly id: Experiment;
@@ -37,13 +43,23 @@ export const EXPERIMENT_INFO: Readonly<Record<Experiment, ExperimentInfo>> = {
   },
 };
 
-/** Whether an experiment is on in a list of enabled ones (unknown ids from a newer Beluga are kept, never on). */
+/**
+ * Whether an experiment is on in the saved list (unknown ids from a newer Beluga are kept, never on).
+ * One that is on by default is on unless the list has its off mark.
+ */
 export function experimentOn(enabled: readonly string[] | undefined, id: Experiment): boolean {
+  if (DEFAULT_ON.includes(id)) return !enabled?.includes(offMark(id));
   return Boolean(enabled?.includes(id));
+}
+
+/** A live check of one experiment, for the daemon to hand to the code it gates (reads the prefs at each call). */
+export function experimentGate(enabled: () => readonly string[] | undefined, id: Experiment): () => boolean {
+  return () => experimentOn(enabled(), id);
 }
 
 /** The list with `id` turned on or off (a new list; order kept). */
 export function withExperiment(enabled: readonly string[], id: Experiment, on: boolean): string[] {
-  const rest = enabled.filter((e) => e !== id);
+  const rest = enabled.filter((e) => e !== id && e !== offMark(id));
+  if (DEFAULT_ON.includes(id)) return on ? rest : [...rest, offMark(id)];
   return on ? [...rest, id] : rest;
 }

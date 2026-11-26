@@ -1,9 +1,10 @@
 import * as Popover from '@radix-ui/react-popover';
 import { type ButtonHTMLAttributes, type KeyboardEvent, type PointerEvent, type Ref, type RefCallback, useCallback, useId, useMemo, useRef, useState } from 'react';
 import { SelectMenu } from './SelectMenu.js';
-import { SEARCH_THRESHOLD, flatOptions, typeahead, wantsSearch } from './select-model.js';
+import { type NativeRow, nativeMenus, popUpNative } from '../lib/native-menu.js';
+import { SEARCH_THRESHOLD, flatOptions, isSection, typeahead, wantsSearch } from './select-model.js';
 import { OptionIcon, type SelectEntry, useTypeahead } from './select-parts.js';
-import { cx } from './ui.js';
+import { type ControlSize, cx } from './ui.js';
 import s from './select.module.css';
 
 export { SEARCH_THRESHOLD } from './select-model.js';
@@ -21,7 +22,8 @@ export interface SelectProps<T extends string> extends TriggerProps {
   readonly label: string;
   /** Shown when the value isn't one of the options. */
   readonly placeholder?: string;
-  readonly size?: 'regular' | 'small';
+  /** docs/mac-controls.md: regular in content, small in dense rows and panels, large in the toolbar. */
+  readonly size?: ControlSize;
   /** 'fit': as wide as its longest option (like a Mac pop-up button); 'full': the row's width. */
   readonly width?: 'fit' | 'full';
   /** Monospaced (branches, paths). */
@@ -43,6 +45,34 @@ function useMergedRef<E>(...refs: Array<Ref<E> | undefined>): RefCallback<E> {
 }
 
 const isTypeKey = (e: KeyboardEvent): boolean => e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey;
+
+/**
+ * The options as the Mac's own pop-up menu (lib/native-menu.ts): sections with their titles, a
+ * description as the line under an option, its icon, a checkmark on the chosen one. `chosen` is
+ * the chosen row's index (-1 when the value isn't one of them).
+ */
+export function nativeSelectRows<T extends string>(options: readonly SelectEntry<T>[], value: T, choose: (value: T) => void): { rows: NativeRow[]; chosen: number } {
+  const rows: NativeRow[] = [];
+  options.forEach((entry, at) => {
+    const group = isSection(entry) ? entry.options : [entry];
+    group.forEach((o, i) => {
+      const first = i === 0 && rows.length > 0;
+      const header = isSection(entry) && i === 0 && entry.section ? entry.section : undefined;
+      // A loose option after a section starts a new block, as in the web menu.
+      const afterSection = !isSection(entry) && at > 0 && isSection(options[at - 1]!);
+      rows.push({
+        label: o.label,
+        ...(typeof o.description === 'string' && o.description ? { hint: o.description } : {}),
+        ...(o.disabled ? { disabled: true } : {}),
+        ...(typeof o.icon === 'string' ? { icon: o.icon } : o.icon ? { mark: o.icon } : {}),
+        ...(o.value === value ? { checked: true } : {}),
+        ...(header ? { header } : (first && isSection(entry)) || afterSection ? { separate: true } : {}),
+        onSelect: () => choose(o.value),
+      });
+    });
+  });
+  return { rows, chosen: flatOptions(options).findIndex((o) => o.value === value) };
+}
 
 /** The up-and-down chevrons of a Mac pop-up button. */
 function Chevrons() {
@@ -95,7 +125,8 @@ export function Select<T extends string>(props: SelectProps<T>) {
     if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
       pressed.current = null;
-      show(true);
+      if (native) openNative();
+      else show(true);
     } else if (isTypeKey(e)) {
       // Like the native pop-up: typing on it (closed) picks the option starting with what's typed.
       e.preventDefault();
@@ -110,8 +141,23 @@ export function Select<T extends string>(props: SelectProps<T>) {
     if (e.defaultPrevented || disabled || e.button !== 0 || e.ctrlKey || e.pointerType !== 'mouse') return;
     e.preventDefault();
     trigger.current?.focus({ preventScroll: true });
+    if (native) return openNative();
     pressed.current = open ? null : { x: e.clientX, y: e.clientY };
     show(!open);
+  };
+
+  // The Mac's own pop-up menu, in the app on a Mac: the chosen option over the button, as an
+  // NSPopUpButton opens. A list long enough for a search field keeps the web menu and its field.
+  const native = !search && nativeMenus();
+  const openNative = (): void => {
+    const box = trigger.current?.getBoundingClientRect();
+    if (!box) return;
+    const { rows, chosen } = nativeSelectRows(options, value, choose);
+    // The menu's rows start past its checkmark column: back by it, so the names line up.
+    // It couldn't open (an older shell, a failed call): the web menu instead, so the press still opens one.
+    void popUpNative(rows, chosen >= 0 ? { x: box.left - 12, y: box.top - 1, selected: chosen } : { x: box.left, y: box.bottom + 4 }).then((shown) => {
+      if (!shown) show(true);
+    });
   };
 
   // Lists of a few options size the button to the longest, so it doesn't jump when the value changes.
@@ -131,7 +177,7 @@ export function Select<T extends string>(props: SelectProps<T>) {
           data-value={value}
           data-select-trigger=""
           disabled={disabled}
-          className={cx(s.trigger, size === 'small' && s.small, width === 'full' && s.full, mono && s.mono, !current && s.placeholder, className)}
+          className={cx(s.trigger, size === 'small' && s.small, size === 'large' && s.large, width === 'full' && s.full, mono && s.mono, !current && s.placeholder, className)}
           onKeyDown={keyDown}
           onPointerDown={pointerDown}
           onClick={(e) => {
@@ -141,7 +187,8 @@ export function Select<T extends string>(props: SelectProps<T>) {
             pointerType.current = '';
             if (e.defaultPrevented || e.detail === 0 || byMouse) return;
             pressed.current = null;
-            show(!open);
+            if (native) openNative();
+            else show(!open);
           }}
         >
           {current?.icon ? (

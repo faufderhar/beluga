@@ -1,21 +1,18 @@
+/* The room as a row of its own at the sidebar's foot, while the Beluga network is off. */
 .status {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 24px;
-  margin-left: -6px;
-  padding: 0 6px;
-  border-radius: 6px;
+  height: 36px;
+  padding: 0 10px 0 14px;
   color: var(--text-2);
+  text-align: left;
 }
-.status:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
+.status:hover,
 .status[data-state='open'] {
-  background: var(--bg-press);
+  background: var(--bg-hover);
   color: var(--text);
 }
 .statusLabel {
@@ -88,6 +85,10 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 12px;
+}
+/* Each button keeps its own width and padding: squeezed to share the row, their words touched the edges. */
+.buttons > * {
+  flex: none;
 }
 
 /* ---- the inspector's Room panel */

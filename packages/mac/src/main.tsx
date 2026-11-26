@@ -1,6 +1,8 @@
 // First: zod never probes eval (blocked by the CSP, BLG-672), and Beluga's storage keys become Beluga's before any module reads them.
 import './lib/zod-jitless.js';
 import './lib/storage-rename.js';
+// And Enter that picks an input method's words reaches no box (lib/ime-guard.ts), before anything else listens for keys.
+import './lib/install-ime-guard.js';
 import { Fragment, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { followOwnWords } from './i18n/own.js';
@@ -21,6 +23,11 @@ import { PartBoundary } from './lib/part-boundary.js';
 import s from './layout/Shell.module.css';
 import './styles/tokens.css';
 import './styles/base.css';
+// Dockview's own styles, then Beluga's look for them (the window's frame and the panel's dock).
+import 'dockview-react/dist/styles/dockview.css';
+import './styles/dock.css';
+// Last: a phone-wide window's sizes win (BLG-6).
+import './styles/phone.css';
 
 apply();
 if (inApp()) document.documentElement.dataset.app = 'tauri';

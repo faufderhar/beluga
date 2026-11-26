@@ -1,23 +1,24 @@
 import type { TrustLevel } from '../shared/settings-schema.js';
 import type { DomainState } from './store.js';
+import { knownOr } from '../shared/known-or.js';
 
 export type { TrustLevel } from '../shared/settings-schema.js';
 
 /** Plain-language names and what each level means, used everywhere it's shown. */
-export const TRUST_INFO: Readonly<Record<TrustLevel, { label: string; short: string; detail: string }>> = {
+export const TRUST_INFO: Readonly<Record<TrustLevel, { label: string; short: string; detail: string }>> = knownOr({
   blocked: { label: "Can't use my agent", short: 'blocked', detail: 'They can chat, but requests for your agent are declined.' },
   ask: { label: 'Ask me each time', short: 'asks you', detail: 'You approve each request. Their agent only reaches your shared folders; reading anything else asks you.' },
   trusted: { label: 'Trusted', short: 'trusted', detail: 'Requests run without asking. Commands, edits and files outside your shared folders still ask you.' },
   full: { label: 'Full trust', short: 'full trust', detail: 'Anything on this computer, without asking, like you would yourself. Beluga refuses commands and files that name secrets (.env, keys) and keeps your tokens out of their commands, but a determined friend could still get around that.' },
-};
+}, (v) => ({ label: v, short: v, detail: '' }));
 
 /** The same levels seen from the other side: what a friend's trust lets you (and your Claude) do there. */
-export const GRANT_INFO: Readonly<Record<TrustLevel, { short: string; detail: string }>> = {
+export const GRANT_INFO: Readonly<Record<TrustLevel, { short: string; detail: string }>> = knownOr({
   blocked: { short: 'nothing', detail: 'requests to their agent and their computer are declined' },
   ask: { short: 'ask each time', detail: 'they approve every request and every command' },
   trusted: { short: 'use their agent without asking', detail: 'requests run right away; commands and files outside shared folders ask them' },
   full: { short: 'anything, without asking', detail: 'requests and commands run right away, anywhere on their computer (Beluga refuses anything naming secrets)' },
-};
+}, (v) => ({ short: v, detail: '' }));
 
 /** May you ask this friend's computer to run commands? (they still approve unless they fully trust you) */
 export const canRunOn = (level: TrustLevel | undefined): boolean => level !== undefined && level !== 'blocked';

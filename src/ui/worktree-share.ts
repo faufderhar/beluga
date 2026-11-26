@@ -1,4 +1,5 @@
 import type { WsRole } from '../protocol.js';
+import type { ForkGrant } from '../shared/share-levels.js';
 import type { AppState } from '../core/store.js';
 import { cannotTake } from '../net/mesh/features.js';
 
@@ -18,15 +19,17 @@ export interface WorktreeShareRow {
   /** They have the whole project (every worktree), not just this one. */
   readonly wholeProject: boolean;
   readonly guest?: boolean;
+  /** A friend may also fork it, and with secrets (BLG-1019). */
+  readonly fork?: ForkGrant;
 }
 
 type ShareState = Pick<AppState, 'peers' | 'self' | 'members' | 'network' | 'projectShares' | 'projects'>;
 
 /** What a friend has of this worktree through a project grant. */
-function grantFor(state: ShareState, projectId: string | undefined, wsId: string, peerId: string): { role: WsRole; whole: boolean } | undefined {
+function grantFor(state: ShareState, projectId: string | undefined, wsId: string, peerId: string): { role: WsRole; whole: boolean; fork?: ForkGrant } | undefined {
   const g = projectId ? state.projectShares[projectId]?.[peerId] : undefined;
   if (!g || (g.only && !g.only.includes(wsId))) return undefined;
-  return { role: g.role, whole: !g.only };
+  return { role: g.role, whole: !g.only, ...(g.fork ? { fork: g.fork } : {}) };
 }
 
 export function worktreeShareRows(state: ShareState, wsId: string): WorktreeShareRow[] {
@@ -42,7 +45,7 @@ export function worktreeShareRows(state: ShareState, wsId: string): WorktreeShar
     // Shared over the network, it's changed and taken back there (it makes them a member too, BLG-623);
     // a friend already in it only through the room stays on the room's way until they're removed.
     const via = grant ? 'network' : room || !network ? 'room' : 'network';
-    rows.push({ peerId: f.peerId, name: f.name, access: room ?? grant?.role ?? 'none', via, wholeProject: Boolean(grant?.whole) });
+    rows.push({ peerId: f.peerId, name: f.name, access: room ?? grant?.role ?? 'none', via, wholeProject: Boolean(grant?.whole), ...(grant?.fork && via === 'network' ? { fork: grant.fork } : {}) });
   }
   for (const p of state.peers) {
     if (p.peerId === selfId || rows.some((r) => r.peerId === p.peerId)) continue;
@@ -79,6 +82,7 @@ export function sharedWithWords(people: readonly Pick<SharedWithPerson, 'name'>[
 
 /** What one row's line under the name says, about a worktree's sheet or a chat's (`what`). */
 export function shareRowDetail(row: WorktreeShareRow, inRoom: boolean, what: 'worktree' | 'chat' = 'worktree'): string {
+  if (row.access === 'contribute' && row.fork) return `${row.wholeProject ? 'Whole project: chats' : 'Chats'} and forks, ${row.fork === 'secrets' ? 'with secrets' : 'never a secret'}`;
   if (row.access === 'contribute') return row.wholeProject ? 'Works with your agent across the whole project' : 'Chats and asks your agent here';
   if (row.access === 'view') return row.wholeProject ? 'Follows the whole project, read-only' : 'Follows along, read-only';
   if (row.guest) return 'Guest';

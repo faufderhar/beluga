@@ -145,7 +145,28 @@ export interface PolicyContext {
    * withImagePaths), though Beluga's own folder stays secret otherwise.
    */
   readonly yourRun?: boolean;
+  /**
+   * Claude Code's plan folder for this run (~/.claude/plans, or in $CLAUDE_CONFIG_DIR). In plan mode
+   * it writes its plan there as Markdown: Claude Code's own note, outside every project, so it may,
+   * also from a main folder (#607). Nothing else there, only .md files, and only on runs with full
+   * scope (yours): someone else's could rewrite a plan of yours you're about to approve.
+   */
+  readonly plans?: string;
 }
+
+/** A Write or Edit of a plan file in Claude Code's plan folder (`ctx.plans`): where it really is, or undefined. */
+export function planFileOf(toolName: string, input: Record<string, unknown>, ctx: Pick<PolicyContext, 'cwd' | 'plans' | 'scope'>): string | undefined {
+  const field = WRITE_TOOLS[toolName];
+  if (!ctx.plans || ctx.scope !== 'full' || !field) return undefined;
+  const target = resolveTarget(ctx.cwd, input[field]);
+  return isPlanPath(target, ctx.plans) ? target : undefined;
+}
+
+/** A Markdown file in the plan folder, where it really is (a link there to another file is that file). */
+export const isPlanPath = (target: string, plans: string): boolean => {
+  const real = realOf(target);
+  return path.extname(real).toLowerCase() === '.md' && within(plans, target) && !secretAt(target);
+};
 
 /** `yourRun` for a run's policy: only you asked (a friend's run has no canUseSecret; an external agent's is asOwner). */
 export const isYourRun = (input: { readonly canUseSecret?: unknown; readonly guest?: boolean; readonly asOwner?: boolean }): boolean => Boolean(input.canUseSecret) && !input.guest && !input.asOwner;
@@ -567,6 +588,8 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
   // Your own Claude's .env: judged as any file there, then it asks you (decideTool).
   const dotenv = ctx.dotenv === true && touchesDotenv(toolName, input, ctx, opened);
   if (ctx.askOnly && changesMain(toolName, input, ctx)) return 'deny';
+  // Claude Code's own plan, in its plan folder: no project's file, so it never needs anyone's yes (#607).
+  if (planFileOf(toolName, input, ctx)) return 'allow';
   if (ctx.guest && toolName.startsWith('mcp__beluga__')) return 'deny';
   if (ctx.boardAsks && asksForBoard(toolName, ctx.boardAsks)) return 'ask';
   if (ALWAYS_OK.has(toolName)) return 'allow';
@@ -652,6 +675,8 @@ function changesMain(toolName: string, input: Record<string, unknown>, ctx: Poli
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {
     const target = resolveTarget(ctx.cwd, input[writeField]);
+    // Claude Code's plan file is outside the project: planning from a main folder writes it (#607).
+    if (planFileOf(toolName, input, ctx)) return false;
     return !(ctx.fixup && inside(path.resolve(ctx.fixup), target)) && !ctx.syncMain?.conflicted?.(target);
   }
   if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));

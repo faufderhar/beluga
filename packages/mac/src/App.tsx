@@ -12,10 +12,9 @@ import { MenuSheet } from './dialogs/MenuSheet.js';
 import { Palette } from './dialogs/Palette.js';
 import { Settings } from './dialogs/Settings.js';
 import type { SettingsPane } from './lib/beluga.js';
-import { Pane } from './machines/MachinePane.js';
 import { useRemoteWork } from './machines/use-remote.js';
 import { useRemoteAttentionWatch } from './machines/remote-attention.js';
-import { Sidebar } from './layout/Sidebar.js';
+import { Workbench } from './layout/Workbench.js';
 import { useActions } from './lib/actions.js';
 import { SHORTCUTS, TALK_ID, keyPlatform, shortcutFor } from './lib/shortcuts-model.js';
 import { fromKey, getBindings, isRecording, isShortcut, useMenuKeys } from './lib/shortcuts.js';
@@ -23,7 +22,6 @@ import { dialogOpen, navBack, navForward, useNavHistory } from './lib/nav.js';
 import { pageHasOwnBack } from './tasks/use-swipe-back.js';
 import { useApp, useBeluga } from './lib/beluga.js';
 import { setPowerSaving } from './lib/power.js';
-import { usePrefs } from './lib/prefs.js';
 import { joinRoom, runMenuItem, useMenuState, useNative, useNotificationTaps, useTrayStatus, useTraySpout, useWindowFocus } from './lib/native.js';
 import { AddProjectSheet } from './dialogs/AddProjectSheet.js';
 import { UndoToast } from './lib/undo-toast.js';
@@ -93,7 +91,7 @@ function useOverlays() {
       case 'templates':
         return ui.openMenu({ kind: 'templates' });
       case 'handoff':
-        if (wsId) ui.openMenu({ kind: 'handoff', id: wsId });
+        if (wsId) ui.openMenu({ kind: 'ws_share', id: wsId, takeOver: true });
         return;
       case 'welcome':
         return ui.openMenu({ kind: 'welcome' });
@@ -197,7 +195,6 @@ function typingIn(target: EventTarget | null): boolean {
 }
 
 export function App() {
-  const prefs = usePrefs();
   const { client, ui } = useBeluga();
   const actions = useActions();
   const [joining, setJoining] = useState<string>();
@@ -241,9 +238,7 @@ export function App() {
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       {/* Behind the welcome the app can't be tabbed to or read out. */}
       <div className={s.app} inert={welcome.open} data-app-root>
-        {prefs.sidebar ? <Sidebar /> : null}
-        {/* This Mac's center and panel, or a page on one of your computers drawn with its client (BLG-784). */}
-        <Pane />
+        <Workbench />
       </div>
       <MenuSheet />
       <AddProjectSheet />
@@ -265,7 +260,7 @@ export function App() {
       <CallLayer />
       <MessageBanner />
       <UndoToast />
-      {welcome.open ? <Onboarding start={welcome.start} onClose={welcome.close} onArrive={welcome.arrive} /> : null}
+      {welcome.open ? <Onboarding start={welcome.start} fade={welcome.fade} onClose={welcome.close} onArrive={welcome.arrive} onPick={welcome.picked} /> : null}
     </Tooltip.Provider>
   );
 }

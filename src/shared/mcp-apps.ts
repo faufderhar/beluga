@@ -14,6 +14,8 @@ export interface StepApp {
   readonly resourceUri: string;
   /** The result's `structuredContent`, when it had some that fit (see mcp-apps/domain/result.ts). */
   readonly structuredContent?: unknown;
+  /** The result's own `_meta` (data a server means for its view only, never the model), when it fit. Untrusted. */
+  readonly resultMeta?: Readonly<Record<string, unknown>>;
 }
 
 /** `apps.get`: an app to draw, or why there is none. */
@@ -27,8 +29,8 @@ export type McpAppView =
       readonly resourceUri: string;
       /** The tool call's arguments (bounded, secrets redacted). */
       readonly input: Readonly<Record<string, unknown>>;
-      /** The tool's result: its text (as the step keeps it) and its structured content. Absent while it runs. */
-      readonly result?: { readonly text?: string; readonly structuredContent?: unknown; readonly isError?: boolean };
+      /** The tool's result: its text (as the step keeps it), its structured content and its own `_meta`. Absent while it runs. */
+      readonly result?: { readonly text?: string; readonly structuredContent?: unknown; readonly _meta?: Readonly<Record<string, unknown>>; readonly isError?: boolean };
       readonly prefersBorder?: boolean;
     }
   | { readonly ok: false; readonly reason: 'missing' | 'unavailable'; readonly message: string };
@@ -37,6 +39,8 @@ export type McpAppView =
 export interface AppToolResult {
   readonly content: ReadonlyArray<Readonly<Record<string, unknown>> & { readonly type: string }>;
   readonly structuredContent?: unknown;
+  /** The result's own `_meta`, for the app's view. */
+  readonly _meta?: Readonly<Record<string, unknown>>;
   readonly isError?: boolean;
 }
 

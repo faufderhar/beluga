@@ -219,17 +219,17 @@ export function PreviewView({ ref_: ref, wsId, embedded = false }: { ref_: Previ
           ) : null}
           {p.pinned.length ? <span className={s.pinChip}>{p.pinned.map((x) => x[0]!.toUpperCase() + x.slice(1)).join(', ')} pinned</span> : null}
           <span className={s.grow} />
-          {page ? <Segmented label="Width" value={size} onChange={setSize} options={PREVIEW_SIZES.map((v) => ({ value: v, label: SIZE_LABEL[v] }))} /> : null}
+          {page ? <Segmented size="small" label="Width" value={size} onChange={setSize} options={PREVIEW_SIZES.map((v) => ({ value: v, label: SIZE_LABEL[v] }))} /> : null}
           {!page && p.ok && fields.length && !p.gallery ? (
             <Button size="small" variant="quiet" icon="wrench" aria-pressed={showProps} className={cx(showProps && s.on)} onClick={() => setShowProps((v) => !v)}>
               Props
             </Button>
           ) : null}
-          <IconButton icon="refresh" label="Draw again" onClick={p.redraw} />
+          <IconButton size="small" icon="refresh" label="Draw again" onClick={p.redraw} />
           <ActionsDropdown items={items}>
-            <IconButton icon="more" label="More" />
+            <IconButton size="small" icon="more" label="More" />
           </ActionsDropdown>
-          {!embedded ? <IconButton icon="expand" label={expanded ? 'Smaller' : 'Bigger'} active={expanded} onClick={() => setExpanded((v) => !v)} /> : null}
+          {!embedded ? <IconButton size="small" icon="expand" label={expanded ? 'Smaller' : 'Bigger'} active={expanded} onClick={() => setExpanded((v) => !v)} /> : null}
         </figcaption>
         {ref.note ? <div className={s.note}>{ref.note}</div> : null}
         <div ref={stage} className={cx(s.stage, page && s.pageStage, p.canvas === 'dark' && s.stageDark, blocked && s.stageBlocked)} style={{ height: blocked ? undefined : stageHeight }}>

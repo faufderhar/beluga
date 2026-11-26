@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { SharedFork } from '@beluga/core/friend-share-store.js';
 import { trustOf } from '@beluga/core/trust.js';
+import { mayFork } from '@beluga/shared/share-levels.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Field, FormSheet, TextInput } from '../../components/FormSheet.js';
@@ -44,6 +45,7 @@ export function ForkToMacSheet({ owner, wsId, close }: { owner: string; wsId: st
   const ws = useApp((st) => st.shared.find((w) => w.id === wsId && w.owner === owner));
   const ownerName = useApp((st) => st.sharedProjects.find((p) => p.owner === owner)?.ownerName ?? st.network.friends.find((f) => f.peerId === owner)?.name ?? 'Your friend');
   const full = useApp((st) => trustOf(st, owner) === 'full');
+  const secrets = useApp((st) => st.sharedProjects.find((p) => p.owner === owner && p.worktrees.some((w) => w.id === wsId))?.forks === 'secrets');
   const [name, setName] = useState(ws?.name ?? '');
   if (!ws) return null;
   return (
@@ -64,13 +66,17 @@ export function ForkToMacSheet({ owner, wsId, close }: { owner: string; wsId: st
         <ul className={s.list}>
           <Row icon="branch" title="Its commits and uncommitted changes" detail="Uncommitted work stays uncommitted, as it was" />
           <Row icon="folder" title="Its Scratch" detail="Screenshots, notes and logs the agent saved" />
+          <Row icon="folder" title={`What ${ownerName} picked of what git ignores`} detail="Working files like .context/, when they chose them. Your agent is told what came and what didn’t" />
           <Row icon="chat" title="The conversation" detail="Your agent remembers it and carries on" />
         </ul>
       </Field>
       <Field label="Stays behind">
         <div className={m.note}>
           <Icon name="eyeOff" size={14} />
-          <span>node_modules, build output and anything else git ignores, made again by the setup here. Never a .env file or a key.</span>
+          <span>
+            {`node_modules, build output and anything else git ignores that ${ownerName} didn’t pick: the setup here makes what it can. `}
+            {secrets ? `A .env file or a key only comes if ${ownerName} ticked it.` : `Never a .env file or a key: ${ownerName} lets you fork without secrets, so your agent asks for what it needs.`}
+          </span>
         </div>
       </Field>
       {full ? null : (
@@ -132,8 +138,13 @@ export function ForkToMacButton({ owner, wsId }: { owner: string; wsId: string }
   const mine = useApp((st) => (fork?.wsId ? findWorkspace(st.projects, fork.wsId) : undefined));
   const ownerName = useApp((st) => st.network.friends.find((f) => f.peerId === owner)?.name ?? 'their');
   const online = useApp((st) => Boolean(st.network.friends.find((f) => f.peerId === owner)?.online));
+  // Only when its owner lets you fork it (BLG-1019): Can fork, or Can fork with secrets.
+  const allowed = useApp((st) => {
+    const project = st.sharedProjects.find((p) => p.owner === owner && p.worktrees.some((w) => w.id === wsId));
+    return project ? mayFork(project) : false;
+  });
   // A friend's plain chat has no project to fork.
-  if (!ws || ws.via !== 'mesh' || ws.role !== 'contribute' || ws.chat) return null;
+  if (!ws || ws.via !== 'mesh' || ws.role !== 'contribute' || ws.chat || !allowed) return null;
   if (fork?.state === 'ready' && mine && !mine.archived) {
     return (
       <Tip label={`Your fork, on ${mine.branch ?? 'its own branch'}`}>

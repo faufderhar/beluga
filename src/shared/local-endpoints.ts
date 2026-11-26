@@ -6,6 +6,7 @@
  * "<endpoint id>/<model>". Browser-safe: the daemon, the Mac app and the phone import it.
  */
 import type { RuntimeModel } from './agent-runtimes.js';
+import { THIS_COMPUTER } from './assistant.js';
 
 /** The runtime id local endpoints run under (see agent-runtimes.ts KNOWN_RUNTIMES). */
 export const LOCAL_RUNTIME = 'local';
@@ -13,6 +14,23 @@ export const LOCAL_RUNTIME = 'local';
 /** Ollama's Anthropic-compatible endpoint on this Mac: the blessed local stack (BLG-451). */
 export const OLLAMA_URL = 'http://localhost:11434';
 export const OLLAMA_ID = 'ollama';
+
+/**
+ * How an endpoint is spoken to. 'anthropic' (the default): Claude Code calls its /v1/messages
+ * itself. 'openai': it only has /v1/chat/completions (a gateway, vLLM, a provider's OpenAI API),
+ * so Beluga runs a translator on this computer between them (agent/runtime/openai-bridge.ts).
+ */
+export type EndpointFormat = 'anthropic' | 'openai';
+export const ENDPOINT_FORMATS: readonly EndpointFormat[] = ['anthropic', 'openai'];
+
+/**
+ * An OpenAI-format address for `path` ("chat/completions", "models"): an address that already ends
+ * in a version (…/v1, BigModel's …/api/paas/v4) takes it as it is, a bare one gets /v1.
+ */
+export function openaiUrl(baseUrl: string, path: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return /\/v\d+[a-z]*$/i.test(base) ? `${base}/${path}` : `${base}/v1/${path}`;
+}
 
 /** An endpoint id: short, no slash (it starts a model value). */
 export const ENDPOINT_ID = /^[a-z0-9][a-z0-9-]{0,19}$/;
@@ -22,6 +40,8 @@ export interface EndpointView {
   readonly id: string;
   readonly label: string;
   readonly baseUrl: string;
+  /** Unset: 'anthropic'. */
+  readonly format?: EndpointFormat;
   readonly hasKey: boolean;
   /** The models you listed (none: the ones it says it has). */
   readonly models: readonly string[];
@@ -90,7 +110,7 @@ export function localModels(endpoints: readonly EndpointChoice[]): RuntimeModel[
 
 /** Why the Local group can't be used at all (nothing set up), or undefined when some endpoint is there. */
 export function localWhy(endpoints: readonly EndpointChoice[]): string | undefined {
-  if (!endpoints.length) return 'Start Ollama on this Mac, or add an endpoint in Settings › Local models';
+  if (!endpoints.length) return `Start Ollama on ${THIS_COMPUTER}, or add an endpoint in Settings › Local models`;
   return undefined;
 }
 

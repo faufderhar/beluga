@@ -13,6 +13,7 @@ import { agentName, useMyAgent } from '../../lib/agent-words.js';
 import { useApi, useApp } from '../../lib/beluga.js';
 import { thisComputer } from '../../lib/os-words.js';
 import type { NativeMenuProps } from './index.js';
+import { useNamingFields } from './ProjectNamingFields.js';
 
 type Kind = 'setup' | 'run';
 type Source = NonNullable<ResolvedScripts['setup']>['source'];
@@ -29,7 +30,7 @@ const SOURCE: Record<Source, { label: string; tone: 'team' | 'mine' | 'guess'; d
 export type ProjectTab = 'general' | 'environment' | 'worktrees';
 
 const TABS: ReadonlyArray<{ value: ProjectTab; label: string; hint: string }> = [
-  { value: 'general', label: 'General', hint: 'Setup, Run and its agent' },
+  { value: 'general', label: 'General', hint: 'Setup, Run, naming and its agent' },
   { value: 'environment', label: 'Environment', hint: 'Its variables and .env' },
   { value: 'worktrees', label: 'Worktrees', hint: 'How worktrees share env' },
 ];
@@ -72,6 +73,7 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   useEffect(() => {
     if (!touched) setValues({ setup: setupNow, run: runNow });
   }, [setupNow, runNow]);
+  const naming = useNamingFields(project, team);
   if (!project) return null;
 
   const saved = (kind: Kind): string => scripts[kind]?.command ?? '';
@@ -89,7 +91,7 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   };
   // Guessed values say so (once), so you check them.
   const hint = (kind: Kind, what: string) => (!edited(kind) && scripts[kind]?.source === 'detected' ? `${what} Guessed from the project: check it.` : !edited(kind) && scripts[kind]?.source === 'claude' ? `${what} Your agent worked it out from the project: check it.` : what);
-  const changed = edited('setup') || edited('run') || team || auto !== autoSetup || agent !== agentNow || shares !== sharesNow;
+  const changed = edited('setup') || edited('run') || naming.changed || team || auto !== autoSetup || agent !== agentNow || shares !== sharesNow;
   // Only where there's something to leave out: a build that sends, at a level that sends.
   const offersShare = telemetry.available && Boolean(telemetry.level) && telemetry.level !== 'off';
 
@@ -100,6 +102,7 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
       if (team && (value || scripts[kind])) void api.workbench.setScript(project.id, kind, value, true);
       else if (!team && edited(kind)) void api.workbench.setScript(project.id, kind, value);
     }
+    naming.save(team);
     if (auto !== autoSetup) void api.session.setPrefs({ autoSetup: auto });
     if (shares !== sharesNow) void api.telemetry.exclude(project.root, !shares);
     if (agent !== agentNow) {
@@ -117,7 +120,7 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   );
   if (!general) {
     return (
-      <FormSheet title={`${project.name} Settings`} icon={tab === 'environment' ? 'lock' : 'branch'} intro={tab === 'environment' ? `For its terminals, commands and your agent. They stay on ${thisComputer()}.` : undefined} submitLabel={changed ? 'Save' : 'Done'} onSubmit={save} onCancel={close} cancelLabel={changed ? 'Cancel' : 'Close'} width={640} scrolls>
+      <FormSheet title={`${project.name} Settings`} intro={tab === 'environment' ? `For its terminals, commands and your agent. They stay on ${thisComputer()}.` : undefined} submitLabel={changed ? 'Save' : 'Done'} onSubmit={save} onCancel={close} cancelLabel={changed ? 'Cancel' : 'Close'} width={640} scrolls>
         {tabs}
         <div className={e.sheetBody} data-sheet-scroll>
           {tab === 'environment' ? (
@@ -135,13 +138,13 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
   return (
     <FormSheet
       title={`${project.name} Settings`}
-      icon="terminal"
-      intro="The commands every workspace of this project uses. Leave one empty for none."
+      intro="The commands and naming rules every workspace of this project uses. Leave a command empty for none."
       submitLabel={changed ? 'Save' : 'Done'}
       onSubmit={save}
+      canSubmit={naming.valid}
       onCancel={close}
       width={640}
-      footer={<Checkbox checked={team} onChange={setTeam} label="Save to beluga.json" detail="Everyone on the project gets them (commit the file)" />}
+      footer={<Checkbox checked={team} onChange={setTeam} label="Save to beluga.json" detail="Everyone on the project gets its commands and naming rules (commit the file)" />}
     >
       {tabs}
       <Field label="Setup" htmlFor="script-setup" hint={hint('setup', 'Runs in each new worktree, e.g. to install dependencies.')} aside={tag('setup')}>
@@ -150,6 +153,7 @@ export function ProjectSettings({ projectId, tab: first, close }: { projectId: s
       <Field label="Run" htmlFor="script-run" hint={hint('run', 'Starts the project when you click Run.')} aside={tag('run')}>
         <TextInput id="script-run" value={values.run} onChange={(v) => (setTouched(true), setValues({ ...values, run: v }))} mono placeholder="npm run dev" />
       </Field>
+      {naming.fields}
       <Field label="Agent" htmlFor="project-agent" hint="Runs this project's new conversations and answers when friends write @you about it.">
         <Popup id="project-agent" value={agent} onChange={setAgent} options={[{ value: '~', label: `Same as yours (${agentName(mine)})`, icon: agentMark(mine) }, ...agentEntries(agentChoices(runtimes, models))]} />
       </Field>

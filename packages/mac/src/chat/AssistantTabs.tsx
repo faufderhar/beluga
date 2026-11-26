@@ -42,7 +42,7 @@ export function AssistantTabs() {
           <ChatTab key={c.id} chat={c} open={c.id === open} only={chats.length === 1} onOpen={() => actions.run({ type: 'view', view: { kind: 'assistant', chat: c.id } })} onDelete={(title, last) => confirmDelete(title, last, () => api.assistant.deleteChat(c.id).catch(fail))} />
         ))}
       </div>
-      <IconButton icon="plus" label={`New chat with ${ASSISTANT_TITLE}`} className={s.add} onClick={() => api.assistant.newChat().catch(fail)} />
+      <IconButton size="small" icon="plus" label={`New chat with ${ASSISTANT_TITLE}`} className={s.add} onClick={() => api.assistant.newChat().catch(fail)} />
     </div>
   );
 }
@@ -63,7 +63,7 @@ function ChatTab({ chat, open, only, onOpen, onDelete }: { chat: AssistantChat; 
           {open ? null : <SignalMark signal={signal} />}
         </button>
       </Tip>
-      {deletable ? <IconButton icon="x" label={only ? 'Delete this chat and start over' : 'Delete this chat'} className={s.close} onClick={() => onDelete(title, only)} /> : null}
+      {deletable ? <IconButton size="small" icon="x" label={only ? 'Delete this chat and start over' : 'Delete this chat'} className={s.close} onClick={() => onDelete(title, only)} /> : null}
     </div>
   );
   return <ActionsContext items={() => chatLinkItems(client.store.getState(), client, chat.channel)}>{tab}</ActionsContext>;

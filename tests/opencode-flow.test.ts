@@ -327,7 +327,8 @@ describe('OpenCode on this Mac', () => {
   it('says whether it is installed and ready, with its models', async () => {
     expect(await openCodeStatus({ bin: undefined, models: async () => [] })).toMatchObject(findOpenCode() ? { state: 'signed_out' } : { state: 'missing' });
     expect(await openCodeStatus({ bin: '/x/opencode', models: async () => [{ value: 'opencode/big-pickle', label: 'Big Pickle', description: '' }] })).toMatchObject({ state: 'ready', models: [{ value: 'opencode/big-pickle' }] });
-    expect(await openCodeStatus({ bin: '/x/opencode', models: async () => undefined })).toMatchObject({ state: 'missing' });
+    // Found but not listing its models is installed (#568): never "Not installed".
+    expect(await openCodeStatus({ bin: '/x/opencode', models: async () => undefined })).toMatchObject({ state: 'signed_out' });
   });
 
   it('is a runtime with its own status, separate from Claude’s', () => {

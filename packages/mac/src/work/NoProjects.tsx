@@ -12,7 +12,7 @@ export function NoProjects({ icon, detail }: { icon: IconName; detail: string })
       detail={detail}
       action={
         <EmptyActions>
-          <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+          <Button size="large" variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
             Add a Project…
           </Button>
         </EmptyActions>

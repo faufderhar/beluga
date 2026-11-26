@@ -1,5 +1,5 @@
 import type { View } from '../../../../src/core/store.js';
-import type { PanelTab } from './panel-model.js';
+import type { DockTab } from './panel-model.js';
 
 /**
  * Back and forward between pages, as plain data (like a browser's history): the pages behind you,
@@ -14,14 +14,12 @@ export interface PanelSnapshot {
   readonly sidebar: boolean;
   /** The right panel. */
   readonly inspector: boolean;
-  /** The right panel's bottom pane (Terminal, Background). */
+  /** The right panel's groups under the top one (the terminal's dock: Terminal, Background) are open. */
   readonly bottomOpen: boolean;
-  /** The terminal drawer under the chat. */
+  /** The terminal under the chat is showing. */
   readonly drawer: boolean;
-  /** The tab the panel's top pane showed (Changes, Files, Scratch, Info…). */
-  readonly topTab?: PanelTab;
-  /** The tab its bottom pane showed. */
-  readonly bottomTab?: PanelTab;
+  /** The tabs the page's docks showed, oldest first (Changes, Files, Scratch, Info…; each group shows the latest of its own). */
+  readonly shown?: readonly DockTab[];
 }
 
 export interface NavEntry {
@@ -71,7 +69,7 @@ export const samePage = (a: View, b: View): boolean => pageKey(a) === pageKey(b)
 export const recordable = (view: View): boolean => (view.kind === 'machine' ? recordable(view.view) : view.kind !== 'draft' && view.kind !== 'draft_worktree');
 
 const sameSnapshot = (a: PanelSnapshot, b: PanelSnapshot): boolean =>
-  a.sidebar === b.sidebar && a.inspector === b.inspector && a.bottomOpen === b.bottomOpen && a.drawer === b.drawer && a.topTab === b.topTab && a.bottomTab === b.bottomTab;
+  a.sidebar === b.sidebar && a.inspector === b.inspector && a.bottomOpen === b.bottomOpen && a.drawer === b.drawer && (a.shown ?? []).join() === (b.shown ?? []).join();
 
 /** The newest `HISTORY_LIMIT` behind you. */
 const capBack = (list: readonly NavEntry[]): readonly NavEntry[] => (list.length > HISTORY_LIMIT ? list.slice(list.length - HISTORY_LIMIT) : list);

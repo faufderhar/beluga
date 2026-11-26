@@ -1,5 +1,5 @@
 // Relative, not @beluga: tests at the repo's root import this file too.
-import type { RuntimeChoice, RuntimeState } from '../../../../src/shared/agent-runtimes.js';
+import { type RuntimeChoice, type RuntimeState, isFixedRuntime } from '../../../../src/shared/agent-runtimes.js';
 import { thisComputer } from '../lib/os-words.js';
 
 /**
@@ -14,6 +14,7 @@ export const INSTALLS: Readonly<Record<string, { readonly page: string; readonly
   opencode: { page: 'https://opencode.ai/download', command: 'npm i -g opencode-ai' },
   grok: { page: 'https://x.ai/cli', command: 'curl -fsSL https://x.ai/cli/install.sh | bash' },
   copilot: { page: 'https://github.com/features/copilot/cli', command: 'npm i -g @github/copilot' },
+  antigravity: { page: 'https://antigravity.google/docs/getting-started?tab=cli', command: 'curl -fsSL https://antigravity.google/cli/install.sh | bash' },
 };
 
 /** Codex's own install: the app, or its CLI from npm. */
@@ -45,7 +46,7 @@ export const STATE_WORDS: Readonly<Record<RuntimeState, string>> = {
 
 export const FIX_LABEL: Readonly<Record<AgentFix, string>> = { sign_in: 'Sign In', install: 'Get Codex', set_up: 'Set Up…' };
 
-/** A row's button: "Sign In", "Get Codex", "Get OpenCode", "Get Copilot", "Set Up…". */
+/** A row's button: "Sign In", "Get Codex", "Get OpenCode", "Get Copilot", "Get Antigravity", "Set Up…". */
 export const fixLabel = (row: Pick<AgentRow, 'label' | 'fix'>): string => (row.fix === 'install' ? `Get ${row.label}` : row.fix ? FIX_LABEL[row.fix] : '');
 
 /** Where a runtime stands: what it said once asked, else ready when it runs here; undefined: not asked yet. */
@@ -81,6 +82,12 @@ const DETAIL: Readonly<Record<string, Partial<Record<RuntimeState, string>> & { 
     signed_out: 'Installed. Sign in once with your GitHub account (copilot login), and turn on Copilot for it (Free is enough).',
     missing: 'Install GitHub Copilot CLI, or in Terminal:',
   },
+  antigravity: {
+    // agent-wording: claude (the Claude models Antigravity's plans offer, by name)
+    ready: 'Google’s coding agent, through the Antigravity CLI, on the models your Antigravity plan has (Gemini, Claude and more).',
+    signed_out: 'Installed. Run agy in Terminal once to sign in with your Google account.',
+    missing: 'Install the Antigravity CLI, or in Terminal:',
+  },
   local: {
     ready: `A model of your own: Ollama on ${thisComputer()}, or an endpoint you added. Free.`,
     no_endpoint: `Ollama on ${thisComputer()}, or any endpoint you add. Free, on your own models.`,
@@ -96,7 +103,8 @@ function fixOf(id: string, state: RuntimeState | undefined): AgentFix | undefine
 
 /** The rows, in the pickers' order. `checked`: every runtime has been asked at least once. */
 export function agentRows(runtimes: readonly RuntimeChoice[], checked: boolean): AgentRow[] {
-  return runtimes.map((r) => {
+  // The fixed agents: your ACP agents (Antigravity, Cursor…) have their own rows, in Settings › Agent › ACP agents.
+  return runtimes.filter((r) => isFixedRuntime(r.id)).map((r) => {
     const state = stateOf(r, checked);
     const known = DETAIL[r.id];
     const detail = (state && known?.[state]) ?? (state === 'ready' || !state ? (known?.ready ?? '') : (r.fix ?? r.why ?? ''));

@@ -13,7 +13,7 @@ import { isRunning } from './format.js';
 import { steerWaiting } from '../shared/claude-notices.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';
 import { SPINNER, glyph, theme } from './theme.js';
-import { handoffPeople, worktreeShareRows } from './worktree-share.js';
+import { worktreeShareRows } from './worktree-share.js';
 
 /** Something clickable, in coordinates relative to the model's own top-left corner. */
 export interface Zone {
@@ -42,8 +42,7 @@ export type WorkspaceAction =
   | 'pr'
   | 'run'
   | 'stop_run'
-  | 'setup'
-  | 'handoff';
+  | 'setup';
 
 export type UiAction =
   | { readonly type: 'open_ws'; readonly id: string; readonly tab?: WorkspaceTab }
@@ -582,7 +581,9 @@ function sharedButton(state: AppState, wsId: string): WorkspaceButton {
     label: count ? `Shared · ${count}` : 'Share',
     action: 'share',
     tone: 'info',
-    hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : 'Invite a friend to just this worktree: they see the chat and files and can ask your agent here',
+    hint: count
+      ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people, or let someone take it over`
+      : 'Share with a friend: they work here with your agent, or take it over on their computer',
   };
 }
 
@@ -614,8 +615,6 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
   const conflict = Boolean(state.conflicts[ws.id]?.length);
   const pr = state.prs[ws.id];
   const scripts = project?.scripts;
-  // In your room with their Claude, or a friend over the network (BLG-341).
-  const friends = handoffPeople(state).length > 0;
   // What its runtime does instead (BLG-461): Compact greyed with why, Fork saying what comes along.
   const runtime = runtimeHere(ws.agent, state.self);
   const noCompact = fallbackFor(runtime, 'compact');
@@ -642,7 +641,6 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
                     hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
                     disabled: !ahead || changed > 0,
                   },
-              { label: 'Hand off', action: 'handoff', hint: friends ? "A friend's agent continues this on their computer" : state.network.enabled ? 'Add a friend first; then their agent can take this over' : 'Turn on the Beluga network to hand this to a friend, or invite someone to your room', disabled: !friends },
             ] as WorkspaceButton[])
           : []),
         ...(state.context[`ws:${ws.id}`] ? ([noCompact ? { label: 'Compact', action: 'compact', hint: noCompact, disabled: true } : { label: 'Compact', action: 'compact', hint: 'Shrink the conversation so your agent has room to keep going' }] as WorkspaceButton[]) : []),

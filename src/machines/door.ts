@@ -102,7 +102,8 @@ class MachineScreen {
   private welcomed = false;
   private timer?: NodeJS.Timeout;
   /** What to say again after a reconnect: the terminals it shows, where its attention is. */
-  private readonly terms = new Set<string>();
+  /** Terminals the screen shows → whether it asked for flow control (BLG-963), to attach again the same way. */
+  private readonly terms = new Map<string, boolean>();
   private attention?: string;
   /** Calls sent and not yet answered (failed at once when the link drops), with their method. */
   private readonly inflight = new Map<string, string>();
@@ -180,7 +181,7 @@ class MachineScreen {
       }
       // Back after a drop: the state as it is now, then what it showed.
       this.toScreen(encodeFrame({ t: 'snapshot', snapshot: frame.snapshot, seq: frame.seq }));
-      for (const term of this.terms) this.link?.send(encodeFrame({ t: 'term_attach', term }));
+      for (const [term, flow] of this.terms) this.link?.send(encodeFrame({ t: 'term_attach', term, ...(flow ? { flow } : {}) }));
       if (this.attention) this.link?.send(this.attention);
       return;
     }
@@ -239,7 +240,7 @@ class MachineScreen {
   }
 
   private pass(frame: ScreenFrame, text: string): void {
-    if (frame.t === 'term_attach') this.terms.add(frame.term);
+    if (frame.t === 'term_attach') this.terms.set(frame.term, frame.flow === true);
     if (frame.t === 'term_detach') this.terms.delete(frame.term);
     if (frame.t === 'attention') this.attention = text;
     const link = this.link;

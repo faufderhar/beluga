@@ -23,7 +23,8 @@ import { AgentRef } from '../../protocol.js';
  * - `chats`: the owner's plain chats (no project folder), each shared on its own: a friend gets
  *   their conversation and Scratch, never a copy or a fork.
  * - `fork_request`: a friend who works in one of your worktrees wants their own fork of it on their
- *   Mac (fork.ts), with the commits they `have` (left out of the pack). `fork_ready` says where to
+ *   Mac (fork.ts), with the commits they `have` (left out of the pack). Only a friend the project's
+ *   `forks` lets may (BLG-1019); secrets they get only with `forks: secrets`. `fork_ready` says where to
  *   fetch the pack and how many `files` are in it, for its progress (or `fork_failed`, why not).
  */
 
@@ -69,6 +70,8 @@ export const ShareMsg = z.discriminatedUnion('k', [
     copy: z.object({ url: repoUrl.optional() }).optional(),
     repo: repoUrl.optional(),
     chats: z.literal(true).optional(),
+    /** Whether they may fork its worktrees, and with secrets (BLG-1019). An older Mac sends none: working there could fork. */
+    forks: z.enum(['none', 'code', 'secrets']).optional(),
   }),
   z.object({ k: z.literal('copy_request'), id }),
   z.object({ k: z.literal('copy_ready'), id, share: id, size: z.number().int().min(0) }),

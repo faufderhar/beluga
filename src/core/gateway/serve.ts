@@ -18,6 +18,7 @@ import { type FileGet, MAX_FILES, MAX_QUESTIONS, type Need, type ResultStatus, t
 import { oneLine, parseAnswer, readResultFiles, taskPrompt } from './result.js';
 import { FileOffers } from './transfer.js';
 import type { Courier } from './transport.js';
+import { YOUR_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * The receiving side of the gateway: a friend's Claude asks yours, runs a command here, or asks
@@ -329,7 +330,7 @@ export class TaskServer {
       } else allowedBy = 'you approved it';
     } else {
       allowedBy = decided.by === 'rule' ? 'a rule of yours allows it' : 'you trust them';
-      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your agent to: ${requestGist(req, 80)}`;
+      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on ${YOUR_COMPUTER}` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from ${YOUR_COMPUTER}` : `ask your agent to: ${requestGist(req, 80)}`;
       ctx.notify(`${name}${req.by === 'agent' ? "'s agent" : ''}${req.via ? ` (via ${oneLine(req.via.name)})` : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
     }
     if (this.isOver(task.id)) return;
@@ -695,7 +696,7 @@ export class TaskServer {
     // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once.
     if (writesCode(tool, input, cwd)) {
       const file = String(input.file_path ?? input.notebook_path);
-      return (await this.askTool(task, `Your agent (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true })) !== 'no';
+      return (await this.askTool(task, `Your agent (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on ${YOUR_COMPUTER}`, file, { once: true })) !== 'no';
     }
     const scope = `${task.peerId}:${tool}`;
     if (this.alwaysTools.has(scope)) return true;

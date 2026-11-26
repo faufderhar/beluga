@@ -5,19 +5,23 @@
  * kept in ~/.beluga/telemetry.json (src/telemetry/record.ts). Browser-safe: the Mac app runs it.
  *
  * - off: nothing is sent.
- * - limited: what Beluga does, without any text: runs, tools, features, errors, this computer's kind.
- * - on: limited, plus the text of your own conversations (your prompts and the agent's answers),
- *   masked on this computer before anything leaves it. Never files, paths or commands.
+ * - limited: Beluga's own data, to Beluga's project: features used, calls to Beluga's own tools,
+ *   app moments, this computer's kind. No agent sessions, no text.
+ * - on: limited, plus your agents' sessions, to the agents project: turns, tokens, every tool,
+ *   Claude Code's own telemetry, and the text of your own conversations (your prompts and the
+ *   agent's answers), masked on this computer before anything leaves it. Never files or commands.
  *
- * Nothing is sent before a level is chosen. A new install chooses at the end of the onboarding
- * (Limited preselected; Skip keeps it). One that updated asks once (Share, Later, No thanks).
+ * Nothing is sent before a level is chosen, and no screen picks one for you: only a click on
+ * Essential or On shares. A new install chooses at the end of the onboarding (nothing picked; Skip,
+ * or Finish with nothing picked, is Off). One that updated asks once (Share once you pick a level,
+ * Later, No thanks). Who gets it and your rights: docs/privacy.md.
  */
 
 export const TELEMETRY_LEVELS = ['off', 'limited', 'on'] as const;
 export type TelemetryLevel = (typeof TELEMETRY_LEVELS)[number];
 
-/** What the onboarding and the ask preselect. */
-export const DEFAULT_LEVEL: TelemetryLevel = 'limited';
+/** The privacy notice for usage statistics, linked wherever a level is chosen. */
+export { PRIVACY_NOTICE_URL } from '../shared/privacy.js';
 
 /** Where a level was chosen. */
 export type TelemetryVia = 'onboarding' | 'ask' | 'settings';
@@ -105,12 +109,32 @@ export function chooseLevel(record: TelemetryRecord, level: TelemetryLevel, via:
   return { ...record, level, chosenAt: now, via, ...settled };
 }
 
+/** The record with a new install id (Reset ID): what was sent before stays under the old one, nothing links the two. */
+export function resetInstallId(record: TelemetryRecord, installId: string): TelemetryRecord {
+  return { ...record, installId };
+}
+
 /** The record after the ask was answered: Share keeps `level`, No thanks turns it off, Later changes nothing yet. */
 export function answerAsk(record: TelemetryRecord, answer: TelemetryAnswer, level: TelemetryLevel, ctx: Omit<AskContext, 'available'>): TelemetryRecord {
   const asked: TelemetryAsked = { round: ASK_ROUND, answer, at: ctx.now, merges: ctx.merges, times: (record.ask?.times ?? 0) + 1 };
   if (answer === 'share') return { ...chooseLevel(record, level, 'ask', ctx.now), ask: asked };
   if (answer === 'never') return { ...chooseLevel(record, 'off', 'ask', ctx.now), ask: asked };
   return { ...record, ask: asked };
+}
+
+/**
+ * The level to keep when the onboarding ends: Off when none was picked (consent is never assumed), else
+ * nothing to choose. `pickedHere`: a level was clicked in this onboarding. It counts even before the
+ * daemon's copy reaches `view`, so a quick Finish never sends Off after your pick.
+ */
+export function levelOnLeave(view: Pick<TelemetryView, 'available' | 'level'>, pickedHere = false): TelemetryLevel | undefined {
+  return view.available && !view.level && !pickedHere ? 'off' : undefined;
+}
+
+/** The ask's main button: nothing until you pick a level; Off is No thanks, Essential or On is Share at it. */
+export function askAnswer(picked: TelemetryLevel | undefined): { readonly answer: 'share' | 'never'; readonly level: TelemetryLevel } | undefined {
+  if (!picked) return undefined;
+  return { answer: picked === 'off' ? 'never' : 'share', level: picked };
 }
 
 /** What screens see. */

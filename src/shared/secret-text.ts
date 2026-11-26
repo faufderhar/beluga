@@ -2,6 +2,7 @@
  * Text that looks like it holds a secret (a database password, an API key), so a message to the
  * group chat can stop and say so before everyone in the room has it. Browser-safe.
  */
+import { looksLikeKey } from './key-shape.js';
 
 const SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
   // A connection string with its password in it (Supabase › Connect's [YOUR-PASSWORD] isn't one).
@@ -19,5 +20,6 @@ const SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
 
 /** What secret the text seems to hold ("a connection string with its password"), if any. */
 export function secretIn(text: string): string | undefined {
-  return SECRETS.find(([re]) => re.test(text))?.[1];
+  // A key no list knows, shaped like one (`rtl_…`, BLG-977).
+  return SECRETS.find(([re]) => re.test(text))?.[1] ?? (looksLikeKey(text) ? 'an API key' : undefined);
 }

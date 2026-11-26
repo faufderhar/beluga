@@ -108,3 +108,22 @@ describe('peopleSuggestions (New Task, BLG-342)', () => {
     expect(peopleSuggestions('mia', people)).toEqual([]);
   });
 });
+
+describe('keys kept for this chat (BLG-965)', () => {
+  const ctx = { peers: [], selfId: 'me', keys: ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY'] };
+
+  it('a lone @ lists them first, as $NAME, under their own section', () => {
+    const list = suggest('use @', ctx);
+    expect(list.slice(0, 2).map((s) => [s.label, s.kind, s.value])).toEqual([
+      ['$OPENAI_API_KEY', 'key', 'use $OPENAI_API_KEY '],
+      ['$STRIPE_SECRET_KEY', 'key', 'use $STRIPE_SECRET_KEY '],
+    ]);
+    expect(list[2]?.label).toBe('@claude');
+  });
+
+  it('a word of the name finds one; nothing else that doesn’t match', () => {
+    expect(suggest('@str', ctx).filter((s) => s.kind === 'key').map((s) => s.label)).toEqual(['$STRIPE_SECRET_KEY']);
+    expect(suggest('@secret', ctx).filter((s) => s.kind === 'key').map((s) => s.label)).toEqual(['$STRIPE_SECRET_KEY']);
+    expect(suggest('@cla', ctx).some((s) => s.kind === 'key')).toBe(false);
+  });
+});

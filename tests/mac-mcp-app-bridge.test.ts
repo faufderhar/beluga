@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AppBridge, LINK_GAP_MS, MAX_APP_HEIGHT, PROTOCOL_VERSION, type BridgeInit } from '../packages/mac/src/chat/mcp-app/bridge.js';
+import { AppBridge, LINK_GAP_MS, MAX_APP_HEIGHT, PROTOCOL_VERSION, toolInfoOf, toolResultOf, type BridgeInit, type HostContext } from '../packages/mac/src/chat/mcp-app/bridge.js';
 
 const FRAME = { name: 'the app window' };
 const OTHER = { name: 'another window' };
@@ -32,6 +32,14 @@ describe('AppBridge', () => {
     expect(caps.openLinks).toBeUndefined();
   });
 
+  it('tells the app which tool it shows (hostContext.toolInfo), so a page shared by tools picks its view', () => {
+    const hostContext = { ...INIT.hostContext, toolInfo: toolInfoOf('create_doc') };
+    const { posted, send } = rig({ ...INIT, hostContext });
+    send(initialize);
+    const ctx = (posted[0]!.result as { hostContext: HostContext }).hostContext;
+    expect(ctx.toolInfo).toEqual({ tool: { name: 'create_doc', inputSchema: { type: 'object' } } });
+  });
+
   it('sends the tool input, then its result, once the app said initialized', () => {
     const { posted, send } = rig();
     send(initialize);
@@ -40,6 +48,14 @@ describe('AppBridge', () => {
     expect(posted.slice(1).map((m) => m.method)).toEqual(['ui/notifications/tool-input', 'ui/notifications/tool-result']);
     expect(posted[1]!.params).toEqual({ arguments: { zone: 'UTC' } });
     expect(posted[2]!.params).toEqual(INIT.result);
+  });
+
+  it('sends the result’s own _meta in tool-result, as the CallToolResult has it', () => {
+    const result = toolResultOf({ text: '{"ok":true}', structuredContent: { ok: true }, _meta: { 'sh.ratel/view': { kind: 'session_chat' } } })!;
+    const { posted, send } = rig({ ...INIT, result });
+    send(initialize);
+    send(initialized);
+    expect(posted[2]).toMatchObject({ method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: '{"ok":true}' }], structuredContent: { ok: true }, _meta: { 'sh.ratel/view': { kind: 'session_chat' } } } });
   });
 
   it('sends a result that comes later, once, after the input', () => {
@@ -283,5 +299,17 @@ describe('AppBridge link limit', () => {
     open(3);
     expect(links).toEqual(['https://example.com/1', 'https://example.com/3']);
     expect(posted[1]).toMatchObject({ id: 2, error: { code: -32000 } });
+  });
+});
+
+describe('toolResultOf (apps.get’s result as MCP’s CallToolResult)', () => {
+  it('maps the text, structuredContent, _meta and isError', () => {
+    expect(toolResultOf({ text: 't', structuredContent: { a: 1 }, _meta: { m: 1 }, isError: true })).toEqual({ content: [{ type: 'text', text: 't' }], structuredContent: { a: 1 }, _meta: { m: 1 }, isError: true });
+  });
+
+  it('leaves out what the step has none of, and is undefined while the tool runs', () => {
+    expect(toolResultOf({})).toEqual({ content: [] });
+    expect(toolResultOf({ text: 't' })).toEqual({ content: [{ type: 'text', text: 't' }] });
+    expect(toolResultOf(undefined)).toBeUndefined();
   });
 });

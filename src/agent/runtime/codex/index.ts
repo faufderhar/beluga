@@ -25,7 +25,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   canResume: true,
   canFork: false,
   canAskUser: false,
-  hasCompaction: false,
+  // thread/compact/start, Codex's own; when it compacts by itself the chat gets the same divider (events.ts).
+  hasCompaction: true,
   hasModelList: true,
   hasProcess: true,
   // Skills and commands translated (runtime/codex/skills.ts); built-ins and some frontmatter can't be.

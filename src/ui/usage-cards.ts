@@ -1,4 +1,7 @@
 import { providersOf, usagesOf } from '../agent/usage.js';
+import { isFixedRuntime } from '../shared/agent-runtimes.js';
+import { THIS_COMPUTER } from '../shared/assistant.js';
+import type { AgentWeek } from './agent-week.js';
 import { type AgentRef, CLAUDE_AGENT, type PeerInfo, type Profile, type ProviderUsage } from '../protocol.js';
 
 /** A plan window ready to draw: "5-hour", "Weekly", or the provider's own name for it. */
@@ -8,6 +11,8 @@ export interface CardWindow {
   readonly short: string;
   readonly pct: number;
   readonly resetsAt?: number;
+  /** The models it's for, when its provider keeps a limit per group of models ("Gemini Models"). */
+  readonly group?: string;
 }
 
 /**
@@ -32,27 +37,27 @@ export interface ProviderCard {
    * Computed for this Mac's own view. Not part of the profile friends see.
    */
   readonly note?: string;
-}
-
-/** Two or three letters for a named window ("Weekly" -> "wk"). */
-function shortOf(label: string): string {
-  if (label === 'Weekly') return 'wk';
-  if (label === 'Monthly') return 'mo';
-  if (label === 'Daily') return 'day';
-  return label.slice(0, 3).toLowerCase();
+  /** An ACP agent's week, as Beluga counted it (none for the fixed agents, or before your stats are here). */
+  readonly week?: AgentWeek;
 }
 
 /** A provider's quota windows in order: 5-hour, weekly, then its own. */
+/** The short names Claude's own windows have, for a provider's windows of the same length. */
+const SHORT: Readonly<Record<string, string>> = { '5-hour': '5h', Weekly: 'wk', Monthly: 'mo', Daily: 'day' };
+
+/** The heading over a window: its group of models, when its provider keeps a limit per group ("Gemini Models"). */
+export const windowHeading = (w: Pick<CardWindow, 'group'>): string | undefined => w.group;
+
 export function windowsOf(u: Pick<ProviderUsage, 'fiveHour' | 'week' | 'windows'> | undefined): CardWindow[] {
   if (!u) return [];
   const out: CardWindow[] = [];
   if (u.fiveHour) out.push({ label: '5-hour', short: '5h', ...u.fiveHour });
   if (u.week) out.push({ label: 'Weekly', short: 'wk', ...u.week });
-  for (const w of u.windows ?? []) out.push({ label: w.label, short: shortOf(w.label), pct: w.pct, ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}) });
+  for (const w of u.windows ?? []) out.push({ label: w.label, short: SHORT[w.label] ?? w.label.slice(0, 3).toLowerCase(), pct: w.pct, ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}), ...(w.group ? { group: w.group } : {}) });
   return out;
 }
 
-function cardOf(agent: AgentRef, u: ProviderUsage | undefined, isDefault: boolean): ProviderCard {
+function cardOf(agent: AgentRef, u: ProviderUsage | undefined, isDefault: boolean, week?: AgentWeek): ProviderCard {
   const windows = windowsOf(u);
   const shape = windows.length ? 'quota' : u?.tokens || u?.tokensPerSec !== undefined ? 'tokens' : 'empty';
   return {
@@ -66,17 +71,30 @@ function cardOf(agent: AgentRef, u: ProviderUsage | undefined, isDefault: boolea
     signedIn: u?.signedIn !== false,
     isDefault,
     ...(u ? { updatedAt: u.updatedAt } : {}),
+    ...(week ? { week } : {}),
   };
 }
 
+/** Where a runtime stands here, as the agent pickers have it (shared/agent-runtimes.ts): unknown until asked. */
+export type RuntimeReadiness = ReadonlyArray<{ readonly id: string; readonly state?: string }>;
+
 /**
  * Your providers as cards: Claude always, then every other one you run or that reported usage, in a
- * stable order (tapping make-default never moves them). `defaultAgent` is your setting's.
+ * stable order (tapping make-default never moves them). `defaultAgent` is your setting's. With
+ * `runtimes` (yours, as the pickers have them), a card shows only while its agent is ready here:
+ * one that isn't installed or signed in has no card. One not asked about yet keeps its card.
+ * `weekOf`: an ACP agent's week (the Mac: the Usage tab's stats; the phone: the daemon's).
  */
-export function providerCards(self: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined): ProviderCard[] {
+export function providerCards(self: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined, runtimes?: RuntimeReadiness, weekOf?: (runtime: string) => AgentWeek | undefined): ProviderCard[] {
   const usages = usagesOf(self);
   const def = (defaultAgent ?? CLAUDE_AGENT).runtime;
-  return providersOf(self).map((a) => cardOf(a, usages.find((u) => u.agent.runtime === a.runtime), a.runtime === def));
+  const ready = (runtime: string): boolean => {
+    const state = runtimes?.find((r) => r.id === runtime)?.state;
+    return state === undefined || state === 'ready';
+  };
+  return providersOf(self)
+    .filter((a) => ready(a.runtime))
+    .map((a) => cardOf(a, usages.find((u) => u.agent.runtime === a.runtime), a.runtime === def, isFixedRuntime(a.runtime) ? undefined : weekOf?.(a.runtime)));
 }
 
 /** One friend's provider with quota windows: whose agent has room left. */
@@ -122,8 +140,8 @@ export interface LocalLedger {
 const GROK = 'grok';
 
 const grokNote = (team: boolean, tokens: boolean): string => {
-  if (team) return tokens ? 'Usage limits are managed by your team. These tokens are from conversations on this Mac.' : 'Usage limits are managed by your team.';
-  return tokens ? "Grok Build can't report its billing period from here. These tokens are from conversations on this Mac." : "Grok Build can't report its billing period from here. It shows up after a conversation reports tokens.";
+  if (team) return tokens ? `Usage limits are managed by your team. These tokens are from conversations on ${THIS_COMPUTER}.` : 'Usage limits are managed by your team.';
+  return tokens ? `Grok Build can't report its billing period from here. These tokens are from conversations on ${THIS_COMPUTER}.` : "Grok Build can't report its billing period from here. It shows up after a conversation reports tokens.";
 };
 
 /**

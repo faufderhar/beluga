@@ -1,78 +1,59 @@
-import type { IconName } from '../components/Icon.js';
 import type { Step } from './onboarding-model.js';
 import { thisComputer } from '../lib/os-words.js';
 
-/** The tour's words, one idea a step. Every line says what the app really does. */
+/**
+ * The tour's words, one idea a step (BLG-989). The scene does the explaining, so the words stay
+ * short: a title that names what you can do, one sentence on how, and, where the scene can be
+ * played with, a hint saying what to click. No label chips over the title, no checklists, no
+ * slogans, no "not X, but Y".
+ */
 export interface TourCopy {
-  readonly eyebrow: string;
-  readonly icon: IconName;
   readonly title: string;
   readonly body: string;
-  readonly points: readonly string[];
+  /** What to try in the scene, when there's something to click. */
+  readonly hint?: string;
 }
 
 export const TOUR_COPY: Readonly<Partial<Record<Step, TourCopy>>> = {
   parallel: {
-    eyebrow: 'Parallel',
-    icon: 'branch',
-    title: 'Work on everything at once.',
-    body: 'Every task gets its own worktree on its own branch, with an agent working in it. Run as many as you like, in one repository or across all of them.',
-    points: ['Worktrees and branches made for you', 'Pull requests opened and followed on GitHub', 'Sub-agents for the pieces in between'],
+    title: 'Run several tasks at the same time.',
+    body: 'Each task gets its own folder, branch and agent, so they never get in each other’s way.',
   },
-  agents: {
-    eyebrow: 'Live',
-    icon: 'eye',
-    title: 'See every agent work. Steer any of them.',
-    body: 'Steps arrive as your agent works: the files it reads, the commands it runs, the screenshots it takes, the sub-agents and background tasks it starts. Say something mid-run and it changes course.',
-    points: ['Sub-agents and background commands, live', 'Screenshots, logs and test output in one place', 'Redirect a run, or queue what comes next'],
+  scratch: {
+    title: 'Watch screenshots and logs arrive as your agent works.',
+    body: 'Your agent saves what it makes to a Scratch folder as it goes. Open any of it right away, without waiting for the run to end.',
+    hint: 'Pick a request, then click a file to open it.',
   },
   tables: {
-    eyebrow: 'In the chat',
-    icon: 'table',
-    title: 'Answers you can sort, not just read.',
-    body: 'Ask about your data and your agent finds the database, picks the way in (Postgres, SQLite, a file, a URL), connects and runs the query. The answer comes back as a live table in the conversation.',
-    points: ['Headings sort, long tables search and page', 'A table turns into a chart in a click', 'File trees, JSON, terminal output and diagrams too'],
+    title: 'Ask about your data and get a table back.',
+    body: 'Your agent finds the database, runs the query and answers with a table you can sort, search and chart.',
+    hint: 'Click a heading to sort by it.',
   },
   machines: {
-    eyebrow: 'Your computers',
-    icon: 'server',
-    title: 'Your app here. The work on any computer.',
-    body: `Pair a Mac mini at home, a cloud server or a Linux box, and any task can run there while you follow it from ${thisComputer()} or your phone. Make one your Always On, and it keeps working, and answers your friends, while you’re away.`,
-    points: ['Pick where a task runs, beside the mode and model', 'Close the lid, and your phone keeps up', 'One Always On computer stands in for you'],
+    title: 'Run tasks on your other computers.',
+    body: `Start a task on a Mac mini, a Linux box or a server and follow it from ${thisComputer()} or your phone. An Always On computer keeps working while this one sleeps.`,
   },
   friends: {
-    eyebrow: 'Together',
-    icon: 'people',
-    title: 'Your agent, and your friends’ agents.',
-    body: 'Add friends and your agents work together. Yours asks theirs for what only their computer has: a file, an account, a page they’re signed in to. They allow it, the result comes back, and yours carries on. Computer to computer, end-to-end encrypted.',
-    points: ['Files, screenshots and errands between computers', 'You approve, or trust a friend once', 'Invite to one project, or to everything'],
+    title: 'Your agent can ask a friend’s agent.',
+    body: 'When it needs a file, a login or a screenshot that only a friend’s computer has, it asks their agent. They click Allow and the result comes back.',
+    hint: 'Pick an errand, then click Allow as Ada.',
+  },
+  together: {
+    title: 'Invite a friend into your session.',
+    body: 'They watch your agent work as it happens. Let them follow along, or let them talk to your agent too.',
+    hint: 'Click Share, choose what Ada can do, then Invite.',
   },
   sentinel: {
-    eyebrow: 'Sentinel',
-    icon: 'sentinel',
-    title: 'Say when. Say what. Beluga keeps watch.',
-    body: 'A sentinel is work you describe once, in a sentence. It waits for its moment (seven in the morning, a failing test, a Stripe payment, your site going quiet), then works through its steps in order and leaves you a report.',
-    points: ['When: a schedule, GitHub, Stripe, Sentry, a site, a webhook', 'Then: an agent, a script, a service, a pull request, a merge', 'Starts paused. You choose if the agent may look, work or ship'],
-  },
-  uses: {
-    eyebrow: 'Sentinel at work',
-    icon: 'pulse',
-    title: 'Real work, done while you sleep.',
-    body: 'A few of the sentinels people set up first. Tell Ask Sentinel what you want in your own words and your agent builds it, steps and all, ready for you to turn on.',
-    points: ['A fix waiting for your merge by morning', 'Your numbers on a board, your desktop and your phone', 'Every run kept, with its report'],
+    title: 'Start work every morning, or when tests fail.',
+    body: 'Describe it in one sentence. When the moment comes, your agent does the work and leaves you a report.',
+    hint: 'Pick one to watch it run.',
   },
   earnings: {
-    eyebrow: 'Earnings',
-    icon: 'gauge',
-    title: 'Know what every project earns.',
-    body: 'Connect Stripe or RevenueCat and each project shows its revenue right next to the work, kept up to date as sales come in.',
-    points: [`A read-only key, kept on ${thisComputer()}`, 'Per project and per month', 'In the currency you think in'],
+    title: 'See what each project earns.',
+    body: 'Connect Stripe or RevenueCat and each project shows its revenue next to its work.',
   },
   archive: {
-    eyebrow: 'Archive',
-    icon: 'archive',
-    title: 'Archive without a second thought.',
-    body: 'Done with a worktree? Archive it. Its folder goes, node_modules and builds with it, so your disk stays light. The branch and the whole conversation stay.',
-    points: ['Folders removed, branches kept', 'Every conversation kept', 'Restore checks the branch out again'],
+    title: 'Clear out finished worktrees.',
+    body: 'Archiving deletes the folder to free up disk space. The branch and the conversation stay.',
   },
 };

@@ -123,11 +123,11 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
               <span title={path}>{shortPath(path)}</span>
             </span>
             {canPickFolders() ? (
-              <Button size="small" onClick={() => void choose()}>
+              <Button onClick={() => void choose()}>
                 Choose…
               </Button>
             ) : null}
-            <Button size="small" variant="quiet" onClick={() => setTyping(true)}>
+            <Button variant="quiet" onClick={() => setTyping(true)}>
               Edit Path
             </Button>
           </div>

@@ -127,6 +127,13 @@ export interface CollabState {
   readonly roster: Readonly<Record<string, readonly RosterEntry[]>>;
   /** Channels where the next request to Claude plans first. */
   readonly planMode: Readonly<Record<string, boolean>>;
+  /** Chats on Full Autopilot (BLG-981): a stand-in agent answers what your agent asks there. Not saved: a restart starts with it off. */
+  readonly autopilot: Readonly<Record<string, boolean>>;
+  /**
+   * Plan here, build with another (BLG-982): the agent that builds a plan made in this chat once you
+   * approve it (Plan First: it takes the conversation over; Plan with Tasks: the plan's builder). Not saved.
+   */
+  readonly buildWith: Readonly<Record<string, AgentRef>>;
   /** New people you haven't picked a trust level for yet (shown as a one-click card). */
   readonly trustPrompts: readonly string[];
   /** How much each friend trusts you (as they told you; their side enforces it). */
@@ -143,6 +150,8 @@ export type CollabAction =
   | { type: 'member_set'; id: string; peerId: string; role?: WsRole }
   | { type: 'roster'; id: string; members: readonly RosterEntry[] }
   | { type: 'plan_mode'; channel: string; on: boolean }
+  | { type: 'autopilot'; channel: string; on: boolean }
+  | { type: 'build_with'; channel: string; agent?: AgentRef }
   | { type: 'peer_gone'; peerIds: readonly string[] }
   /** You left the room: everything shared with you in it goes (what friends shared over the network stays). */
   | { type: 'shared_clear' }
@@ -155,7 +164,7 @@ export type CollabAction =
   | { type: 'knock'; knock: Knock; show: boolean }
   | { type: 'guest_shell'; id: string; shell?: ShellState };
 
-export const initialCollab: CollabState = { links: [], guests: {}, knocks: [], shells: {}, offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [], granted: {} };
+export const initialCollab: CollabState = { links: [], guests: {}, knocks: [], shells: {}, offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, autopilot: {}, buildWith: {}, trustPrompts: [], granted: {} };
 
 const MAX_QUESTIONS = 20;
 
@@ -188,6 +197,10 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
       return { ...state, roster: { ...state.roster, [action.id]: action.members } };
     case 'plan_mode':
       return { ...state, planMode: action.on ? { ...state.planMode, [action.channel]: true } : without(state.planMode, action.channel) };
+    case 'autopilot':
+      return { ...state, autopilot: action.on ? { ...state.autopilot, [action.channel]: true } : without(state.autopilot, action.channel) };
+    case 'build_with':
+      return { ...state, buildWith: action.agent ? { ...state.buildWith, [action.channel]: action.agent } : without(state.buildWith, action.channel) };
     case 'shared_clear': {
       const kept = state.shared.filter((w) => w.via === 'mesh');
       const roster = Object.fromEntries(Object.entries(state.roster).filter(([id]) => kept.some((w) => w.id === id)));

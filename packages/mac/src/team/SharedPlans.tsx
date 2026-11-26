@@ -114,7 +114,7 @@ export function TeamReviews({ planId }: { planId: string }) {
                       Apply
                     </Button>
                     <ActionsDropdown items={[{ label: 'Set Aside', onSelect: () => void say(api.team.dismissSuggestion(planId, r.id)) }]}>
-                      <IconButton icon="more" label="More" />
+                      <IconButton size="small" icon="more" label="More" />
                     </ActionsDropdown>
                   </>
                 ) : undefined
@@ -174,7 +174,7 @@ export function SharedPlanPage({ owner, id }: { owner: string; id: string }) {
   return (
     <div className={s.page}>
       <header className={s.head}>
-        <IconButton icon="back" label="All Plans" onClick={back} />
+        <IconButton size="small" icon="back" label="All Plans" onClick={back} />
         <div className={s.headMain}>
           <h1 className={s.title}>{plan.title}</h1>
           <div className={s.meta}>
@@ -210,7 +210,7 @@ export function SharedPlanPage({ owner, id }: { owner: string; id: string }) {
                     <span className={s.taskTitle}>{t.title}</span>
                     {t.assignee === 'me' ? <span className={s.when}>for {plan.ownerName}</span> : null}
                     <ActionsDropdown items={[{ label: 'Suggest a Change…', icon: 'pencil', onSelect: () => setEditing(t.id) }]}>
-                      <IconButton icon="more" label={`More for ${t.title}`} />
+                      <IconButton size="small" icon="more" label={`More for ${t.title}`} />
                     </ActionsDropdown>
                   </div>
                   {t.goal ? <div className={s.taskGoal}>{t.goal}</div> : null}

@@ -60,31 +60,53 @@
 .pillButton:hover .pill {
   background: color-mix(in srgb, var(--pill) 22%, transparent);
 }
+/* In the window's toolbar: Large (docs/mac-controls.md). */
 .main {
-  height: 26px;
-  padding: 0 11px 0 9px;
+  height: var(--control-h-large);
+  padding: 0 14px 0 11px;
   font-weight: 600;
 }
 .mainSplit {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
+/* The ▾ keeps its variant's bezel, so both halves are one height; a line inside parts them. */
 .more {
-  height: 26px;
-  padding-inline: 7px;
+  position: relative;
+  justify-content: center;
+  width: var(--control-h-large);
+  height: var(--control-h-large);
+  padding: 0;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.28);
+}
+/* The ▾ in the very middle: its icon's box is a block, not a line of text (whose baseline sat it high). */
+.more > span,
+.more svg {
+  display: block;
+}
+.more::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--on-accent) 35%, transparent);
+}
+/* A tone is the button's own accent, so its every state (hover, pressed, its edge) takes it. Set as the
+   background alone, a pressed ▾ fell back to the accent blue: its Mac menu opens on the press, so the
+   web view never sees the release and the ▾ stays pressed while (and after) the menu shows. */
+.mainError,
+.mainMerged {
+  --control-accent: var(--tone);
+  --control-accent-hover: color-mix(in srgb, var(--tone) 88%, black);
+  --control-accent-press: color-mix(in srgb, var(--tone) 82%, black);
+  --control-accent-edge: color-mix(in srgb, var(--tone) 70%, var(--text));
 }
 .mainError {
-  background: var(--error);
-}
-.mainError:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--error) 88%, black);
+  --tone: var(--error);
 }
 .mainMerged {
-  background: var(--merged);
-}
-.mainMerged:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--merged) 88%, black);
+  --tone: var(--merged);
 }

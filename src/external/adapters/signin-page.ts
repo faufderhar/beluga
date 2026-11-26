@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import { BELUGA } from '../../shared/beluga-path.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 import { REMOTE_FULL_WARNING } from '../../shared/remote-full.js';
 import type { Route } from '../domain/decide.js';
 
@@ -90,7 +91,7 @@ export function sendSignInPage(res: ServerResponse, page: SignInPage): void {
   if (page.confirmFullCode) {
     send(res, 200, 'Give Full trust?', `<h1>Give ${agent} Full trust?</h1>
 ${where(page)}
-<div class="panel problem" role="alert"><p class="panel-title">Full power on this Mac</p><p>${escapeHtml(REMOTE_FULL_WARNING)}</p></div>
+<div class="panel problem" role="alert"><p class="panel-title">Full power on ${escapeHtml(THIS_COMPUTER)}</p><p>${escapeHtml(REMOTE_FULL_WARNING)}</p></div>
 <form method="post" action="/authorize" autocomplete="off">
 ${pending}
 <input type="hidden" name="code" value="${escapeHtml(page.confirmFullCode)}">

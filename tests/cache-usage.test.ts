@@ -57,7 +57,7 @@ describe('Grok usage on this Mac', () => {
     expect(cards[0]).toMatchObject({ key: 'grok', shape: 'empty', signedIn: true });
     expect(cards[0]!.note).toMatch(/can't report its billing period/);
     expect(cards[0]!.tokens).toBeUndefined();
-    const phone = usageViews(undefined, undefined, { runtimes: [grokRuntime], projects: [] });
+    const phone = usageViews(undefined, undefined, undefined, undefined, { runtimes: [grokRuntime], projects: [] });
     expect(phone.map((u) => u.provider)).toEqual(['Grok Build']);
     expect(phone[0]!.note).toMatch(/can't report its billing period/);
     expect(phone[0]!.tokens).toBeUndefined();
@@ -70,7 +70,7 @@ describe('Grok usage on this Mac', () => {
     expect(tokenTotal(noted[0]!.tokens!)).toBe(9290);
     expect(tokenDetail(noted[0]!.tokens!)).toBe('1k in · 250 out · 8k cache read · 40 cache write');
     expect(noted[0]!.note).toMatch(/conversations on this Mac/);
-    const phone = usageViews(undefined, undefined, ledger);
+    const phone = usageViews(undefined, undefined, undefined, undefined, ledger);
     expect(phone[0]!.tokens).toEqual({ input: 1000, output: 250, cacheRead: 8000, cacheWrite: 40 });
     const quota: ProviderCard = { key: 'grok', agent: { runtime: 'grok', label: 'Grok Build' }, shape: 'quota', windows: [{ label: 'This period', short: 'thi', pct: 12 }], signedIn: true, isDefault: false };
     expect(withLocalUsage([quota], ledger)[0]).toBe(quota);

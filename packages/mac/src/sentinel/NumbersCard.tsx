@@ -83,7 +83,7 @@ function OverTime({ item, metric, close }: { item: Sentinel; metric: MetricSerie
           {series.points.length} {series.points.length === 1 ? 'point' : 'points'} · a point opens its run
         </span>
         <span className={t.grow} />
-        <IconButton icon="x" label="Close the chart" onClick={close} />
+        <IconButton size="small" icon="x" label="Close the chart" onClick={close} />
       </div>
       <MetricChart series={[series]} height={220} onRun={(runId) => a.openRun(runId)} />
     </div>

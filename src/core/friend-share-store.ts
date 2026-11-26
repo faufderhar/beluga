@@ -1,5 +1,6 @@
 import type { AgentRef } from '../protocol.js';
 import type { WsRole } from '../protocol.js';
+import type { ForkGrant, ForksSaid } from '../shared/share-levels.js';
 
 /**
  * Sharing with friends over the network (core/friend-share) in the shared state: the projects
@@ -34,6 +35,8 @@ export interface SharedProject {
   readonly copy?: SharedCopy;
   /** The owner's plain chats (no project folder), each shared on its own: no copy, no fork. */
   readonly chats?: true;
+  /** Whether you may fork its worktrees, and with secrets (BLG-1019). Unset: an older Mac, where working there could fork. */
+  readonly forks?: ForksSaid;
 }
 
 /** Your copy of a project a friend shared whole: where it goes, and how far it got. */
@@ -66,6 +69,8 @@ export interface SharedFork {
 export interface ProjectGrant {
   readonly role: WsRole;
   readonly only?: readonly string[];
+  /** They may fork its worktrees to their computer, and with the secrets you ticked (BLG-1019). */
+  readonly fork?: ForkGrant;
 }
 
 /** A folder a friend shares with you over the network. */

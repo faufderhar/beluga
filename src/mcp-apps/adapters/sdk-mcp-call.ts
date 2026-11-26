@@ -18,7 +18,7 @@ export async function sdkMcpCall(channel: ControlChannel, server: string, tool: 
   return toResult(answer?.response);
 }
 
-/** The server's CallToolResult, keeping only what MCP defines: content, structuredContent, isError. */
+/** The server's CallToolResult, keeping only what MCP defines: content, structuredContent, _meta, isError. */
 function toResult(response: unknown): AppToolResult {
   if (!response || typeof response !== 'object') throw new Error('Claude Code sent no result for that tool.');
   const r = response as Record<string, unknown>;
@@ -28,6 +28,7 @@ function toResult(response: unknown): AppToolResult {
   return {
     content,
     ...(r.structuredContent !== undefined && r.structuredContent !== null ? { structuredContent: r.structuredContent } : {}),
+    ...(r._meta && typeof r._meta === 'object' && !Array.isArray(r._meta) ? { _meta: r._meta as Record<string, unknown> } : {}),
     ...(r.isError === true ? { isError: true } : {}),
   };
 }

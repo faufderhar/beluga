@@ -202,10 +202,10 @@ export function WorkConfirm({ wsId, action, close }: { wsId: string; action: Ask
             <div className={s.message}>{words.message}</div>
           </Popover.Description>
           <div className={s.buttons}>
-            <Button size="small" onClick={close}>
+            <Button onClick={close}>
               Cancel
             </Button>
-            <Button ref={start} size="small" variant="primary" onClick={go}>
+            <Button ref={start} variant="primary" onClick={go}>
               {words.confirm}
             </Button>
           </div>

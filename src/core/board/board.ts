@@ -828,11 +828,18 @@ export class Board {
   worktreeGone(workspaceId: string, gone: boolean, how: 'archived' | 'deleted' | 'restored'): void {
     for (const issue of this.issues) {
       if (issue.worktrees.at(-1) !== workspaceId) continue;
-      // Merged into Plan: its work is in the plan's branch, so its worktree going away is expected.
-      const ask = gone && isOpen(issue.status) && issue.status !== 'in_plan';
       // A deleted worktree can't be opened again: it's no longer the task's.
       const worktrees = how === 'deleted' ? issue.worktrees.filter((w) => w !== workspaceId) : issue.worktrees;
-      this.change(issue, { worktreeGone: ask || undefined, worktrees }, [this.entry({ kind: 'beluga' }, 'worktree', `its worktree was ${how}`)]);
+      const note = this.entry({ kind: 'beluga' }, 'worktree', `its worktree was ${how}`);
+      // Held after its merge: the worktree that could settle its criteria is gone, so it's Done (BLG-1022).
+      if (gone && issue.mergedHeld && isOpen(issue.status)) {
+        const done = this.mergedAndGone(issue, `its work is merged and its worktree was ${how}`);
+        this.shipping(() => this.change(issue, { ...done.patch, worktrees }, [note, ...done.notes]));
+        continue;
+      }
+      // Merged into Plan: its work is in the plan's branch, so its worktree going away is expected.
+      const ask = gone && isOpen(issue.status) && issue.status !== 'in_plan';
+      this.change(issue, { worktreeGone: ask || undefined, worktrees }, [note]);
     }
   }
 
@@ -899,13 +906,25 @@ export class Board {
 
   /**
    * Its branch's pull request, found merged after its worktree stopped being watched (archived or
-   * gone, see BoardWork.sweepShipped): Done, like a merge seen live (or held, see landed).
+   * gone, see BoardWork.sweepShipped): Done. No worktree is left to settle its criteria, so open ones
+   * don't hold it (BLG-1022); the line names them.
    */
   branchShipped(ref: string, pr: IssuePr): Issue {
     const issue = this.need(ref);
     if (pr.state !== 'MERGED' || !isOpen(issue.status) || isArchived(issue) || issue.mergedHeld) return issue;
-    const landed = this.landed(issue);
-    return this.shipping(() => this.change(issue, { pr, ...landed.patch, worktreeGone: undefined }, [this.entry({ kind: 'beluga' }, 'pr', `pull request #${pr.number} was merged`), ...landed.notes]));
+    const done = this.mergedAndGone(issue, 'its work is merged and its worktree is gone');
+    return this.shipping(() => this.change(issue, { pr, ...done.patch }, [this.entry({ kind: 'beluga' }, 'pr', `pull request #${pr.number} was merged`), ...done.notes]));
+  }
+
+  /**
+   * Held after its merge (see landed) while its worktree is already gone: nothing can settle its
+   * criteria now, so Done (BLG-1022). For tasks held before worktrees going away released them.
+   */
+  releaseMerged(ref: string): Issue {
+    const issue = this.need(ref);
+    if (!issue.mergedHeld || !isOpen(issue.status) || isArchived(issue)) return issue;
+    const done = this.mergedAndGone(issue, 'its work is merged and its worktree is gone');
+    return this.shipping(() => this.change(issue, done.patch, done.notes));
   }
 
   /** The worktree was merged into the project's main folder here. */
@@ -934,6 +953,19 @@ export class Board {
     return {
       patch: { needsChecks: true, mergedHeld: true, ...(move ? { status: 'in_review' as const, rank: this.lastRank('in_review') } : {}) },
       notes: [this.entry(beluga, 'status', move ? `${why}: ${statusText(from, STATUS_INFO.in_review.label)}` : why)],
+    };
+  }
+
+  /**
+   * Its work merged and the worktree that could settle its criteria is gone (BLG-1022): Done, since the
+   * merge was the user's go and holding it helps nobody. Criteria still open are named on the line.
+   */
+  private mergedAndGone(issue: Issue, why: string): { readonly patch: IssueChange; readonly notes: readonly Activity[] } {
+    const open = unexplained(issue.brief.acceptance);
+    const move = statusText(STATUS_INFO[issue.status].label, STATUS_INFO.done.label);
+    return {
+      patch: { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, mergedHeld: undefined, worktreeGone: undefined },
+      notes: [this.entry({ kind: 'beluga' }, 'status', open.length ? `${why}; ${openWords(open)}: ${move}` : move)],
     };
   }
 

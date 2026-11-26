@@ -12,6 +12,9 @@ const AGENTS = [
   { agent: 'claude', share: 1 },
   { agent: 'codex', share: 0.35 },
   { agent: 'local', share: 0.12 },
+  // Two ACP agents, so their usage cards have a week to show.
+  { agent: 'antigravity', share: 0.2 },
+  { agent: 'cursor', share: 0.25 },
 ] as const;
 
 /** A number from 0 to 1 that's always the same for the same seed. */

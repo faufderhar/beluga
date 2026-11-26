@@ -373,10 +373,17 @@ function FromChatCard({ origin, text }: { origin: ChatOrigin; text: string }) {
       <div className={s.gutter} />
       <div className={s.body}>
         <div className={s.fromChat} data-from-chat={origin.ref}>
-          <div className={s.fromChatHead}>
-            <Icon name="chat" size={11} />
-            From <InlineCode text={`chat:${origin.ref}`} fallback={origin.title} /> · {origin.agent.label}, an agent
-          </div>
+          {origin.sentinel ? (
+            <div className={s.fromChatHead}>
+              <Icon name="sentinel" size={11} />
+              From Sentinel {origin.sentinel.name}
+            </div>
+          ) : (
+            <div className={s.fromChatHead}>
+              <Icon name="chat" size={11} />
+              From <InlineCode text={`chat:${origin.ref}`} fallback={origin.title} /> · {origin.agent.label}, an agent
+            </div>
+          )}
           <Markdown text={text} />
         </div>
       </div>
@@ -596,10 +603,10 @@ function TurnCard({
                 </Button>
               </ActionsDropdown>
             </div>
-          ) : limited && failure?.kind === 'signed_out' && (failure.runtime === 'opencode' || failure.runtime === 'copilot' || failure.runtime === 'grok') ? (
-            // OpenCode's model provider said no, Copilot's GitHub sign-in did, or Grok Build isn't signed in: sign in in Terminal, then Continue.
+          ) : limited && failure?.kind === 'signed_out' && (failure.runtime === 'opencode' || failure.runtime === 'copilot' || failure.runtime === 'grok' || failure.runtime === 'antigravity') ? (
+            // OpenCode's model provider said no (a key expired, none set up), Copilot's GitHub sign-in did, Grok Build isn't signed in, or Antigravity's Google one: sign in in Terminal (`opencode auth login`, `copilot login`, `grok login`, `agy`), then Continue.
             <div className={s.limitActions}>
-              <Button size="small" icon="person" onClick={() => void client.api.workbench.agentSignIn(failure.runtime!).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'))} title={failure.runtime === 'copilot' ? 'Sign in to GitHub in Terminal (copilot login), then Continue' : failure.runtime === 'grok' ? 'Sign in with your Grok account in Terminal (grok login), then Continue' : 'Add or renew a model provider in Terminal (opencode auth login), then Continue'}>
+              <Button size="small" icon="person" onClick={() => void client.api.workbench.agentSignIn(failure.runtime!).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'))} title={failure.runtime === 'copilot' ? 'Sign in to GitHub in Terminal (copilot login), then Continue' : failure.runtime === 'grok' ? 'Sign in with your Grok account in Terminal (grok login), then Continue' : failure.runtime === 'antigravity' ? 'Sign in to Google in Terminal (agy), then Continue' : 'Add or renew a model provider in Terminal (opencode auth login), then Continue'}>
                 Sign In
               </Button>
               <Button size="small" icon="play" onClick={resume} title={`Send “continue”: ${agentName(item.agent)} picks up where it stopped`}>

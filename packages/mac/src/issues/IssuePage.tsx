@@ -46,8 +46,8 @@ export function IssuePage({ projectId, number }: { projectId: string; number: nu
           detail={error}
           action={
             <EmptyActions>
-              <Button onClick={refresh}>Try Again</Button>
-              <Button variant="quiet" onClick={() => actions.run({ type: 'view', view: issueWayBack(projectId) })}>
+              <Button size="small" onClick={refresh}>Try Again</Button>
+              <Button size="small" variant="quiet" onClick={() => actions.run({ type: 'view', view: issueWayBack(projectId) })}>
                 Back
               </Button>
             </EmptyActions>
@@ -95,7 +95,7 @@ function Page({ projectId, repo, issue, loading, refresh, late }: { projectId: s
       <div className={t.page}>
         <div className={t.pageMain}>
           <nav className={t.crumbs} aria-label="Where this issue is">
-            <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
+            <IconButton size="small" icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
             <button type="button" className={t.crumb} onClick={() => a.openList(projectId)}>
               Issues
             </button>
@@ -103,9 +103,9 @@ function Page({ projectId, repo, issue, loading, refresh, late }: { projectId: s
             <span className={t.crumbPlain}>{project?.name ?? repoSlug(repo)}</span>
             <span className={t.grow} />
             <span className={t.pageKey}>#{issue.number}</span>
-            <IconButton icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} />
+            <IconButton size="small" icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} />
             <ActionsDropdown items={[...post, ...menu(issue, stage, { open: false })]}>
-              <IconButton icon="more" label="More" />
+              <IconButton size="small" icon="more" label="More" />
             </ActionsDropdown>
           </nav>
           <header className={t.pageHead}>

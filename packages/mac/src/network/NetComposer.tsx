@@ -17,10 +17,15 @@ import { useDictationTarget } from '../lib/dictation.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
 import { useSuggestions } from '../chat/Suggestions.js';
 import { usePastePaths } from '../chat/paste-paths.js';
-import { plainWorktrees, worktreeNamesOf } from '../chat/worktree-box.js';
+import { boxChats, plainWords } from '../chat/chat-box.js';
+import { caretAfterDraw, useDraftChips } from '../chat/draft-chips.js';
+import { useChatMentions } from '../chat/Mention.js';
+import type { MentionWorld } from '../chat/mentions.js';
+import { withChatWords } from '@beluga/shared/chat-ref.js';
+import { typedMention } from '@beluga/ui/suggest.js';
 import { PendingTray } from './ChatFiles.js';
 import { addBlobs, addPaths, restorePending, takePending, usePending } from './attachments.js';
-import { type Ask, type ChannelSuggestion, askLabel, askTo, channelSuggestions, channelTasks, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
+import { type Ask, type ChannelSuggestion, type ProjectMention, askLabel, askTo, channelSuggestions, channelTasks, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
 import type { TaskMention } from '@beluga/shared/task-refs.js';
 
 /** The tasks this chat can name: those of repositories you're teamed up on with its people (BLG-263). */
@@ -28,6 +33,19 @@ export function useChannelTasks(people: ReadonlyArray<{ readonly peerId: string;
   const issues = useApp((st) => st.board.issues);
   const team = useApp((st) => st.team);
   return useMemo(() => channelTasks(issues, team, people), [issues, team, people]);
+}
+
+/** Your projects (with a folder), as "@" names them in a chat with friends. */
+export function useChannelProjects(): readonly ProjectMention[] {
+  const projects = useApp((st) => st.projects);
+  return useMemo(() => projects.filter((p) => p.root).map((p) => ({ name: p.name, id: p.id })), [projects]);
+}
+
+/** What "@…" names in a chat with these people, for its box and its messages: them, the tasks you share, your projects. */
+export function useChannelWorld(me: Person | undefined, people: readonly Person[]): MentionWorld {
+  const tasks = useChannelTasks(people);
+  const projects = useChannelProjects();
+  return useMemo(() => channelWorld(me, people, tasks, projects), [me, people, tasks, projects]);
 }
 import c from '../chat/composer.module.css';
 import s from './network.module.css';
@@ -125,14 +143,18 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
   // @ and / as you type: the Claudes and people here, and the channel's commands.
   const friends = useApp((st) => st.network.friends);
   const tasks = useChannelTasks(people);
-  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople), friends, tasks }) : []), [text, people, addPeople, friends, tasks]);
-  const world = useMemo(() => channelWorld(me, people, tasks), [me, people, tasks]);
+  const projects = useChannelProjects();
+  // Your chats and worktrees by title, only while an "@" is being typed (each title reads the log).
+  const chats = useChatMentions(id, typedMention(text) !== undefined);
+  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople), friends, tasks, projects, chats }) : []), [text, people, addPeople, friends, tasks, projects, chats]);
+  const world = useChannelWorld(me, people);
   const write = (next: string): void => {
     setText(next);
     sug.reset();
   };
   const run = (picked: ChannelSuggestion): void => {
-    if (!picked.command) return write(picked.value);
+    // A chat picked: its mention written short, a chip with its title (as a dropped row's).
+    if (!picked.command) return write(picked.kind === 'chat' ? boxChats(picked.value) : picked.value);
     write('');
     if (picked.command === 'claude') setAsk({ kind: 'me' });
     else if (picked.command === 'claudes') setAsk({ kind: 'all' });
@@ -151,6 +173,15 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
     if (text) drafts.set(id, text);
     else drafts.delete(id);
   }, [id, text]);
+  // A worktree's or a chat's row dropped here (layout/chat-drag.tsx): its chip at the cursor. It waits in the words: it never sends.
+  useDraftChips(id, (words) => {
+    const at = ref.current?.value === text ? ref.current.selectionStart : text.length;
+    const next = withChatWords(text, at, boxChats(words));
+    // In the kept draft at once too: a drop on a friend's row opens their chat, whose box may be drawn again as it loads.
+    drafts.set(id, next.text);
+    setText(next.text);
+    caretAfterDraw(ref, next.caret);
+  });
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -192,8 +223,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
     const to = me ? mergeAsk(ask ? askTo(ask, me.peerId) : undefined, mentionedAsk(body, me.peerId, people)) : undefined;
     setText('');
     setAsk(undefined);
-    // Worktrees' links written short in the box go out whole ("worktree:wt-…", BLG-887).
-    send({ text: plainWorktrees(body, worktreeNamesOf(client.store.getState().projects)), files, ...(to ? { ask: to } : {}) }).catch(() => {
+    // Worktrees' links and chats' chips written short in the box go out whole ("worktree:wt-…", BLG-887; "@Title (chat: …)").
+    send({ text: plainWords(body, client.store.getState()), files, ...(to ? { ask: to } : {}) }).catch(() => {
       // Nothing is lost: the words and files come back (ahead of anything new).
       setText((t) => (t.trim() ? `${body}\n${t}` : body));
       restorePending(id, files);
@@ -205,7 +236,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
   const sendKeys = prefs.sendWith === 'enter' ? '↩' : chordLabel('Cmd+Enter');
   const label = ask ? `${askLabel(ask)} · ` : '';
   return (
-    <div className={c.wrap}>
+    // A box that takes a dropped worktree's or chat's row (layout/chat-drag.tsx), as your own chats' do.
+    <div className={c.wrap} data-chat-box={id}>
       {sug.list}
       <div className={cx(c.box, ask && c.asking)}>
         {ask ? (
@@ -271,7 +303,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
               </button>
             </Tip>
           ) : null}
-          <IconButton icon="clip" label="Send Files…" onClick={() => void pickFiles(client, id, picker.current)} />
+          <IconButton size="small" icon="clip" label="Send Files…" onClick={() => void pickFiles(client, id, picker.current)} />
           <input
             ref={picker}
             type="file"

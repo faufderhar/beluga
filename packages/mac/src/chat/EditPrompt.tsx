@@ -84,7 +84,7 @@ export function EditPrompt({ wsId, lineId, text, worktree, onClose }: { wsId: st
         spellCheck
       />
       <div className={s.bar}>
-        <Segmented<Mode>
+        <Segmented<Mode> size="small"
           label="Where the edit goes"
           value={mode}
           onChange={(m) => {

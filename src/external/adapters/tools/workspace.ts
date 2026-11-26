@@ -11,6 +11,7 @@ import type { WorkspacePort } from '../../ports/workspace.js';
 import type { ExternalToolDef, Resolved } from '../mcp-tools.js';
 import { type Run, adapt, call } from './adapt.js';
 import { DATA_NOTICE, chatInScope, untrusted } from './read.js';
+import { THIS_COMPUTER } from '../../../shared/assistant.js';
 
 /**
  * An agent runs the worktree life cycle, and looks at this Mac and the phone. Starting work runs as
@@ -145,7 +146,7 @@ export function workspaceTools(reads: ChatRead, port: WorkspacePort, control: Ch
       },
     },
     ...adapt(macDefs, runMac, [
-      { name: 'screenshot', resolve: () => ({ ...nothing, detail: 'It can show other apps on this Mac.' }) },
+      { name: 'screenshot', resolve: () => ({ ...nothing, detail: `It can show other apps on ${THIS_COMPUTER}.` }) },
       { name: 'device_info', resolve: () => nothing },
     ]),
     ...adapt(phoneDefs, runPhone, [

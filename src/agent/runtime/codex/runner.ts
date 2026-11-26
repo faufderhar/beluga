@@ -219,7 +219,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       let conn: CodexConnection | undefined;
       // Codex's sub-agents (BLG-519): rows and steps on the request's card, as Claude's are.
       const subAgents = new CodexSubAgents(cwd, { onSub: (e) => input.onEvent('sub', JSON.stringify(e)), ...(input.onStep ? { onStep: input.onStep } : {}), onFileTouched: input.onFileTouched });
-      const events = new CodexEvents(cwd, { onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) }, { onFileTouched: input.onFileTouched, expand: (t) => shelf.expand(t), onTokens, subAgents });
+      const events = new CodexEvents(cwd, { onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) }, { onFileTouched: input.onFileTouched, expand: (t) => shelf.expand(t), onTokens, model: () => model ?? threadModel, subAgents });
       let failed = true;
       let closed = false;
       try {
@@ -403,11 +403,40 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             if (early) done.resolve(early);
             const turn = await Promise.race([done.promise, stopped.promise, abort.promise]);
             const said = events.endTurn(turn.status === 'completed');
-            if (said.usage) sink.onEvent('usage', usageEvent(said.usage, threadId));
+            if (said.usage) sink.onEvent('usage', usageEvent(said.usage, threadId, { compactions: said.compactions }));
             return { text: said.text, turn };
           } finally {
             active = undefined;
           }
+        };
+
+        /**
+         * /compact: Codex's own (thread/compact/start), run as the turn it starts. Its summary stays
+         * out of the chat; the divider says how full the window was before and after (events.ts).
+         * Codex keeps what it decides to: focus words after /compact don't reach it.
+         */
+        const compactTurn = async (sink: TurnSink): Promise<{ text: string; turn: Turn }> => {
+          events.beginTurn(sink);
+          events.compactionAsked();
+          const done = deferred<Turn>();
+          const turnNow: NonNullable<typeof active> = { done };
+          active = turnNow;
+          try {
+            await rpc().request('thread/compact/start', { threadId });
+            const turn = await Promise.race([done.promise, stopped.promise, abort.promise]);
+            const said = events.endTurn(turn.status === 'completed');
+            if (said.usage) sink.onEvent('usage', usageEvent(said.usage, threadId, { compactions: Math.max(1, said.compactions) }));
+            return { text: '', turn };
+          } finally {
+            active = undefined;
+          }
+        };
+        /** A message as its turn: /compact is Codex's own compaction, anything else a turn of words. */
+        const turnOf = async (sink: TurnSink, prompt: string, built: (p: string) => string): Promise<string> => {
+          if (isCompact(prompt)) return answerOf(await compactTurn(sink), sink);
+          const its = await mapSlash(prompt, cwd, claudeHome());
+          const note = noted(its, sink);
+          return note(answerOf(await runTurn(sink, built(its.prompt), prompt, its.skill), sink));
         };
 
         // Messages for the run: steered in while a turn works, or a turn of their own after it.
@@ -481,10 +510,11 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         const answers: string[] = [];
         // Plan mode, the Codex way: a read-only turn that answers with a plan, for you to approve.
         // `/name`: one of Claude Code's skills or commands, mapped to Codex (what doesn't map is said, see skills.ts).
-        const mapped = await mapSlash(input.prompt, cwd, claudeHome());
+        const compacting = !input.plan && isCompact(input.prompt);
+        const mapped = compacting ? { prompt: input.prompt, notes: [] } : await mapSlash(input.prompt, cwd, claudeHome());
         const said = noted(mapped, original);
         const asked = buildPrompt({ ...input, prompt: mapped.prompt });
-        let r = await runTurn(original, input.plan ? `${asked}\n\n${PLAN_NOTE}` : asked, input.prompt, mapped.skill);
+        let r = compacting ? await compactTurn(original) : await runTurn(original, input.plan ? `${asked}\n\n${PLAN_NOTE}` : asked, input.prompt, mapped.skill);
         let answer = said(answerOf(r, original));
         let askedToDefine = false;
         for (let round = 0; input.plan && input.askUser && round < PLAN_ROUNDS && r.turn.status === 'completed'; round++) {
@@ -539,7 +569,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             if (own) {
               const turn = await Promise.race([own.done.promise, stopped.promise, abort.promise]);
               const said = events.endTurn(turn.status === 'completed');
-              if (said.usage) original.onEvent('usage', usageEvent(said.usage, threadId));
+              if (said.usage) original.onEvent('usage', usageEvent(said.usage, threadId, { compactions: said.compactions }));
               if (active === own) active = undefined;
               selfStarted = undefined;
               if (turn.status === 'completed' && said.text) answers.push(shelf.finish(said.text));
@@ -566,9 +596,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           followUp.onStart?.();
           try {
             await switchTo(followUp.model);
-            const its = await mapSlash(followUp.prompt, cwd, claudeHome());
-            const note = noted(its, sink);
-            followUp.onDone(note(answerOf(await runTurn(sink, buildPrompt({ ...followUp, prompt: its.prompt }), followUp.prompt, its.skill), sink)));
+            followUp.onDone(await turnOf(sink, followUp.prompt, (prompt) => buildPrompt({ ...followUp, prompt })));
           } catch (err) {
             if (aborted) throw err;
             followUp.onError(err instanceof Error ? err.message : String(err));
@@ -661,3 +689,6 @@ const PLAN_NOTE = 'Plan only: look around read-only, change nothing, and answer 
 const DEFINE_NOTE =
   'Before the plan goes to the person for approval, call mcp__beluga_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then answer with the plan again, in full.';
 const NOT_YET_NOTE = 'The person did not approve the plan yet. Ask them what they would like to change, and change nothing.';
+
+/** `/compact` (with focus words or not): Codex's own compaction, never a turn of words. */
+export const isCompact = (prompt: string): boolean => /^\/compact(\s|$)/.test(prompt.trim());

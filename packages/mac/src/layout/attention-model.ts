@@ -2,6 +2,7 @@ import { type AppState, type LogItem, isRunning } from '../../../../src/core/sto
 import { type Plan, planTitle } from '../../../../src/core/plans/model.js';
 import { isLivePlan, isPlanOwned, planConversations, planOwnerOf } from '../../../../src/core/plans/owner.js';
 import { type Sentinel, sentinelChannels, sentinelOfChannel } from '../../../../src/core/sentinel/model.js';
+import { chatsWithThreadsWorking } from '../../../../src/core/threads/model.js';
 import { channelsOf, laterUntil, triageFacts } from '../../../../src/core/triage/facts.js';
 import { type ChatCategory, type ChatTriage, categoryOf, triageKey } from '../../../../src/core/triage/model.js';
 import { hhmm, span } from '../../../../src/shared/clock.js';
@@ -39,7 +40,7 @@ export interface Signal {
 
 export const IDLE_SIGNAL: Signal = { level: 'idle', unread: 0, working: false, tip: '' };
 
-type Source = Pick<AppState, 'log' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode' | 'plans' | 'board' | 'sentinel'>;
+type Source = Pick<AppState, 'log' | 'projects' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode' | 'plans' | 'board' | 'sentinel'>;
 
 const NEED_TIPS: Record<Need, string> = {
   approval: 'Your agent needs your approval',
@@ -84,7 +85,7 @@ const FIXABLE: ReadonlySet<Need> = new Set(['checks', 'conflict']);
 export function signalOf(state: Source, channel: string, ws?: string): Signal {
   const unread = state.unread[channel] ?? 0;
   const found = needOf(state, channel, ws);
-  const working = activityOf(state.log, channel).running || (ws !== undefined && state.claudeCode.sessions.some((x) => !x.own && x.workspaceId === ws && x.status === 'working'));
+  const working = activityOf(state.log, channel).running || chatsWithThreadsWorking(state).has(channel) || (ws !== undefined && state.claudeCode.sessions.some((x) => !x.own && x.workspaceId === ws && x.status === 'working'));
   // Failing checks or a conflict while your agent works there: it's on it (BLG-748), so it reads as working. Still there when it stops: red again.
   const fixing = working && found !== undefined && FIXABLE.has(found) ? found : undefined;
   const need = fixing ? undefined : found;

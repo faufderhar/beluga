@@ -112,8 +112,8 @@ export function SessionsCard({ windows, limits, now }: { windows: readonly PlanW
   const unit = kind === 'session' ? 'session' : 'week';
   const aside = (
     <>
-      {runtimes.length > 1 ? <Segmented label="Agent" value={runtime} options={runtimes.map((r) => ({ value: r, label: RUNTIME_NAMES[r] ?? r }))} onChange={(r) => (setPicked(r), setHover(undefined))} /> : null}
-      {kinds.length > 1 ? <Segmented label="Window" value={kind} options={kinds} onChange={(k) => (setKind(k), setHover(undefined))} /> : null}
+      {runtimes.length > 1 ? <Segmented size="small" label="Agent" value={runtime} options={runtimes.map((r) => ({ value: r, label: RUNTIME_NAMES[r] ?? r }))} onChange={(r) => (setPicked(r), setHover(undefined))} /> : null}
+      {kinds.length > 1 ? <Segmented size="small" label="Window" value={kind} options={kinds} onChange={(k) => (setKind(k), setHover(undefined))} /> : null}
     </>
   );
   return (

@@ -188,11 +188,11 @@ function Page({ d, all, onPick, scope, children }: { d: Dashboard; all: readonly
           </span>
         ) : (
           <Tip label={sentinels.length ? `Run its ${sentinels.length === 1 ? 'sentinel' : `${sentinels.length} sentinels`} now, one at a time` : 'Its sentinels are paused or gone'}>
-            <IconButton icon="refresh" label="Refresh" disabled={!sentinels.length} onClick={() => void a.act(() => api.dashboard.refresh(d.id))} />
+            <IconButton size="small" icon="refresh" label="Refresh" disabled={!sentinels.length} onClick={() => void a.act(() => api.dashboard.refresh(d.id))} />
           </Tip>
         )}
         <ActionsDropdown items={more}>
-          <IconButton icon="more" label={`More for ${d.name}`} />
+          <IconButton size="small" icon="more" label={`More for ${d.name}`} />
         </ActionsDropdown>
       </SectionHead>
       <AskLine d={d} />
@@ -686,7 +686,7 @@ function TileCell({ d, tile, state, source, movable, place, onSize, onPointerDow
   );
   const more = ghost ? null : (
     <ActionsDropdown items={menu}>
-      <IconButton icon="more" label={`More for ${cap.title || 'this tile'}`} className={n.cellMore} />
+      <IconButton size="small" icon="more" label={`More for ${cap.title || 'this tile'}`} className={n.cellMore} />
     </ActionsDropdown>
   );
   if (tile.kind === 'divider') {

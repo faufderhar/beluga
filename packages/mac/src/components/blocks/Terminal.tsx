@@ -6,6 +6,7 @@ import { cx } from '../ui.js';
 import { copyText } from '../../lib/copy.js';
 import { toast, useBeluga } from '../../lib/beluga.js';
 import { useCopied } from '../markdown/CodeBlock.js';
+import { runnableCommand } from '@beluga/shared/render/run-command.js';
 import b from './blocks.module.css';
 
 /**
@@ -49,7 +50,8 @@ function Spans({ spans }: { spans: readonly Span[] }) {
   );
 }
 
-export const Terminal = memo(function Terminal({ code, lang, onQuote }: { code: string; lang?: string | undefined; onQuote?: ((fence: string) => void) | undefined }) {
+/** `onRun`: Run types the session's commands into the terminal here (your own and your own Claude's only). */
+export const Terminal = memo(function Terminal({ code, lang, onQuote, onRun }: { code: string; lang?: string | undefined; onQuote?: ((fence: string) => void) | undefined; onRun?: ((command: string) => void) | undefined }) {
   const { client } = useBeluga();
   const term = useMemo(() => readTerminal(code), [code]);
   const [wrap, setWrap] = useState(false);
@@ -59,8 +61,11 @@ export const Terminal = memo(function Terminal({ code, lang, onQuote }: { code: 
   const hidden = all ? 0 : Math.max(0, term.lines.length - TERMINAL_FOLD);
   const shown = hidden ? term.lines.slice(hidden) : term.lines;
   const name = (lang ?? '').toLowerCase();
+  const command = useMemo(() => (onRun ? runnableCommand(lang, code) : undefined), [onRun, lang, code]);
+  const run = command && onRun ? () => onRun(command) : undefined;
   const items: ActionItem[] = [
-    { label: 'Copy Output', icon: 'copy', onSelect: () => copy(term.copy, 'the output') },
+    ...(run ? [{ label: term.commands.length > 1 ? 'Run the Commands in Terminal' : 'Run in Terminal', icon: 'play' as const, onSelect: run }] : []),
+    { label: 'Copy Output', icon: 'copy', separate: Boolean(run), onSelect: () => copy(term.copy, 'the output') },
     ...(term.commands.length ? [{ label: term.commands.length === 1 ? 'Copy Command' : 'Copy Commands', icon: 'terminal' as const, onSelect: () => copy(term.commands.join('\n'), term.commands.length === 1 ? 'the command' : 'the commands') }] : []),
     { label: 'Wrap Long Lines', icon: 'wrap', separate: true, checked: wrap, onSelect: () => setWrap(!wrap) },
     ...(hidden ? [{ label: `Show All ${term.lines.length} Lines`, onSelect: () => setAll(true) }] : []),
@@ -77,6 +82,12 @@ export const Terminal = memo(function Terminal({ code, lang, onQuote }: { code: 
           {term.commands.length > 1 ? <span>{term.commands.length} commands</span> : null}
         </div>
         <div className={b.tools}>
+          {run ? (
+            <button type="button" className={b.tool} aria-label="Run in the terminal" title={command} onClick={run}>
+              <Icon name="play" size={12} />
+              Run
+            </button>
+          ) : null}
           <button type="button" className={b.tool} aria-label="Copy the output" onClick={() => copyNow(term.copy)}>
             <Icon name={copied ? 'check' : 'copy'} size={12} />
             {copied ? 'Copied' : 'Copy'}

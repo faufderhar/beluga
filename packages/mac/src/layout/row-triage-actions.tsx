@@ -10,7 +10,7 @@ import { Button, IconButton } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useBeluga } from '../lib/beluga.js';
 import { type CategoryEntry, conversationEntries, nextActive, wakeWords } from './attention-model.js';
-import { hereOf, openEntry } from './EntryRow.js';
+import { hereOf, openEntry } from './entry-open.js';
 import { toolbarActions } from './toolbar-actions.js';
 import s from './Sidebar.module.css';
 
@@ -59,15 +59,15 @@ export function RowTriageTools({ e }: { e: CategoryEntry }) {
     <span className={s.hoverTools}>
       {toolsOf(e.category).includes('snooze') ? (
         <ActionsDropdown items={snoozeItems(client, actions.run, e.channel)}>
-          <IconButton icon="clock" label={`Remind me later about ${e.name}`} onClick={(ev) => ev.stopPropagation()} />
+          <IconButton size="small" icon="clock" label={`Remind me later about ${e.name}`} onClick={(ev) => ev.stopPropagation()} />
         </ActionsDropdown>
       ) : null}
-      {toolsOf(e.category).includes('settle') ? <IconButton icon="check" label={`Settle ${e.name}`} onClick={(ev) => (ev.stopPropagation(), settle(client, actions.run, e.channel))} /> : null}
-      {toolsOf(e.category).includes('wake') ? <IconButton icon="eye" label={`Show ${e.name} again now`} onClick={(ev) => (ev.stopPropagation(), wake(client, e.channel))} /> : null}
-      {toolsOf(e.category).includes('unsettle') ? <IconButton icon="inbox" label={`Un-settle ${e.name}`} onClick={(ev) => (ev.stopPropagation(), unsettle(client, e.channel))} /> : null}
+      {toolsOf(e.category).includes('settle') ? <IconButton size="small" icon="check" label={`Settle ${e.name}`} onClick={(ev) => (ev.stopPropagation(), settle(client, actions.run, e.channel))} /> : null}
+      {toolsOf(e.category).includes('wake') ? <IconButton size="small" icon="eye" label={`Show ${e.name} again now`} onClick={(ev) => (ev.stopPropagation(), wake(client, e.channel))} /> : null}
+      {toolsOf(e.category).includes('unsettle') ? <IconButton size="small" icon="inbox" label={`Un-settle ${e.name}`} onClick={(ev) => (ev.stopPropagation(), unsettle(client, e.channel))} /> : null}
       {/* Settled, and done with: put it away (Archive…, as from its menu). */}
       {e.category === 'settled' && e.kind === 'workspace' && canArchive(client.store.getState(), e.ws) ? (
-        <IconButton icon="archive" label={`Archive ${e.name}`} onClick={(ev) => (ev.stopPropagation(), actions.run({ type: 'ws', id: e.ws.id, action: 'archive' }))} />
+        <IconButton size="small" icon="archive" label={`Archive ${e.name}`} onClick={(ev) => (ev.stopPropagation(), actions.run({ type: 'ws', id: e.ws.id, action: 'archive' }))} />
       ) : null}
     </span>
   );
@@ -103,8 +103,8 @@ export function SnoozeCustomSheet() {
       onReturn={confirm}
       footer={
         <>
-          <Button onClick={() => setPick(undefined)}>Cancel</Button>
-          <Button variant="primary" disabled={!ok} onClick={confirm}>
+          <Button size="small" onClick={() => setPick(undefined)}>Cancel</Button>
+          <Button size="small" variant="primary" disabled={!ok} onClick={confirm}>
             Remind Me
           </Button>
         </>

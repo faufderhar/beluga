@@ -8,7 +8,7 @@ import { openSheet } from '../lib/sheets.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel, milestoneRows, taskWords } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon } from './marks.js';
 import { openDecision } from './plan-ask-model.js';
-import { useCheckerChat, useClock, usePlanActions } from './use-plans.js';
+import { useCardClock, useCheckerChat, usePlanActions } from './use-plans.js';
 import { useStartWith } from '../components/agent-options.js';
 import { useMyAgent } from '../lib/agent-words.js';
 import type { AgentRef } from '@beluga/protocol.js';
@@ -75,7 +75,7 @@ function Milestone({ view, plan, m, keys, marks, selected, onSelect, startable }
           {m.state === 'draft' ? `${m.milestone.tasks.length} tasks` : `${m.finished}/${m.total}`}
         </span>
         <ActionsDropdown items={menu}>
-          <IconButton icon="more" label={`${m.milestone.title} Options`} />
+          <IconButton size="small" icon="more" label={`${m.milestone.title} Options`} />
         </ActionsDropdown>
       </header>
       {m.milestone.goal ? <p className={p.oGoal}>{m.milestone.goal}</p> : null}
@@ -101,7 +101,7 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
   const { api, act, openTask, openWorktree } = usePlanActions();
   const body = plan.draft ?? plan.body;
   const edit = (ops: PlanOp[]): void => void act(() => api.edit(plan.id, ops));
-  const now = useClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
+  const now = useCardClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
   const info = taskWords(t, now);
   const others = (body?.milestones ?? []).filter((m) => m.id !== t.milestoneId);
   const startWith = useStartWith();
@@ -136,7 +136,7 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
           <TaskChatMark {...(t.worktree ? { worktree: t.worktree } : {})} />
         </div>
         <span className={p.oTaskMeta}>
-          {info.sub && (t.pulse || t.state === 'running') ? <span className={p.oStep}>{info.sub}</span> : t.state === 'blocked' ? <span className={p.muted}>{t.why}</span> : null}
+          {info.sub && (t.pulse || t.state === 'running') ? <span className={p.oStep}>{info.sub}</span> : info.sub && t.state !== 'later' ? <span className={p.muted}>{info.sub}</span> : null}
           {t.task.estimate ? <span className={p.points}>{t.task.estimate}</span> : null}
           {t.forYou ? <Icon name="person" size={12} className={p.forYou} /> : null}
           {canStart ? (

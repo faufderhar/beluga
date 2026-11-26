@@ -4,17 +4,21 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentBackend, AgentRunInput } from '../src/agent/types.js';
 import { Store, initialState } from '../src/core/store.js';
-import { ASK_ROUND, LATER_MERGES, LATER_MS, type TelemetryRecord, answerAsk, askDue, chooseLevel, effectiveLevel, excludeProject, projectOfFolder, telemetryView } from '../src/core/telemetry-store.js';
+import { ASK_ROUND, LATER_MERGES, LATER_MS, type TelemetryRecord, answerAsk, askAnswer, askDue, chooseLevel, levelOnLeave, resetInstallId, effectiveLevel, excludeProject, projectOfFolder, telemetryView } from '../src/core/telemetry-store.js';
 import { ClaudeOtel } from '../src/telemetry/claude-otel.js';
 import { releaseConfig } from '../src/telemetry/config.js';
+import { deviceFacts } from '../src/telemetry/device.js';
 import { Exporter } from '../src/telemetry/exporter.js';
 import { featureCounter } from '../src/telemetry/features.js';
 import { Masker, REDACTED, secretWorthy } from '../src/telemetry/mask.js';
 import { observedBackend } from '../src/telemetry/observe.js';
-import { event, pseudonym } from '../src/telemetry/otlp.js';
+import { event, logsRequest, pseudonym, tracesRequest } from '../src/telemetry/otlp.js';
 import { loadTelemetryRecord, saveTelemetryRecord } from '../src/telemetry/record.js';
 import { TelemetryService } from '../src/telemetry/service.js';
-import { type TurnFacts, turnSpans } from '../src/telemetry/turn.js';
+import { ModelIds, type TurnFacts, belugaToolSpans, isBelugaTool, turnSpans } from '../src/telemetry/turn.js';
+import { toolErrorType } from '../src/telemetry/tool-error.js';
+import { StepRecorder } from '../src/agent/step-recorder.js';
+import type { StepRecord } from '../src/shared/steps.js';
 import { parseArgs } from '../src/ipc/api.js';
 
 /** Usage statistics: the choice and the ask, masking, the spans Ratel reads, sending, and what a run tells it. */
@@ -58,6 +62,31 @@ describe('the choice and the ask', () => {
     expect(answerAsk(later, 'later', 'limited', { merges: 3, now: 2 }).ask?.times).toBe(2);
   });
 
+  it('an update from a version without usage statistics asks; Later (or closing it) is kept across restarts and asks again', async () => {
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'tel-')), 'telemetry.json');
+    let now = 1_000_000;
+    const config = { url: 'https://ratel.example', key: 'rtl_pub_xxxxxxxx' };
+    const start = () => {
+      const s = new Store(initialState('test', 'ask'));
+      return { s, service: new TelemetryService({ store: s, version: '1', file, secrets: () => [], config, now: () => now, fetch: (async () => new Response('', { status: 202 })) as unknown as typeof fetch }) };
+    };
+    // No telemetry.json: the version before had none.
+    const first = start();
+    expect(first.s.getState().telemetry).toMatchObject({ available: true, due: true });
+    first.service.answer('later', 'limited');
+    expect(first.s.getState().telemetry.due).toBe(false);
+    await first.service.stop();
+    // The next start remembers Later, and asks again once it's due.
+    now += 60_000;
+    const second = start();
+    expect(second.s.getState().telemetry.due).toBe(false);
+    await second.service.stop();
+    now += LATER_MS;
+    const third = start();
+    expect(third.s.getState().telemetry.due).toBe(true);
+    await third.service.stop();
+  });
+
   it('a level chosen in Settings after Later settles the ask (Off as No thanks)', () => {
     const later = answerAsk(fresh, 'later', 'limited', { merges: 0, now: 0 });
     for (const level of ['off', 'on'] as const) {
@@ -85,12 +114,81 @@ describe('the choice and the ask', () => {
     expect(JSON.parse(readFileSync(file, 'utf8')).installId).toBe(first.record.installId);
   });
 
+  it('the onboarding picks nothing for you: leaving it with no level picked is Off', () => {
+    const view = (record: TelemetryRecord, available = true) => telemetryView(record, ctx({ available }));
+    expect(levelOnLeave(view(fresh))).toBe('off');
+    expect(levelOnLeave(view(chooseLevel(fresh, 'limited', 'onboarding', 1)))).toBeUndefined();
+    expect(levelOnLeave(view(chooseLevel(fresh, 'on', 'onboarding', 1)))).toBeUndefined();
+    // A build that can't send has nothing to choose.
+    expect(levelOnLeave(view(fresh, false))).toBeUndefined();
+    // Picked in this onboarding, before the daemon's copy came back: the pick stands, no Off after it.
+    expect(levelOnLeave(view(fresh), true)).toBeUndefined();
+    // Off, kept from the onboarding, is a choice: the ask never comes after it.
+    expect(askDue(chooseLevel(fresh, levelOnLeave(view(fresh))!, 'onboarding', 1), ctx())).toBe(false);
+  });
+
+  it('the ask picks nothing for you: only a level you pick shares, Off is No thanks', () => {
+    expect(askAnswer(undefined)).toBeUndefined();
+    expect(askAnswer('off')).toEqual({ answer: 'never', level: 'off' });
+    expect(askAnswer('limited')).toEqual({ answer: 'share', level: 'limited' });
+    expect(askAnswer('on')).toEqual({ answer: 'share', level: 'on' });
+  });
+
+  it('a reset install id is a new random one; the rest of the record stays', () => {
+    const chosen = chooseLevel(fresh, 'on', 'settings', 1);
+    const reset = resetInstallId(chosen, '0f1e2d3c-4b5a-4968-8776-655443322110');
+    expect(reset).toEqual({ ...chosen, installId: '0f1e2d3c-4b5a-4968-8776-655443322110' });
+  });
+
+  it('shows the install id once a level is chosen, Off too (for a request after withdrawal); Reset ID keeps a new one in telemetry.json', async () => {
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'tel-id-')), 'telemetry.json');
+    const s = new Store(initialState('test', 'ask'));
+    const service = new TelemetryService({ store: s, version: '1', file, secrets: () => [], config: { url: 'https://ratel.example', key: 'rtl_pub_xxxxxxxx' }, fetch: (async () => new Response('', { status: 202 })) as unknown as typeof fetch });
+    // Never chosen: the id isn't kept anywhere yet, and nothing was sent under it.
+    expect(service.installId()).toBeUndefined();
+    service.choose('limited', 'settings');
+    const before = service.installId();
+    expect(before).toBe(loadTelemetryRecord(file).record.installId);
+    // Withdrawn: the id stays, for an access or erasure request.
+    service.choose('off', 'settings');
+    expect(service.installId()).toBe(before);
+    // Reset at Off is allowed (nothing is sent anyway), and kept.
+    const after = service.resetId();
+    expect(after).not.toBe(before);
+    expect(after).toMatch(/^[0-9a-f-]{36}$/);
+    expect(service.installId()).toBe(after);
+    expect(loadTelemetryRecord(file).record).toMatchObject({ installId: after, level: 'off' });
+    await service.stop();
+  });
+
+  it('Reset ID drops the feature counts made before it, so none go under the new id', async () => {
+    const s = new Store(initialState('test', 'ask'));
+    const service = new TelemetryService({ store: s, version: '1', file: null, secrets: () => [], config: { url: 'https://ratel.example', key: 'rtl_pub_xxxxxxxx' }, fetch: (async () => new Response('', { status: 202 })) as unknown as typeof fetch });
+    service.choose('limited', 'settings');
+    featureCounter.drain();
+    featureCounter.call('session.submit', 5, true);
+    service.resetId();
+    expect(featureCounter.drain().counts).toEqual([]);
+    await service.stop();
+  });
+
   it('only screens choose: the API checks the levels and the places', () => {
     expect(() => parseArgs('telemetry.choose', ['loud', 'settings'])).toThrow();
     expect(() => parseArgs('telemetry.choose', ['on', 'ask'])).toThrow();
     expect(() => parseArgs('telemetry.mark', ['anything', undefined])).toThrow();
     expect(() => parseArgs('telemetry.mark', ['preview_opened', undefined])).toThrow();
     expect(parseArgs('telemetry.answer', ['later', 'limited'])).toEqual(['later', 'limited']);
+  });
+});
+
+describe('no address leaves this computer', () => {
+  it('neither the device facts nor the resource carry an IP address or a host name', () => {
+    const facts = deviceFacts({ app_version: '1' });
+    const sender = { installId: ID, version: '1' };
+    const sent = JSON.stringify([facts, tracesRequest(sender, []), logsRequest(sender, [])]);
+    expect(sent).not.toMatch(/host\.(name|ip)|client\.address|hostname|"ip"/i);
+    expect(sent).not.toContain(os.hostname());
+    for (const nets of Object.values(os.networkInterfaces())) for (const n of nets ?? []) if (!n.internal) expect(sent).not.toContain(n.address);
   });
 });
 
@@ -156,6 +254,13 @@ describe('the release config', () => {
     expect(releaseConfig(env({ TELEMETRY_URL: 'https://ratel.example/', TELEMETRY_KEY: 'rtl_pub_abcdef123456' }))).toEqual({ url: 'https://ratel.example', key: 'rtl_pub_abcdef123456' });
     expect(releaseConfig(env({ TELEMETRY_URL: 'http://ratel.example', TELEMETRY_KEY: 'rtl_pub_abcdef123456' }))).toBeUndefined();
     expect(releaseConfig(env({ TELEMETRY_URL: 'http://127.0.0.1:4318', TELEMETRY_KEY: 'rtl_pub_abcdef123456' }))?.url).toBe('http://127.0.0.1:4318');
+  });
+
+  it('can carry a second key for Beluga\'s own project (the same key twice is one project)', () => {
+    const base = { TELEMETRY_URL: 'https://ratel.example', TELEMETRY_KEY: 'rtl_pub_agents_123456' };
+    expect(releaseConfig(env({ ...base, TELEMETRY_PRODUCT_KEY: 'rtl_pub_beluga_123456' }))).toEqual({ url: 'https://ratel.example', key: 'rtl_pub_agents_123456', productKey: 'rtl_pub_beluga_123456' });
+    expect(releaseConfig(env({ ...base, TELEMETRY_PRODUCT_KEY: 'rtl_pub_agents_123456' }))).toEqual({ url: 'https://ratel.example', key: 'rtl_pub_agents_123456' });
+    expect(releaseConfig(env({ TELEMETRY_URL: 'https://ratel.example', TELEMETRY_PRODUCT_KEY: 'rtl_pub_beluga_123456' }))).toBeUndefined();
   });
 
   it('BELUGA_TELEMETRY=0 turns it off whatever else says', () => {
@@ -282,6 +387,191 @@ describe('a turn as spans (the shape Ratel reads)', () => {
   });
 });
 
+describe('a turn as spans: what Ratel Cloud keeps', () => {
+  const op = (s: Parameters<typeof attr>[0]) => attr(s, 'gen_ai.operation.name')?.stringValue;
+  const call = (model: string, at: number, output = 2, source = 'sdk') => ({ model, source, at, durationMs: 300, usage: { input: 1, output, cacheRead: 3, cacheWrite: 4, cost: 0.01 } });
+
+  it('the model is the id that answered, not the name picked; the name picked is kept beside it', () => {
+    const spans = turnSpans(turn({ model: 'opus', resolvedModel: 'claude-opus-5-5[1m]' }), ID);
+    const [root, chat] = spans;
+    expect(attr(root!, 'gen_ai.request.model')).toEqual({ stringValue: 'claude-opus-5-5' });
+    expect(attr(root!, 'ratel.model.alias')).toEqual({ stringValue: 'opus' });
+    expect(attr(chat!, 'gen_ai.request.model')).toEqual({ stringValue: 'claude-opus-5-5' });
+    expect(attr(chat!, 'gen_ai.response.model')).toEqual({ stringValue: 'claude-opus-5-5' });
+    expect(chat!.name).toBe('chat claude-opus-5-5');
+    // Picked by its id already: nothing to add.
+    expect(attr(turnSpans(turn(), ID)[0]!, 'ratel.model.alias')).toBeUndefined();
+  });
+
+  it('without the id from the run, the requests say which model the name picked was', () => {
+    const calls = [call('claude-haiku-5-5', 1_500, 900, 'generate_session_title'), call('claude-opus-5-5', 1_900), call('claude-opus-5-5', 2_900)];
+    const root = turnSpans(turn({ model: 'opus', calls }), ID)[0]!;
+    expect(attr(root, 'gen_ai.request.model')).toEqual({ stringValue: 'claude-opus-5-5' });
+    // No model picked (the default): the one that wrote the most.
+    const { model: _m, ...rest } = turn({ calls });
+    expect(attr(turnSpans(rest, ID)[0]!, 'gen_ai.request.model')).toEqual({ stringValue: 'claude-haiku-5-5' });
+    // Nothing to go by: no model rather than the name (it would split the model's statistics, BLG-1029); the name goes apart.
+    const unsaid = turnSpans(turn({ model: 'opus' }), ID)[0]!;
+    expect(attr(unsaid, 'gen_ai.request.model')).toBeUndefined();
+    expect(attr(unsaid, 'ratel.model.alias')).toEqual({ stringValue: 'opus' });
+  });
+
+  it('a later turn that only had the name goes out with the id an earlier turn said it stood for', () => {
+    const ids = new ModelIds();
+    // Nothing said yet: nothing to fill in.
+    expect(ids.settle(turn({ model: 'opus' })).resolvedModel).toBeUndefined();
+    ids.settle(turn({ model: 'opus', resolvedModel: 'claude-opus-5-5' }));
+    const later = turnSpans(ids.settle(turn({ model: 'opus' })), ID)[0]!;
+    expect(attr(later, 'gen_ai.request.model')).toEqual({ stringValue: 'claude-opus-5-5' });
+    expect(attr(later, 'ratel.model.alias')).toEqual({ stringValue: 'opus' });
+    // An id picked is sent as it is; another runtime's names are its own.
+    expect(attr(turnSpans(ids.settle(turn({ model: 'claude-sonnet-5-5' })), ID)[0]!, 'gen_ai.request.model')).toEqual({ stringValue: 'claude-sonnet-5-5' });
+    expect(ids.settle(turn({ runtime: 'local', model: 'opus' })).resolvedModel).toBeUndefined();
+  });
+
+  it('each request is a chat span with its own tokens, cost and what asked for it', () => {
+    const spans = turnSpans(turn({ model: 'opus', calls: [call('claude-haiku-5-5', 1_500, 7, 'generate_session_title'), call('claude-opus-5-5', 1_900, 20)] }), ID);
+    const chats = spans.filter((s) => op(s) === 'chat');
+    expect(chats.map((c) => attr(c, 'gen_ai.request.model')?.stringValue)).toEqual(['claude-haiku-5-5', 'claude-opus-5-5']);
+    expect(chats.map((c) => attr(c, 'gen_ai.usage.output_tokens')?.intValue)).toEqual(['7', '20']);
+    expect(chats.map((c) => attr(c, 'ratel.request.source')?.stringValue)).toEqual(['generate_session_title', 'sdk']);
+    expect(attr(chats[1]!, 'ratel.usage.cost_usd')).toEqual({ doubleValue: 0.01 });
+  });
+
+  it('no beluga.* attribute is left (Ratel Cloud drops them): ratel.* names instead', () => {
+    const facts = turn({ effort: 'high', compactions: 2, subagents: 1, tools: [{ id: 't1', name: 'Read', startedAt: 2_000, endedAt: 2_500, ok: true, parent: 'toolu_agent' }, { id: 't2', name: 'mcp__beluga__send_chat', startedAt: 3_000, ok: true }] });
+    for (const spans of [turnSpans(facts, ID), belugaToolSpans(facts, ID)]) {
+      expect(spans.flatMap((s) => s.attributes.map((a) => a.key)).filter((k) => !/^(gen_ai|ratel|mcp)\.|^error\.type$/.test(k))).toEqual([]);
+    }
+    const [root, chat, tool] = turnSpans(facts, ID);
+    const got = Object.fromEntries(root!.attributes.filter((a) => a.key.startsWith('ratel.')).map((a) => [a.key, Object.values(a.value)[0]]));
+    expect(got).toEqual({
+      'ratel.harness.name': 'claude',
+      'ratel.harness.effort': 'high',
+      'ratel.run.place': 'worktree',
+      'ratel.run.own': true,
+      'ratel.run.outcome': 'ok',
+      'ratel.run.tool_calls': '2',
+      'ratel.run.tool_errors': '0',
+      'ratel.run.subagents': '1',
+      'ratel.run.compactions': '2',
+      'ratel.run.prompt_chars': '20',
+      'ratel.run.answer_chars': '30',
+      'ratel.run.cost_usd': 0.12,
+    });
+    expect(attr(chat!, 'ratel.usage.cost_usd')).toEqual({ doubleValue: 0.12 });
+    expect(attr(tool!, 'ratel.agent.parent_call_id')).toEqual({ stringValue: 'toolu_agent' });
+    const own = belugaToolSpans(facts, ID);
+    expect(own[0]!.attributes.filter((a) => a.key.startsWith('ratel.')).map((a) => a.key)).toEqual(['ratel.harness.name', 'ratel.run.place', 'ratel.run.own', 'ratel.run.outcome', 'ratel.run.tool_calls', 'ratel.run.tool_errors']);
+  });
+
+  it('every span says which conversation and which agent (a batch that splits still resolves its session)', () => {
+    const facts = turn({ tools: [{ id: 't1', name: 'mcp__beluga__send_chat', startedAt: 2_000, ok: true }] });
+    for (const spans of [turnSpans(facts, ID), belugaToolSpans(facts, ID)]) {
+      expect(spans.length).toBeGreaterThan(1);
+      for (const s of spans) {
+        expect(attr(s, 'gen_ai.conversation.id'), s.name).toEqual({ stringValue: pseudonym(ID, 'sess-1') });
+        expect(attr(s, 'gen_ai.agent.name'), s.name).toEqual({ stringValue: 'claude' });
+      }
+    }
+  });
+});
+
+describe('why a tool call failed (its class, never its words)', () => {
+  const failed = (tool: string, output: string): StepRecord => ({ id: 'x', kind: 'tool', tool, title: tool, status: 'error', startedAt: 1, endedAt: 2, isError: true, output });
+
+  it('tells a timeout, a refusal, a stop, a failed command and a rejected input from any other failure', () => {
+    const cases: Array<[string, string, string]> = [
+      ['Bash', 'Command timed out after 2m 0s', 'timeout'],
+      ['mcp__github__search', 'MCP error -32001: Request timed out', 'timeout'],
+      ['Bash', "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).", 'denied'],
+      ['Write', "Claude requested permissions to write to /tmp/x, but you haven't granted it yet.", 'denied'],
+      ['Bash', 'Permission to use Bash has been denied.', 'denied'],
+      ['AskUserQuestion', 'The user skipped this question. Continue with your best judgment and say what you assumed.', 'denied'],
+      ['Bash', 'Declined.', 'denied'],
+      ['Bash', '[Request interrupted by user for tool use]', 'aborted'],
+      ['Bash', 'Exit code 1\nnpm ERR! missing script: tset', 'nonzero_exit'],
+      ['Bash', 'Exited with code 127', 'nonzero_exit'],
+      ['Read', '<tool_use_error>InputValidationError: Read failed due to the following issue:\nThe required parameter `file_path` is missing</tool_use_error>', 'validation'],
+      ['mcp__beluga_board__task_update', 'MCP error -32602: Invalid arguments for tool task_update: [{"code":"invalid_enum_value"}]', 'validation'],
+      ['Read', 'File does not exist.', 'tool_error'],
+      // A word about timeouts is not a timeout.
+      ['mcp__github__search', 'Unknown option: timeout', 'tool_error'],
+      ['WebFetch', 'Request failed: timeout exceeded', 'timeout'],
+      // A command that failed for its own reasons, though its output speaks of a timeout or a denial.
+      ['Bash', 'Exit code 1\nError: connect ETIMEDOUT: request timed out\npermission denied', 'nonzero_exit'],
+      // Only a command has an exit code.
+      ['Read', 'Exit code 1', 'tool_error'],
+    ];
+    for (const [tool, output, type] of cases) expect(toolErrorType(failed(tool, output)), output).toBe(type);
+    // What Claude Code said about the call (a refusal) wins over what its words look like.
+    expect(toolErrorType(failed('Bash', 'Not allowed here.'), 'denied')).toBe('denied');
+    expect(toolErrorType(failed('Bash', 'Exit code 1'), 'aborted')).toBe('aborted');
+  });
+
+  it('a step still open when its run stops was aborted', () => {
+    const seen: StepRecord[] = [];
+    const recorder = new StepRecorder({ emit: (r) => seen.push(r), now: () => 10 });
+    recorder.observe({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'sleep 99' } }] } });
+    recorder.finish(true);
+    expect(toolErrorType(seen.at(-1)!)).toBe('aborted');
+  });
+
+  it('a turn\'s failed tools carry their class to error.type, in both projects', async () => {
+    const facts: TurnFacts[] = [];
+    const run = { run: async (i: AgentRunInput) => {
+      i.onEvent('usage', JSON.stringify({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, session: 's1' }));
+      i.onStep?.(failed('Bash', 'Exit code 2\nboom'));
+      i.onStep?.({ ...failed('mcp__beluga__send_chat', 'Not now.'), id: 'y' });
+      i.onStep?.({ ...failed('Read', 'File does not exist.'), id: 'z' });
+      i.onStep?.({ id: 'ok', kind: 'tool', tool: 'Read', title: 'Read', status: 'done', startedAt: 1, endedAt: 2 });
+      return 'done';
+    } } as unknown as AgentBackend;
+    const base = { prompt: 'p', ownWords: 'p', requesterName: 'kay', viaAgent: false, context: [], scope: 'folder', onEvent: () => undefined } as unknown as AgentRunInput;
+    const taken: string[] = [];
+    await observedBackend(run, 'claude', { level: () => 'limited', turn: (f) => facts.push(f), settleMs: 0, calls: () => [], refused: (s) => (taken.push(s), new Map([['y', 'denied' as const]])) }).run(base);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(taken).toEqual(['s1']);
+    expect(facts[0]!.tools.map((t) => t.error)).toEqual(['nonzero_exit', 'denied', 'tool_error', undefined]);
+    expect(JSON.stringify(facts)).not.toContain('boom');
+    const types = (spans: ReturnType<typeof turnSpans>) => spans.filter((s) => attr(s, 'gen_ai.operation.name')?.stringValue === 'execute_tool').map((s) => attr(s, 'error.type')?.stringValue);
+    expect(types(turnSpans(facts[0]!, ID))).toEqual(['nonzero_exit', 'denied', 'tool_error', undefined]);
+    expect(types(belugaToolSpans(facts[0]!, ID))).toEqual(['denied']);
+  });
+});
+
+describe("a turn as Beluga's own project sees it", () => {
+  const withBeluga = () =>
+    turn({
+      tools: [
+        { id: 't1', name: 'Bash', startedAt: 2_000, endedAt: 2_500, ok: true },
+        { id: 't2', name: 'mcp__beluga_board__task_update', startedAt: 3_000, endedAt: 3_100, ok: true },
+        { id: 't3', name: 'mcp__beluga__send_chat', startedAt: 4_000, endedAt: 4_200, ok: false },
+        { id: 't4', name: 'mcp__github__search', startedAt: 5_000, endedAt: 5_100, ok: true },
+      ],
+      text: { prompt: 'my words', answer: 'its words' },
+    });
+
+  it("knows Beluga's tools by their server, and no one else's", () => {
+    expect(['mcp__beluga__send_chat', 'mcp__beluga_sentinel__sentinel_create', 'mcp__beluga_view__show'].every(isBelugaTool)).toBe(true);
+    expect(['Bash', 'mcp__github__search', 'mcp__belugafan__x', 'beluga__send_chat'].some(isBelugaTool)).toBe(false);
+  });
+
+  it("only Beluga's tool calls, under a root with no model, tokens, cost or text", () => {
+    const [root, ...tools] = belugaToolSpans(withBeluga(), ID);
+    expect(tools.map((t) => attr(t, 'gen_ai.tool.name'))).toEqual([{ stringValue: 'mcp__beluga_board__task_update' }, { stringValue: 'mcp__beluga__send_chat' }]);
+    expect(tools.every((t) => t.parentSpanId === root!.spanId)).toBe(true);
+    expect(tools[1]!.status).toEqual({ code: 2 });
+    expect(attr(root!, 'ratel.run.place')).toEqual({ stringValue: 'worktree' });
+    const body = JSON.stringify([root, ...tools]);
+    for (const leak of ['claude-opus-5-5', 'gen_ai.usage', 'cost', 'chars', 'my words', 'its words', 'Bash', 'github', 'sess-1']) expect(body).not.toContain(leak);
+  });
+
+  it("nothing when the turn used none of Beluga's tools", () => {
+    expect(belugaToolSpans(turn(), ID)).toEqual([]);
+  });
+});
+
 describe('sending', () => {
   const config = { url: 'https://ratel.example', key: 'rtl_pub_test_key_1234' };
   const sender = () => ({ installId: ID, version: '9.9.9' });
@@ -382,6 +672,19 @@ describe('a run, observed', () => {
     for (const leak of ['tulip', 'carried', '.beluga/wt-1']) expect(JSON.stringify(facts), leak).not.toContain(leak);
   });
 
+  it('tells the model\'s id as the run reported it, beside the name that was picked', async () => {
+    const facts: TurnFacts[] = [];
+    const script = (i: AgentRunInput) => {
+      i.onEvent('context', JSON.stringify({ used: 10, window: 200_000, model: 'claude-opus-5-5' }));
+      i.onEvent('context', JSON.stringify({ compacting: false, window: 200_000 }));
+    };
+    await observedBackend(backend('ok', script), 'claude', { level: () => 'limited', turn: (f) => facts.push(f) }).run(input({ model: 'opus' }));
+    expect(facts[0]).toMatchObject({ model: 'opus', resolvedModel: 'claude-opus-5-5' });
+    // Nothing reported (another runtime): only the name picked.
+    await observedBackend(backend('ok'), 'codex', { level: () => 'limited', turn: (f) => facts.push(f) }).run(input({ model: 'gpt-5.2-codex' }));
+    expect(facts[1]!.resolvedModel).toBeUndefined();
+  });
+
   it('a failing run still fails the same way, and says only the kind of error', async () => {
     const facts: TurnFacts[] = [];
     const failing = { run: async () => Promise.reject(new TypeError('bad /Users/someone/secret path')) } as unknown as AgentBackend;
@@ -430,6 +733,56 @@ describe("Claude Code's own telemetry", () => {
     otel.logs({ resourceLogs: [{ scopeLogs: [{ logRecords: [{ body: { stringValue: 'GET /api/users?email=jane@example.com 200' } }, { attributes: kv({ 'event.name': 'http.request', 'url.full': 'https://x/secret' }) }] }] }] });
     otel.metrics({ resourceMetrics: [{ scopeMetrics: [{ metrics: [{ name: 'http.server.duration', sum: { dataPoints: [{ asInt: '3' }] } }] }] }] });
     expect(emitted).toEqual([]);
+  });
+
+  // What Claude Code 2.1 really sends: the bare name in `event.name`, the full name in the body, its own scope.
+  const real = (records: Array<Record<string, string | number>>, scope = 'com.anthropic.claude_code.events') => ({
+    resourceLogs: [{ scopeLogs: [{ scope: { name: scope }, logRecords: records.map((r) => ({ timeUnixNano: '5000000000', body: { stringValue: `claude_code.${r['event.name']}` }, attributes: kv(r) })) }] }],
+  });
+
+  it('reads the names Claude Code really sends: bare in event.name, claude_code.* in the body', () => {
+    const emitted: unknown[] = [];
+    const otel = new ClaudeOtel({ emit: (r) => emitted.push(r), installId: () => ID, now: () => 5_000 });
+    otel.logs(
+      real([
+        { 'event.name': 'api_request', 'session.id': 'S1', model: 'claude-haiku-5-5', query_source: 'generate_session_title', duration_ms: 100, input_tokens: 1, output_tokens: 2 },
+        { 'event.name': 'api_request', 'session.id': 'S1', model: 'claude-opus-5-5', query_source: 'sdk', duration_ms: 900, input_tokens: 10, output_tokens: 20, cache_read_tokens: 30, cache_creation_tokens: 40, cost_usd: 1 },
+        { 'event.name': 'tool_result', 'session.id': 'S1', tool_name: 'Bash', success: 'true', duration_ms: 12 },
+      ]),
+    );
+    expect(otel.callsFor('S1', 0, 10_000)).toMatchObject([
+      { model: 'claude-haiku-5-5', source: 'generate_session_title' },
+      { model: 'claude-opus-5-5', source: 'sdk', at: 5_000, durationMs: 900, usage: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40, cost: 1 } },
+    ]);
+    expect(JSON.stringify(emitted)).toContain('ratel.beluga.claude_code.tool_result');
+    expect(JSON.stringify(emitted)).not.toContain('claude_code.api_request');
+  });
+
+  it('a bare name counts only with Claude Code\'s body or scope (another program that found the port)', () => {
+    const emitted: unknown[] = [];
+    const otel = new ClaudeOtel({ emit: (r) => emitted.push(r), installId: () => ID, now: () => 5_000 });
+    const record = { timeUnixNano: '5000000000', attributes: kv({ 'event.name': 'api_request', 'session.id': 'S1', model: 'm', input_tokens: 1 }) };
+    otel.logs({ resourceLogs: [{ scopeLogs: [{ scope: { name: 'some.other.program' }, logRecords: [record, { ...record, body: { stringValue: 'claude_code.tool_result' } }] }] }] });
+    expect(otel.callsFor('S1', 0, 10_000)).toEqual([]);
+    expect(emitted).toEqual([]);
+    // Its scope alone is enough (a version that leaves the body out).
+    otel.logs({ resourceLogs: [{ scopeLogs: [{ scope: { name: 'com.anthropic.claude_code.events' }, logRecords: [record] }] }] });
+    expect(otel.callsFor('S1', 0, 10_000)).toHaveLength(1);
+  });
+
+  it('keeps which tool calls were refused, and how, for the turn (never forwarded by id)', () => {
+    const emitted: unknown[] = [];
+    const otel = new ClaudeOtel({ emit: (r) => emitted.push(r), installId: () => ID, now: () => 5_000 });
+    otel.logs(
+      real([
+        { 'event.name': 'tool_decision', 'session.id': 'S1', tool_name: 'Bash', tool_use_id: 'toolu_ok', decision: 'accept', source: 'config' },
+        { 'event.name': 'tool_decision', 'session.id': 'S1', tool_name: 'Bash', tool_use_id: 'toolu_no', decision: 'reject', source: 'user_reject' },
+        { 'event.name': 'tool_decision', 'session.id': 'S1', tool_name: 'Edit', tool_use_id: 'toolu_esc', decision: 'reject', source: 'user_abort' },
+      ]),
+    );
+    expect([...otel.refusedFor('S1')]).toEqual([['toolu_no', 'denied'], ['toolu_esc', 'aborted']]);
+    expect(otel.refusedFor('S1').size).toBe(0);
+    expect(JSON.stringify(emitted)).not.toContain('toolu_');
   });
 
   it('leaves alone someone who set it up in Claude Code\'s own settings', async () => {
@@ -512,5 +865,69 @@ describe('the service', () => {
     featureCounter.call('session.submit', 3, true);
     expect(featureCounter.drain().counts).toEqual([]);
     await service.stop();
+  });
+
+  describe('two projects', () => {
+    const AGENTS = 'rtl_pub_agents_123456';
+    const BELUGA = 'rtl_pub_beluga_123456';
+    const belugaTurn = () => turn({ tools: [{ id: 'b1', name: 'mcp__beluga_sentinel__sentinel_create', startedAt: 2_000, endedAt: 2_100, ok: true }, { id: 't1', name: 'mcp__github__search', startedAt: 3_000, endedAt: 3_100, ok: true }], text: { prompt: 'my words', answer: 'its words' } });
+    const setup = (keys: { key: string; productKey?: string }) => {
+      const sent: Array<{ key: string; url: string; body: string }> = [];
+      const fetch = vi.fn(async (url: string, init: RequestInit) => {
+        sent.push({ url, key: String((init.headers as Record<string, string>).authorization).replace('Bearer ', ''), body: String(init.body) });
+        return new Response('', { status: 202 });
+      }) as unknown as typeof globalThis.fetch;
+      const service = new TelemetryService({ store: store(), version: '1', file: null, secrets: () => [], config: { url: 'https://ratel.example', ...keys }, fetch });
+      return { service, sent, to: (key: string) => sent.filter((x) => x.key === key).map((x) => x.body).join('\n') };
+    };
+
+    it("Limited: only Beluga's own data, all to Beluga's project; no sessions, no Claude Code telemetry", async () => {
+      const { service, sent, to } = setup({ key: AGENTS, productKey: BELUGA });
+      service.choose('limited', 'settings');
+      expect(service.observeDeps().env?.('claude')).toBeUndefined();
+      service.observeDeps().turn(belugaTurn());
+      service.mark('onboarding_done');
+      await service.stop();
+      expect(sent.length).toBeGreaterThan(0);
+      expect(to(AGENTS)).toBe('');
+      const beluga = to(BELUGA);
+      expect(beluga).toContain('mcp__beluga_sentinel__sentinel_create');
+      expect(beluga).toContain('ratel.beluga.onboarding_done');
+      expect(beluga).toContain('ratel.beluga.level');
+      for (const leak of ['github', 'claude-opus-5-5', 'gen_ai.usage', 'my words']) expect(beluga).not.toContain(leak);
+    });
+
+    it("On: the whole turn to the agents project too, and Beluga's own data stays in its project", async () => {
+      const { service, to } = setup({ key: AGENTS, productKey: BELUGA });
+      service.choose('on', 'settings');
+      service.observeDeps().turn(belugaTurn());
+      service.mark('onboarding_done');
+      await service.stop();
+      const agents = to(AGENTS);
+      expect(agents).toContain('mcp__github__search');
+      expect(agents).toContain('gen_ai.usage.input_tokens');
+      expect(agents).toContain('my words');
+      expect(agents).not.toContain('ratel.beluga.onboarding_done');
+      expect(to(BELUGA)).toContain('mcp__beluga_sentinel__sentinel_create');
+      expect(to(BELUGA)).not.toContain('my words');
+    });
+
+    it('a turn queued at On never reaches the agents project once the level is Limited', async () => {
+      const { service, to } = setup({ key: AGENTS, productKey: BELUGA });
+      service.choose('on', 'settings');
+      service.observeDeps().turn(belugaTurn());
+      service.choose('limited', 'settings');
+      await service.stop();
+      expect(to(AGENTS)).toBe('');
+      expect(to(BELUGA)).toContain('mcp__beluga_sentinel__sentinel_create');
+    });
+
+    it("one key: one project, and Beluga's tools are never sent twice", async () => {
+      const { service, to } = setup({ key: AGENTS });
+      service.choose('on', 'settings');
+      service.observeDeps().turn(belugaTurn());
+      await service.stop();
+      expect(to(AGENTS).split('execute_tool mcp__beluga_sentinel__sentinel_create')).toHaveLength(2);
+    });
   });
 });

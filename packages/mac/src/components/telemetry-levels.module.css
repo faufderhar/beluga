@@ -89,3 +89,16 @@
     transition: none;
   }
 }
+/* "Privacy notice" (PrivacyNoticeLink): a quiet link in the accent, inline with the text around it. */
+.privacy {
+  display: inline;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.privacy:hover {
+  text-decoration: underline;
+}

@@ -36,6 +36,7 @@ import { callNotesToolsOf } from './calls/launch.js';
 import { guestPlace, sharedWorktreeBrief } from './shared-guest.js';
 import { belugaHome } from './home.js';
 import { peerName } from './store.js';
+import { autopilotWaitMs } from './autopilot/wait.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -70,7 +71,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       if (id === (opts.runtime?.agent ?? 'claude')) return session.backend ? {} : undefined;
       if (id === LOCAL_RUNTIME) return opts.runtime?.runtimes('claude') && !localWhy(local.choices()) ? { models: localModels(local.choices()) } : undefined;
       return opts.runtime?.runtimes(id) || opts.alsoRuntimes?.some((r) => r.id === id) ? {} : undefined;
-    });
+    }, opts.runtime?.extra?.());
   // Listed again with what each runtime last said about itself (BLG-507: a local endpoint answering never wipes Codex's sign-in state and models).
   const local = new LocalEndpoints({ endpoints: () => env.endpoints(), onChange: () => (workbench ? workbench.runtimesChanged() : opts.store.dispatch({ type: 'runtimes', runtimes: listRuntimes() })) });
   if (opts.runtime) local.start();
@@ -90,6 +91,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel, o) => (o?.terminal ? session.startInTerminal(prompt, channel, o.shown) : session.askOwnClaude(prompt, channel, false, o?.echo ?? true, o?.shown)),
         showAsk: (prompt, channel) => session.showAsk(prompt, channel),
+        beforeRun: (channel, requestId, prompt, step) => session.host.beforeRuns.start(channel, requestId, prompt, step),
         planHere: (channel) => void needPlans(session).here(channel),
         titleChat: (content) => session.titleChat(content),
         compact: (channel, instructions) => session.compact(channel, instructions),
@@ -131,7 +133,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         savedChats: (loaded) => assistantOf(session)?.savedChats(loaded) ?? [],
         loadSavedChat: (id) => assistantOf(session)?.loadSaved(id),
         setPrefs: (prefs) => session.setPrefs(prefs),
-        confirm: (title, detail) => session.ask('request', title, detail),
+        confirm: (title, detail, channel) => session.ask('request', title, detail, undefined, channel),
         open: opts.open,
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
         ...(opts.updateAgent ? { updateAgent: opts.updateAgent } : {}),
@@ -177,7 +179,9 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       selfId: () => session.selfId,
       send: (body, o) => session.send(body, o),
       timeoutMs: () => session.approvalTimeoutMs,
+      ownWaitMs: (channel) => autopilotWaitMs(opts.store.getState(), channel),
       toast: (text, level) => session.toast(text, level),
+      handOff: (channel, plan) => session.handOffPlan(channel, plan),
     });
     const sharing = new WorkspaceSharing({
       store: opts.store,

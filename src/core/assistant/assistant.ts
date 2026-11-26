@@ -14,6 +14,7 @@ import { planTitle } from '../plans/model.js';
 import { boardName, reposOf } from '../board/model.js';
 import { busyChannels } from '../board/work.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
+import { chatsWithThreadsWorking } from '../threads/model.js';
 import type { Workspace } from '../../workspaces/types.js';
 import { AgentRef, CLAUDE_AGENT } from '../../protocol.js';
 import { chosenAgent } from '../settings.js';
@@ -556,7 +557,8 @@ const ABOUT_CHARS = 1200;
 /** Projects, their worktrees and chats, what's running, plans: what list_work says. */
 export function listWork(store: Store): string {
   const state = store.getState();
-  const busy = busyChannels(state.log);
+  // A chat whose thread works counts as working too.
+  const busy = new Set([...busyChannels(state.log), ...chatsWithThreadsWorking(state)]);
   const lines: string[] = [];
   const projects = state.projects.filter((p) => p.root);
   if (!projects.length) lines.push('No projects yet (the owner adds them in Beluga on the Mac).');

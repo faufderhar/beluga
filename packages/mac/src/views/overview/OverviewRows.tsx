@@ -11,7 +11,7 @@ import { workspaceItems } from '../../layout/workspace-row.js';
 import type { OverviewItem } from './overview-model.js';
 import s from '../overview.module.css';
 import { revealLabel } from '../../lib/os-words.js';
-import { chordLabel } from '../../lib/shortcuts-model.js';
+import { chordLabel, primaryKey } from '../../lib/shortcuts-model.js';
 
 const ago = (ts: number, now: number): string => {
   const m = Math.round((now - ts) / 60_000);
@@ -28,18 +28,34 @@ interface RowBase {
   readonly onSelect: (id: string) => void;
   /** Return (or a click): open it. */
   readonly onOpen: (item: OverviewItem) => void;
+  /** One of the rows picked to delete together (⌘-click, Shift-click, ⌘A). */
+  readonly picked: boolean;
+  /** ⌘-click or Shift-click: pick it (true when the click was taken for that, so it doesn't open). */
+  readonly onPick: (item: OverviewItem, how: 'toggle' | 'range') => boolean;
+  /** While it's picked, its right-click menu is the picked rows' (Delete them, Deselect). */
+  readonly pickedItems: () => readonly ActionItem[];
 }
 
-const rowProps = ({ item, selected, onSelect, onOpen }: RowBase, label: string) => ({
+/** How a click picks: ⌘ (Ctrl elsewhere) adds or takes away one, Shift a range; a plain click opens. */
+const pickHow = (e: MouseEvent): 'toggle' | 'range' | undefined => (e.shiftKey ? 'range' : primaryKey(e) ? 'toggle' : undefined);
+
+const rowProps = ({ item, selected, onSelect, onOpen, picked, onPick }: RowBase, label: string) => ({
   role: 'listitem',
   tabIndex: selected ? 0 : -1,
   'data-row': item.ws.id,
-  'aria-label': label,
+  'data-picked': picked ? ('true' as const) : undefined,
+  'aria-label': picked ? `${label}, selected` : label,
   'aria-current': selected ? ('true' as const) : undefined,
   onFocus: () => onSelect(item.ws.id),
+  // Shift-click picks a range: no text selection across the rows.
+  onMouseDown: (e: MouseEvent) => {
+    if (e.shiftKey) e.preventDefault();
+  },
   onClick: (e: MouseEvent) => {
     // A button inside the row does its own thing.
     if ((e.target as HTMLElement).closest('button')) return;
+    const how = pickHow(e);
+    if (how && onPick(item, how)) return;
     onOpen(item);
   },
   onKeyDown: (e: KeyboardEvent) => {
@@ -60,7 +76,7 @@ function PlanItemRow(props: RowBase & { now: number }) {
   const items: ActionItem[] = [{ label: 'Open Plan', icon: 'chevronRight', onSelect: () => props.onOpen(item) }];
   return (
     <ActionsContext items={items}>
-      <div {...rowProps(props, `${plan.title}, plan${plan.tip ? `, ${plan.tip}` : ''}`)} className={s.row} data-plan-item={plan.plan.id}>
+      <div {...rowProps(props, `${plan.title}, plan${plan.tip ? `, ${plan.tip}` : ''}`)} className={cx(s.row, props.picked && s.picked)} data-plan-item={plan.plan.id}>
         <span className={s.kind}>
           <Icon name="flag" size={14} />
         </span>
@@ -100,8 +116,8 @@ function WorkspaceItemRow(props: RowBase & { now: number }) {
     return { st: stateOf(full, w, 0), running: act.running, lastTs: act.lastTs, unread: full.unread[`ws:${w.id}`] ?? 0, pr: full.prs[w.id], ctx: full.context[`ws:${w.id}`] };
   }, sameRow);
   return (
-    <ActionsContext items={() => workspaceItems(client.store.getState(), w, actions.run, client)}>
-      <div {...rowProps(props, `${w.name}, ${st.label}`)} className={s.row}>
+    <ActionsContext items={() => (props.picked ? props.pickedItems() : workspaceItems(client.store.getState(), w, actions.run, client))}>
+      <div {...rowProps(props, `${w.name}, ${st.label}`)} className={cx(s.row, props.picked && s.picked)}>
         <span className={s.kind}>
           <Icon name={w.kind === 'chat' ? 'chat' : w.kind === 'main' ? 'folder' : 'branch'} size={14} />
         </span>
@@ -163,8 +179,8 @@ export function ArchivedRow(props: RowBase & { act: ArchivedActions }) {
       : 'The conversation is kept.';
   const items = archivedItems(item, act);
   return (
-    <ActionsContext items={items}>
-      <div {...rowProps(props, `${w.name}, archived`)} className={cx(s.row, s.archived)}>
+    <ActionsContext items={() => (props.picked ? props.pickedItems() : items)}>
+      <div {...rowProps(props, `${w.name}, archived`)} className={cx(s.row, s.archived, props.picked && s.picked)}>
         <span className={s.kind}>
           <Icon name="archive" size={14} />
         </span>
@@ -184,7 +200,7 @@ export function ArchivedRow(props: RowBase & { act: ArchivedActions }) {
               {busy ? 'Restoring…' : 'Restore'}
             </Button>
           </Tip>
-          <IconButton icon="eye" label="Read Conversation" keys="Space" onClick={() => act.read(item)} />
+          <IconButton size="small" icon="eye" label="Read Conversation" keys="Space" onClick={() => act.read(item)} />
           <ActionsDropdown items={items}>
             <button type="button" className={s.more} aria-label={`More for ${w.name}`}>
               <Icon name="more" size={14} />

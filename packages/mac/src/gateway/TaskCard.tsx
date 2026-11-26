@@ -185,7 +185,7 @@ function Approve({ task, inChat }: { task: TaskView; inChat?: boolean }) {
     return (
       <div className={s.actions}>
         <span className={s.hint}>Waiting for your answer.</span>
-        <Button variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
+        <Button size="small" variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
           Review…
         </Button>
       </div>
@@ -193,15 +193,15 @@ function Approve({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   if (!waiting) return <div className={s.hint}>Waiting for your answer above the message box.</div>;
   return (
     <div className={s.actions}>
-      <Button variant="primary" onClick={() => call('approve it', answer('yes'))}>
+      <Button size="small" variant="primary" onClick={() => call('approve it', answer('yes'))}>
         {task.secret ? 'Allow Once' : 'Approve'}
       </Button>
       {/* A secret is asked about each time: nothing to make "Always". */}
-      {task.secret ? null : <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>}
-      <Button variant="quiet" onClick={() => call('decline it', answer('no'))}>
+      {task.secret ? null : <Button size="small" onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>}
+      <Button size="small" variant="quiet" onClick={() => call('decline it', answer('no'))}>
         Decline
       </Button>
-      <Button variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
+      <Button size="small" variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
         Review…
       </Button>
     </div>
@@ -276,16 +276,16 @@ function Confirm({ task }: { task: TaskView }) {
       {editing ? <textarea className={s.edit} aria-label="What to ask" value={text} onChange={(e) => setText(e.target.value)} autoFocus /> : <div className={`${s.ask} selectable`}>{task.ask}</div>}
       <div className={s.hint}>Your agent wants to send this, so it asks you first. Always lets it ask {task.peerName} without checking from now on (it doesn’t change what they may do on {yourComputer()}).</div>
       <div className={s.actions}>
-        <Button variant="primary" onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined))}>
+        <Button size="small" variant="primary" onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined))}>
           Ask {task.peerName}
         </Button>
-        <Button onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined, true))}>Always</Button>
+        <Button size="small" onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined, true))}>Always</Button>
         {editing ? null : (
-          <Button icon="pencil" onClick={() => setEditing(true)}>
+          <Button size="small" icon="pencil" onClick={() => setEditing(true)}>
             Edit
           </Button>
         )}
-        <Button variant="quiet" onClick={() => call('answer', api.gateway.confirm(task.id, false))}>
+        <Button size="small" variant="quiet" onClick={() => call('answer', api.gateway.confirm(task.id, false))}>
           Not now
         </Button>
       </div>

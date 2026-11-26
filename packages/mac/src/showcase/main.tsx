@@ -7,14 +7,14 @@ import { BelugaProvider } from '../lib/beluga.js';
 import { apply } from '../lib/prefs.js';
 import { EASE_OUT, Rise, Words } from '../onboarding/fx.js';
 import { Mark } from '../onboarding/Mark.js';
-import { Agents } from '../onboarding/scenes/Agents.js';
 import { Archive } from '../onboarding/scenes/Archive.js';
 import { Earnings } from '../onboarding/scenes/Earnings.js';
 import { Friends } from '../onboarding/scenes/Friends.js';
 import { Machines } from '../onboarding/scenes/Machines.js';
 import { Parallel } from '../onboarding/scenes/Parallel.js';
 import { Sentinel } from '../onboarding/scenes/Sentinel.js';
-import { SentinelUses } from '../onboarding/scenes/SentinelUses.js';
+import { Scratch } from '../onboarding/scenes/Scratch.js';
+import { Together } from '../onboarding/scenes/Together.js';
 import o from '../onboarding/onboarding.module.css';
 import { STAGING, Staged } from './staging.js';
 import { TablesTour } from './TablesTour.js';
@@ -37,10 +37,10 @@ function Hello() {
         Beluga
       </Rise>
       <h1 className={o.heroTitle} style={{ fontSize: 52 }}>
-        <Words text="Every project. Every agent." delay={1.25} />
+        <Words text="An agent for every task," delay={1.25} />
         <br />
         <motion.span className={o.heroSoft} initial={{ opacity: 0, y: '0.25em', filter: 'blur(10px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} transition={{ duration: 0.9, ease: EASE_OUT, delay: 1.55 }}>
-          All at once.
+          all running at once.
         </motion.span>
       </h1>
     </div>
@@ -50,12 +50,12 @@ function Hello() {
 const SCENES: Record<string, () => ReactNode> = {
   hello: () => <Hello />,
   parallel: () => <Parallel />,
-  agents: () => <Agents />,
+  scratch: () => <Scratch />,
   tables: () => <TablesTour />,
   friends: () => <Friends />,
   sentinel: () => <Sentinel />,
   machines: () => <Machines />,
-  uses: () => <SentinelUses />,
+  together: () => <Together />,
   earnings: () => <Earnings />,
   archive: () => <Archive />,
 };

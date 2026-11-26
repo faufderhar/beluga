@@ -74,3 +74,27 @@ describe('a milestone’s agent, right now', () => {
     expect(planView(none, between, busyIn('ws:w1')).milestones[0]!.agentNow).toBeUndefined();
   });
 });
+
+describe('a task another worktree carries', () => {
+  // Claude moved it to In Progress from the milestone's worktree before the plan linked it there:
+  // the board says that worktree carries it (carriedBy), and it has none of its own.
+  const carried = (extra: Partial<Issue> = {}): Issue => ({ ...issue('guide', 'SHP-217', 'in_progress'), carriedBy: 'w1', ...extra }) as Issue;
+  const view = (i: Issue, live: Live) => planView(plan(), board([issue('readme', 'BLG-660', 'in_review', ['w1']), i, issue('vm', 'BLG-662', 'todo')]), live).milestones[0]!.tasks.find((t) => t.task.id === 'guide')!;
+
+  it('is running while the worktree carrying it works, never “stopped without finishing”', () => {
+    const t = view(carried(), busyIn('ws:w1', 'Edit K1'));
+    expect(t.state).toBe('running');
+    expect(t.worktree).toBe('w1');
+  });
+
+  it('stopped, it names the worktree carrying it, so its agent is the one woken', () => {
+    const t = view(carried(), NOBODY_LIVE);
+    expect(t.state).toBe('idle');
+    expect(t.worktree).toBe('w1');
+  });
+
+  it('follows a worktree of its own over the one carrying it, and the carrier once its own is gone', () => {
+    expect(view(carried({ worktrees: ['w2'] }), busyIn('ws:w1')).worktree).toBe('w2');
+    expect(view(carried({ worktrees: ['w2'], worktreeGone: true }), busyIn('ws:w1'))).toMatchObject({ state: 'running', worktree: 'w1' });
+  });
+});

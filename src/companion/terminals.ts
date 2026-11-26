@@ -118,7 +118,7 @@ export class TermRelay {
     this.deps.log(`${this.deps.who} opened the terminal ${key} (shared with the Mac)`);
     this.status(key, pty);
     // What's on screen now: what it wrote lately, from a clean screen.
-    const backlog = pty.backlog();
+    const backlog = pty.replay();
     if (backlog) this.pieces(key, backlog, true);
     else this.deps.send({ t: 'term_data', term: key, data: '', reset: true });
     a.offs.push(

@@ -105,16 +105,22 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
   );
 }
 
-/** Who sent a queued message that isn't yours: the chat's chip, which opens it, and the agent. */
-function QueuedFrom({ origin }: { readonly origin: { ref: string; title: string; agent: string } }) {
+/** Who sent a queued message that isn't yours: one of your sentinels, or the chat's chip (which opens it) and the agent. */
+function QueuedFrom({ origin }: { readonly origin: { ref: string; title: string; agent: string; sentinel?: string | undefined } }) {
   const on = useSupports('chatLinks');
   const ref = parseChatRef(origin.ref);
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
       <T v="caption">From</T>
-      {/* An older Mac has no chip: the title, never the long ref. */}
-      {on && ref ? <InlineThing el={{ kind: 'chat', ref }} /> : <T v="caption">{origin.title}</T>}
-      <T v="caption">· {origin.agent}, an agent</T>
+      {origin.sentinel ? (
+        <T v="caption">Sentinel {origin.sentinel}</T>
+      ) : (
+        <>
+          {/* An older Mac has no chip: the title, never the long ref. */}
+          {on && ref ? <InlineThing el={{ kind: 'chat', ref }} /> : <T v="caption">{origin.title}</T>}
+          <T v="caption">· {origin.agent}, an agent</T>
+        </>
+      )}
     </View>
   );
 }

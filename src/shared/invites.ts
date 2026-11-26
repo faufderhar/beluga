@@ -1,6 +1,7 @@
 import type { Guest } from '../core/collab-store.js';
 import type { GuestCan, WsRole } from '../protocol.js';
 import type { TrustLevel } from './settings-schema.js';
+import { knownOr } from './known-or.js';
 
 // Project links as data (no network, no keys): shared by the core and the Mac app.
 
@@ -17,11 +18,11 @@ export interface LinkOptions {
 export const DAY_MS = 24 * 60 * 60_000;
 export const DEFAULT_LINK: Omit<LinkOptions, 'scope'> = { can: 'prompt', knock: true, singleUse: true, expiresInMs: DAY_MS };
 
-export const CAN_INFO: Readonly<Record<GuestCan, { label: string; short: string; detail: string }>> = {
+export const CAN_INFO: Readonly<Record<GuestCan, { label: string; short: string; detail: string }>> = knownOr({
   watch: { label: 'Watch', short: 'can watch', detail: 'see the chat history and browse the files' },
   prompt: { label: 'Prompt', short: 'can prompt', detail: 'talk to your agent there; edits and commands follow your approval rules' },
   edit: { label: 'Edit', short: 'can edit', detail: 'your agent edits files in that folder without asking; commands still ask you' },
-};
+}, (v) => ({ label: v, short: v, detail: '' }));
 
 /** Watching is following along; prompting and editing are working there. */
 export const roleFor = (can: GuestCan): WsRole => (can === 'watch' ? 'view' : 'contribute');

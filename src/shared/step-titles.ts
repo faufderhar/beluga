@@ -1,6 +1,7 @@
 import { chatLinkOf, formatChatRef } from './chat-ref.js';
 import { editDiff } from './line-diff.js';
 import { underPart } from './path-inside.js';
+import { THIS_COMPUTER } from './assistant.js';
 
 /**
  * A step in words people use, never a tool's name or an id: "Read src/auth.ts", "Ran npm test",
@@ -108,10 +109,15 @@ function belugaTool(name: string, input: Readonly<Record<string, unknown>>): Hum
       return both(`Wrote the report${str(input.title) ? ` “${clip(str(input.title), 60)}”` : ''}`, 'Writing a report');
     case 'continue_in_worktree':
       return both('Moved this to a new worktree', 'Moving this to a new worktree');
+    // Beluga's, before the agent starts (core/before-run.ts): the worktree you wrote in, being made.
+    case 'make_worktree': {
+      const named = str(input.name) ? ` ${clip(str(input.name), 60)}` : '';
+      return both(`Made the worktree${named}`, `Making the worktree${named}`);
+    }
     case 'screenshot':
       return both(str(input.app) ? `Looked at ${str(input.app)}` : 'Took a screenshot', 'Taking a screenshot');
     case 'device_info':
-      return both('Looked at this Mac’s details', 'Looking at this Mac’s details');
+      return both(`Looked at ${THIS_COMPUTER}’s details`, `Looking at ${THIS_COMPUTER}’s details`);
     case 'list_chats':
       return both('Looked through your chats', 'Looking through your chats');
     case 'read_chat':
@@ -230,6 +236,7 @@ const LINE_ARG: Readonly<Record<string, string>> = {
   wait_for: 'task',
   check: 'task',
   cancel: 'task',
+  make_worktree: 'name',
   write_report: 'title',
 };
 

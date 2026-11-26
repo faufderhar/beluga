@@ -5,6 +5,7 @@ import { Empty } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { askedAhead } from '../lib/make-ahead.js';
 import { ChatLog } from '../chat/ChatLog.js';
+import { Composer } from '../chat/Composer.js';
 import { expectClaude } from '../chat/flight.js';
 import views from '../views/views.module.css';
 import s from './Shell.module.css';
@@ -19,7 +20,9 @@ export function aheadMessage(wsId: string, selfId: string, text: string, ts: num
  * A worktree being made: its page is its conversation at once (BLG-531, BLG-942). What you asked
  * shows as your message and "Claude is starting…" under it, as in any chat you send in, while git
  * makes the folder; the agent gets it when that's done, and the page is the worktree's then. A fork,
- * or one made with only a name, says what's happening instead (no message, nobody starting).
+ * or one made with only a name (a pull request's), says what's happening instead. The message box
+ * is there from the start: what you write shows at once and its agent gets it once the worktree is
+ * made (the daemon holds it, core/held-asks.ts).
  */
 export function MakingWorktree() {
   const ws = useApp((st) => (st.view.kind === 'workspace' ? findWorkspace(st.projects, st.view.id) : undefined));
@@ -37,30 +40,23 @@ export function MakingWorktree() {
   useStartingCarriesOn(channel, talking);
   if (!ws) return null;
   const from = ws.base ?? 'the latest origin';
-  if (talking) {
-    return (
-      <div className={views.chat}>
-        <ChatLog key={ws.id} channel={channel} ahead={ahead} starting />
-      </div>
-    );
-  }
-  if (!fork || !asked) {
-    return (
-      <Empty
-        icon="branch"
-        mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
-        title={fork ? `Forking ${fork}…` : `Making ${ws.name}…`}
-        detail={fork ? `${ws.name} gets a copy of its commits, uncommitted changes, Scratch and conversation. It opens here in a moment.` : `A new worktree from ${from}. Its conversation opens here in a moment; anything you asked your agent starts then.`}
-      />
-    );
-  }
+  const making = <span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />;
+  const empty = fork ? (
+    <Empty icon="branch" mark={making} title={`Forking ${fork}…`} detail={`${ws.name} gets a copy of its commits, uncommitted changes, Scratch and conversation. You can write to its agent now: it gets your message once the copy is made.`} />
+  ) : (
+    <Empty icon="branch" mark={making} title={`Making ${ws.name}…`} detail={`A new worktree from ${from}. You can write to its agent now: it gets your message as soon as the folder is ready.`} />
+  );
+  // One tree whether you've written yet or not, so the box keeps its focus as your first message goes.
   return (
-    <div className={views.chat}>
-      <ChatLog key={ws.id} channel={channel} />
-      <div className={s.makingLine} role="status">
-        <span className={side.making} aria-hidden="true" />
-        {`Forking ${fork} into ${ws.name}: copying its changes, Scratch and conversation. You can write here in a moment.`}
-      </div>
+    <div className={views.chat} data-drop-zone>
+      <ChatLog key={ws.id} channel={channel} {...(talking ? { ahead, starting: true } : { empty })} />
+      {fork && asked ? (
+        <div className={s.makingLine} role="status">
+          <span className={side.making} aria-hidden="true" />
+          {`Forking ${fork} into ${ws.name}: copying its changes, Scratch and conversation. Its agent gets what you write once that's done.`}
+        </div>
+      ) : null}
+      <Composer />
     </div>
   );
 }

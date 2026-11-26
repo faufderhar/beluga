@@ -389,7 +389,7 @@ export function NotificationBell() {
   return (
     <Popover.Root open={open} onOpenChange={(o) => ui.patch({ notices: o })}>
       <Popover.Trigger asChild>
-        <IconButton icon="bell" label={label} active={open} badge={waiting + unread + waitingThere + newThere} className={cx(quiet && s.bellQuiet)} />
+        <IconButton size="large" icon="bell" label={label} active={open} badge={waiting + unread + waitingThere + newThere} className={cx(quiet && s.bellQuiet)} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={s.popover} align="end" sideOffset={6} collisionPadding={12} aria-label="Notifications">

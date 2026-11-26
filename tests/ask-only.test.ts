@@ -261,7 +261,7 @@ describe('the project home (Mac)', () => {
   it('says how main compares with origin', () => {
     const at = (status: Workspace['status']) => mainLineOf(ws({ kind: 'main', status }));
     expect(at({ changed: 0, ahead: 0, behind: 0, upstream: { name: 'origin/main', ahead: 0, behind: 0 } })).toEqual({ label: 'Up to date with origin/main', tone: 'ok' });
-    expect(at({ changed: 3, ahead: 0, behind: 0, upstream: { name: 'origin/main', ahead: 1, behind: 0 } })).toEqual({ label: '1 ahead of origin/main', tone: 'warn', dirty: '3 uncommitted changes in main' });
+    expect(at({ changed: 3, ahead: 0, behind: 0, upstream: { name: 'origin/main', ahead: 1, behind: 0 } })).toEqual({ label: '1 commit not pushed to origin/main', tone: 'info', dirty: '3 uncommitted changes in main' });
     expect(at({ changed: 0, ahead: 0, behind: 0 })).toEqual({ label: 'Not tracking a remote branch', tone: 'muted' });
     expect(agoText(1000, 1000 + 5 * 60_000)).toBe('5 min ago');
   });

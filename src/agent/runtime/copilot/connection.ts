@@ -8,6 +8,7 @@ import { codexCommand, pathVar } from '../codex/app-server.js';
 import { CodexRpc } from '../codex/rpc.js';
 import type { InitializeResponse } from '../opencode/acp.js';
 import { acpHandshake } from '../opencode/connection.js';
+import { type FolderReader, nodeGlobalBinDirs } from '../version-managers.js';
 
 /** `copilot --acp` for one run (or one side call): its JSON-RPC, its process, what it said it can do. */
 export interface CopilotConnection {
@@ -44,16 +45,16 @@ const executable = (file: string): boolean => {
 
 /**
  * Where GitHub Copilot CLI is: BELUGA_COPILOT_PATH, then `copilot` on PATH (npm, Homebrew's cask,
- * its install script), then Homebrew's, npm's and the install script's own folders (the Mac app's
- * PATH may not have them). On Windows, copilot.exe on PATH, else npm's copilot.cmd. Undefined: not installed.
+ * its install script), then Homebrew's, the install script's and npm's global folders (under nvm,
+ * fnm, Volta or a prefix of your own, #568: the Mac app's PATH may not have them). On Windows, copilot.exe on PATH, else npm's copilot.cmd. Undefined: not installed.
  */
-export function findCopilot(env: Readonly<Record<string, string | undefined>> = process.env, platform: NodeJS.Platform = process.platform, runs: (file: string) => boolean = executable, home: string = os.homedir()): string | undefined {
+export function findCopilot(env: Readonly<Record<string, string | undefined>> = process.env, platform: NodeJS.Platform = process.platform, runs: (file: string) => boolean = executable, home: string = os.homedir(), fs?: FolderReader): string | undefined {
   const set = env.BELUGA_COPILOT_PATH;
   if (set) return runs(set) ? set : undefined;
   const p = platform === 'win32' ? path.win32 : path.posix;
   const dirs = pathVar(env).split(platform === 'win32' ? ';' : ':').filter(Boolean);
   if (platform === 'win32') return [...dirs.map((dir) => p.join(dir, 'copilot.exe')), ...dirs.map((dir) => p.join(dir, 'copilot.cmd'))].find(runs);
-  const extra = ['/opt/homebrew/bin', '/usr/local/bin', p.join(home, '.local/bin'), p.join(home, '.npm-global/bin')];
+  const extra = ['/opt/homebrew/bin', '/usr/local/bin', p.join(home, '.local/bin'), ...nodeGlobalBinDirs(env, home, platform, fs)];
   return [...dirs, ...extra.filter((d) => !dirs.includes(d))].map((dir) => p.join(dir, 'copilot')).find(runs);
 }
 

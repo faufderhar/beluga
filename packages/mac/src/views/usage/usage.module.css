@@ -238,8 +238,9 @@
   font-weight: 650;
   letter-spacing: 0.02em;
   text-transform: capitalize;
+  /* One line, whatever the plan's name: the card's head never wraps. */
   white-space: nowrap;
-  flex: none;
+  flex-shrink: 0;
   color: var(--claude);
   background: color-mix(in srgb, var(--claude) 13%, transparent);
 }
@@ -255,7 +256,7 @@
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
-  flex: none;
+  flex-shrink: 0;
   color: var(--text-2);
   background: color-mix(in srgb, var(--text-3) 12%, transparent);
   cursor: default;
@@ -346,6 +347,19 @@
 }
 .window {
   min-width: 0;
+}
+/* A group of models' windows (Antigravity's Gemini Models, Claude and GPT models): a quiet heading over them, a hairline between groups. */
+.windowGroup {
+  grid-column: 1 / -1;
+  margin-bottom: -8px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--card-line);
+  font-size: 0.85em;
+  color: var(--text-3);
+}
+.windowGroup:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 .windowHead {
   display: flex;
@@ -1124,4 +1138,76 @@
 }
 .heroWaiting {
   align-items: center;
+}
+
+/* A provider's name gives way, never its chips: the head stays one line (the chips are nowrap). */
+.cardTitle {
+  min-width: 0;
+}
+.agentTitle {
+  min-width: 0;
+}
+.agentName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An ACP agent's week: figures side by side (fewer per row when the card is narrow), each whole on its line. */
+.weekHead {
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.weekGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 12px 18px;
+}
+.weekFigure {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.weekValue {
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.weekBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 34px;
+  margin-top: 14px;
+}
+.weekBars i {
+  flex: 1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.weekBars i.weekBarToday {
+  background: var(--accent);
+}
+.weekLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--card-line);
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+.weekLine > span {
+  white-space: nowrap;
+}
+/* "Last 7 days  9 runs  1 h 18 min": the label a step stronger than its parts. */
+.weekLabel {
+  color: var(--text-2);
 }

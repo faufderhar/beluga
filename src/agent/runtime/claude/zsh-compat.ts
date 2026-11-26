@@ -2,6 +2,7 @@ import { accessSync, constants, mkdirSync, readFileSync, renameSync, writeFileSy
 import path from 'node:path';
 import { belugaHome } from '../../../core/home.js';
 import type { ShellSetup } from '../../prompt.js';
+import { SHELL_RESTORE } from './sign-in-env.js';
 
 /**
  * Claude Code runs its Bash tool in zsh on most Macs, and the model writes bash. In zsh that stops
@@ -14,8 +15,11 @@ import type { ShellSetup } from '../../prompt.js';
  * changes how working zsh code reads its variables or prints: no SH_WORD_SPLIT or KSH_ARRAYS (a
  * loop over `$path` saw one folder, `$#arr` gave 1), no BSD_ECHO (a function's `echo "\e[1m"`
  * printed the escape as text). The prompt covers those habits instead (prompt.ts).
+ *
+ * It also gives a command the sign-in variables a run's own variables held back from Claude Code
+ * itself (sign-in-env.ts, BLG-1027), in zsh and bash alike.
  */
-export const ZSH_COMPAT = 'if [ -n "$ZSH_VERSION" ]; then setopt NO_NOMATCH NO_BAD_PATTERN NO_EQUALS; fi\n';
+export const ZSH_COMPAT = `if [ -n "$ZSH_VERSION" ]; then setopt NO_NOMATCH NO_BAD_PATTERN NO_EQUALS; fi\n${SHELL_RESTORE}`;
 
 export const ZSH_COMPAT_FILE = 'zsh-compat.sh';
 
@@ -67,11 +71,12 @@ const SHELL_DIRS = ['/bin', '/usr/bin', '/usr/local/bin', '/opt/homebrew/bin'];
  */
 export function claudeCodeShell(env: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform, canRun: (file: string) => boolean = runnable): 'zsh' | 'bash' | undefined {
   if (platform === 'win32') return undefined;
-  const kind = (file: string): 'zsh' | 'bash' => (path.basename(file).includes('zsh') ? 'zsh' : 'bash');
+  // Past the Windows check these are POSIX paths, whatever the host: path.posix keeps them so.
+  const kind = (file: string): 'zsh' | 'bash' => (path.posix.basename(file).includes('zsh') ? 'zsh' : 'bash');
   const named = [env.CLAUDE_CODE_SHELL, env.SHELL].find((file) => file && (file.includes('bash') || file.includes('zsh')) && canRun(file));
   if (named) return kind(named);
-  const dirs = [...(env.PATH ?? '').split(path.delimiter).filter(Boolean), ...SHELL_DIRS];
-  return (['zsh', 'bash'] as const).find((shell) => dirs.some((dir) => canRun(path.join(dir, shell))));
+  const dirs = [...(env.PATH ?? '').split(path.posix.delimiter).filter(Boolean), ...SHELL_DIRS];
+  return (['zsh', 'bash'] as const).find((shell) => dirs.some((dir) => canRun(path.posix.join(dir, shell))));
 }
 
 /**

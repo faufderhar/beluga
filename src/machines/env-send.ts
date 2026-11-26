@@ -8,6 +8,7 @@ import { type EnvSendAlways, type EnvSendAsk, type EnvSendChoice, MAX_ENV_SEND_B
 
 export type { EnvSendAlways, EnvSendAsk, EnvSendChoice } from '../shared/env-send.js';
 import { isEnvFileName, scanEnvFiles } from '../workspaces/env.js';
+import { THIS_COMPUTER } from '../shared/assistant.js';
 
 /**
  * A project's .env files for a worktree made on one of your computers (BLG-800). When your app makes
@@ -31,9 +32,9 @@ export function refusedEnvPath(rel: string): string | undefined {
   if (!rel || path.isAbsolute(rel) || rel.includes('\\') || rel.includes('\0')) return 'not a path inside the project';
   const parts = rel.split('/');
   if (parts.some((p) => p === '' || p === '.' || p === '..')) return 'not a path inside the project';
-  if (parts.slice(0, -1).some((d) => REFUSED_DIRS.has(d))) return 'keys and credentials stay on this Mac';
+  if (parts.slice(0, -1).some((d) => REFUSED_DIRS.has(d))) return `keys and credentials stay on ${THIS_COMPUTER}`;
   const name = parts[parts.length - 1]!;
-  if (KEY_NAME.test(name)) return 'keys and certificates stay on this Mac';
+  if (KEY_NAME.test(name)) return `keys and certificates stay on ${THIS_COMPUTER}`;
   if (!isEnvFileName(name)) return 'only .env files are sent';
   return undefined;
 }
@@ -45,8 +46,8 @@ export function refusedEnvPath(rel: string): string | undefined {
  */
 export function refusedOnThisMac(absPath: string): string | undefined {
   const parts = absPath.split(/[\\/]/).filter(Boolean);
-  if (parts.slice(0, -1).some((d) => REFUSED_DIRS.has(d))) return 'keys and credentials stay on this Mac';
-  if (KEY_NAME.test(parts.at(-1) ?? '')) return 'keys and certificates stay on this Mac';
+  if (parts.slice(0, -1).some((d) => REFUSED_DIRS.has(d))) return `keys and credentials stay on ${THIS_COMPUTER}`;
+  if (KEY_NAME.test(parts.at(-1) ?? '')) return `keys and certificates stay on ${THIS_COMPUTER}`;
   return undefined;
 }
 

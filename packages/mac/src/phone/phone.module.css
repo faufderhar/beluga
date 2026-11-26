@@ -1,44 +1,5 @@
-/* Your phone: the sidebar footer's mark, its popover, and Settings › Phone (Phone.tsx). */
+/* Your phone: Settings › Phone (Phone.tsx). */
 
-.mark {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 22px;
-  border-radius: 5px;
-  color: var(--text-3);
-}
-.mark:hover,
-.mark[data-state='open'] {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-/* Linked: the mark lights up in the accent, with a dot. */
-.mark.lit {
-  color: var(--accent);
-}
-.markDot {
-  position: absolute;
-  top: 3px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  border: 1.5px solid var(--bg-sidebar, var(--bg));
-  border-radius: 50%;
-  background: var(--ok, #34c759);
-}
-
-.card.card {
-  width: 300px;
-  padding-bottom: 12px;
-}
-.head {
-  padding-bottom: 8px;
-  border-bottom: 0.5px solid var(--hairline);
-  font-size: 1.08rem;
-  font-weight: 650;
-}
 .dim {
   color: var(--text-3);
   font-size: 0.86rem;
@@ -208,10 +169,4 @@
 }
 .relayOk {
   background: var(--ok);
-}
-.relayLine {
-  margin: 6px 0 2px;
-  color: var(--text-3);
-  font-size: 0.82rem;
-  line-height: 1.35;
 }

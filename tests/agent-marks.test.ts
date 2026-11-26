@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AGENT_MARKS, agentMark, modelMark, runtimeMark } from '../src/shared/agent-marks.js';
 import { runtimeChoices } from '../src/shared/agent-runtimes.js';
-import { agentChoices, agentForChoice, choiceForAgent } from '../src/ui/agent-choice.js';
+import { agentChoiceLabel, agentChoices, agentForChoice, choiceForAgent } from '../src/ui/agent-choice.js';
 
 describe('agent marks', () => {
   it('one per runtime, Claude for an older Mac', () => {
@@ -54,6 +54,7 @@ describe('the agents you can pick', () => {
 
   it('every runtime with its models; one not set up stays, greyed, saying why', () => {
     const options = agentChoices(runtimes, claude);
+    // Antigravity is one of your ACP agents: not in the list until you add it.
     expect(options.map((o) => o.label)).toEqual(['Claude', 'Claude · Opus', 'Codex', 'Codex · GPT-5.5', 'OpenCode', 'Copilot', 'Grok Build', 'Local model']);
     expect(options.find((o) => o.runtime === 'opencode')).toMatchObject({ disabled: true, why: "OpenCode isn't set up on this Mac yet", mark: 'opencode' });
     expect(options.find((o) => o.runtime === 'copilot')).toMatchObject({ disabled: true, why: "GitHub Copilot CLI isn't set up on this Mac yet", mark: 'copilot' });
@@ -67,5 +68,14 @@ describe('the agents you can pick', () => {
     expect(agentForChoice('opus')).toEqual({ runtime: 'claude', label: 'Claude', model: 'opus' });
     expect(choiceForAgent({ runtime: 'codex', label: 'Codex', model: 'gpt-5.5' })).toBe('codex:gpt-5.5');
     expect(choiceForAgent(undefined)).toBe('claude:');
+  });
+
+  it('an agent named as its picker names it, model and all (a plan’s Agents menu, Plan Settings)', () => {
+    expect(agentChoiceLabel({ runtime: 'claude', label: 'Claude', model: 'opus' }, runtimes, claude)).toBe('Claude · Opus');
+    expect(agentChoiceLabel({ runtime: 'codex', label: 'Codex', model: 'gpt-5.5' }, runtimes, claude)).toBe('Codex · GPT-5.5');
+    expect(agentChoiceLabel({ runtime: 'claude', label: 'Claude' }, runtimes, claude)).toBe('Claude');
+    expect(agentChoiceLabel(undefined, runtimes, claude)).toBe('Claude');
+    // A model the list no longer has: its id in words.
+    expect(agentChoiceLabel({ runtime: 'claude', label: 'Claude', model: 'claude-haiku-5-5' }, runtimes, claude)).toBe('Claude · Haiku 5.5');
   });
 });

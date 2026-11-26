@@ -140,7 +140,7 @@ function Section({ issue, section, startEditing, onDone }: { issue: Issue; secti
         ) : null}
         <span className={t.grow} />
         {revisions.length ? <History issue={issue} section={section} /> : null}
-        {editing ? null : <IconButton icon="pencil" label={`Edit ${info.label}`} onClick={() => setDraft(text)} />}
+        {editing ? null : <IconButton size="small" icon="pencil" label={`Edit ${info.label}`} onClick={() => setDraft(text)} />}
       </header>
       {editing ? (
         <div className={t.editor}>
@@ -236,7 +236,7 @@ function History({ issue, section }: { issue: Issue; section: BriefSection }) {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <IconButton icon="clock" label={`${SECTION_INFO[section].label}: ${revisions.length} ${revisions.length === 1 ? 'version' : 'versions'}`} />
+        <IconButton size="small" icon="clock" label={`${SECTION_INFO[section].label}: ${revisions.length} ${revisions.length === 1 ? 'version' : 'versions'}`} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={t.history} align="end" sideOffset={6} collisionPadding={10} aria-label="Versions">

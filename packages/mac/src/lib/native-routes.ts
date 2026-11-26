@@ -93,7 +93,7 @@ export function routeTyped(ctx: RouteContext, text: string): boolean {
       run({ type: 'new_chat', projectId: projectId ?? 'chats' });
       return true;
     case 'handoff':
-      if (wsId) ui.openMenu({ kind: 'handoff', id: wsId });
+      if (wsId) ui.openMenu({ kind: 'ws_share', id: wsId, takeOver: true });
       return true;
     case 'run':
       openSheet({ kind: 'peer_run' });

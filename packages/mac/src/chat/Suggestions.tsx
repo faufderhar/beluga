@@ -22,12 +22,14 @@ const KIND_ICON: Record<SuggestionKind, IconName> = {
   task: 'task',
   chat: 'chat',
   option: 'check',
+  key: 'key',
 };
 
 /** A section's heading above its first row: Claude's skills, tasks, chats, other projects' tasks. */
 export function sectionOf(sug: Suggestion, prev: Suggestion | undefined): string | undefined {
   if (sug.task?.elsewhere && !prev?.task?.elsewhere) return 'In other projects, not this one';
   if (sug.task && !sug.task.elsewhere && !prev?.task) return 'Tasks';
+  if (sug.kind === 'key' && prev?.kind !== 'key') return 'Keys for this chat';
   if (sug.kind === 'chat' && prev?.kind !== 'chat') return 'Chats';
   if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Your agent’s skills and commands';
   return undefined;

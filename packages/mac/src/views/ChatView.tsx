@@ -35,19 +35,19 @@ function Starters() {
     return (
       <EmptyActions>
         {project ? (
-          <Button variant="primary" icon="branch" onClick={() => actions.run({ type: 'new_worktree', projectId: project.id })}>
+          <Button size="small" variant="primary" icon="branch" onClick={() => actions.run({ type: 'new_worktree', projectId: project.id })}>
             New Worktree
           </Button>
         ) : (
-          <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+          <Button size="small" variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
             Add Projects…
           </Button>
         )}
-        <Button icon="chat" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })}>
+        <Button size="small" icon="chat" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })}>
           New Chat
         </Button>
         {project ? (
-          <Button variant="quiet" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+          <Button size="small" variant="quiet" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
             Add Projects…
           </Button>
         ) : null}
@@ -60,7 +60,7 @@ function Starters() {
   return (
     <EmptyActions>
       {(ask ? ASK_STARTERS : STARTERS).map((t) => (
-        <Button key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
+        <Button size="small" key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
           {t.label}
         </Button>
       ))}
@@ -74,7 +74,7 @@ function AssistantStarters() {
   return (
     <EmptyActions>
       {ASSISTANT_STARTERS.map((t) => (
-        <Button key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
+        <Button size="small" key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
           {t.label}
         </Button>
       ))}

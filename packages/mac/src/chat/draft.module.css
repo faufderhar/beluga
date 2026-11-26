@@ -4,7 +4,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 14px;
-  padding: 2px 4px 9px;
+  /* Room above as below: the fields sit centred between the box's top edge and their hairline. */
+  padding: 8px 4px 9px;
   margin-bottom: 4px;
   border-bottom: 0.5px solid var(--hairline);
 }

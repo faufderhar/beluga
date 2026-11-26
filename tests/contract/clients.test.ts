@@ -128,11 +128,11 @@ describe.each(Object.keys(MODES) as Array<keyof typeof MODES>)('a screen attache
   it('counts unread messages only where no screen looks, and clears them when it opens the conversation', async () => {
     const c = await core();
     const client = await attach(c);
-    c.store.dispatch({ type: 'chat', id: 'x1', from: c.session.selfId, text: 'in a workspace', ts: 1, byAgent: false, channel: 'ws:w1' });
+    c.store.dispatch({ type: 'chat', id: 'x1', from: 'bob', text: 'in a workspace', ts: 1, byAgent: false, channel: 'ws:w1' });
     await waitFor(() => client.store.getState().unread['ws:w1'] === 1);
     client.store.dispatch({ type: 'view', view: { kind: 'shared', owner: 'b', id: 'w1', tab: 'chat' } });
     await waitFor(() => client.store.getState().unread['ws:w1'] === undefined);
-    c.store.dispatch({ type: 'chat', id: 'x2', from: c.session.selfId, text: 'seen', ts: 2, byAgent: false, channel: 'ws:w1' });
+    c.store.dispatch({ type: 'chat', id: 'x2', from: 'bob', text: 'seen', ts: 2, byAgent: false, channel: 'ws:w1' });
     await new Promise((r) => setTimeout(r, 50));
     expect(client.store.getState().unread['ws:w1']).toBeUndefined();
   });

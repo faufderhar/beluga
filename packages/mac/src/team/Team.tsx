@@ -45,12 +45,12 @@ export function TeamOffers({ projectId }: { projectId: string }) {
               <span className={s.offerDetail}>{o.state === 'asked' ? 'The team forms when they say yes too.' : OFFER_DETAIL}</span>
             </div>
             {o.state === 'asked' ? null : (
-              <Button variant="primary" icon="people" onClick={() => say(api.team.answer(o.peerId, o.projectId, true))}>
+              <Button size="small" variant="primary" icon="people" onClick={() => say(api.team.answer(o.peerId, o.projectId, true))}>
                 Team Up
               </Button>
             )}
             <ActionsDropdown items={more}>
-              <IconButton icon="more" label="More" />
+              <IconButton size="small" icon="more" label="More" />
             </ActionsDropdown>
           </section>
         );
@@ -238,14 +238,14 @@ export function KnockCard({ id, text, children }: { id: string; text: string; ch
         <span className={s.offerTitle}>{knockWords(k)}</span>
         <span className={s.offerDetail}>{k.note ? `“${k.note}” · ` : ''}{k.key}: {k.title}. An editor can talk to your agent here; a viewer follows along.</span>
       </div>
-      <Button variant="quiet" onClick={() => say(api.team.answerKnock(k.id, 'view'))}>
+      <Button size="small" variant="quiet" onClick={() => say(api.team.answerKnock(k.id, 'view'))}>
         Let In as Viewer
       </Button>
-      <Button variant="primary" icon="people" onClick={() => say(api.team.answerKnock(k.id, 'contribute'))}>
+      <Button size="small" variant="primary" icon="people" onClick={() => say(api.team.answerKnock(k.id, 'contribute'))}>
         Let In as Editor
       </Button>
       <ActionsDropdown items={more}>
-        <IconButton icon="more" label={`More for ${text.slice(0, 40)}`} />
+        <IconButton size="small" icon="more" label={`More for ${text.slice(0, 40)}`} />
       </ActionsDropdown>
     </section>
   );
@@ -319,7 +319,7 @@ export function AssignedToYou({ issueId }: { issueId: string }) {
         <span className={s.offerTitle}>{a.by} gave you this task</span>
         <span className={s.offerDetail}>It’s in My Tasks. Start it when you’re ready.</span>
       </div>
-      <Button variant="primary" onClick={() => say(api.team.ackAssignment(a.issueId))}>
+      <Button size="small" variant="primary" onClick={() => say(api.team.ackAssignment(a.issueId))}>
         Got It
       </Button>
     </section>

@@ -213,7 +213,7 @@ function NoFriends() {
   return (
     <Card className={s.empty}>
       <p className={s.emptyText}>Add friends to see them in the leaderboard.</p>
-      <Button icon="plus" onClick={() => openNet({ kind: 'add_friend' })}>
+      <Button size="small" icon="plus" onClick={() => openNet({ kind: 'add_friend' })}>
         Add Friend…
       </Button>
     </Card>
@@ -237,7 +237,7 @@ export function Leaderboard() {
       title="Leaderboard"
       label="Leaderboard"
       sub={friends ? 'You and your friends. Friends share these three numbers with each other, and nothing about their projects.' : undefined}
-      aside={friends ? <Segmented label="Range" value={range} options={RANGES} onChange={setRange} /> : undefined}
+      aside={friends ? <Segmented size="small" label="Range" value={range} options={RANGES} onChange={setRange} /> : undefined}
     >
       {!view ? (
         <div className={s.wait} aria-hidden />

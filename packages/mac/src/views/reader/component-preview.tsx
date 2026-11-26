@@ -45,7 +45,7 @@ export function usePreviewing(path: string): [boolean, (on: boolean) => void] {
 
 export function PreviewToggle({ previewing, onChange }: { previewing: boolean; onChange: (on: boolean) => void }) {
   return (
-    <Segmented
+    <Segmented size="small"
       label="Show as"
       value={previewing ? 'preview' : 'source'}
       onChange={(v) => onChange(v === 'preview')}

@@ -1,6 +1,6 @@
 import type { ClientStore } from '../client/client-store.js';
 import type { Intent } from '../core/intents.js';
-import type { PtyLink } from '../terminal/emulator.js';
+import type { AttachOptions, PtyLink } from '../terminal/emulator.js';
 import type { Args, Method } from './api.js';
 import type { Result } from './handlers.js';
 
@@ -53,7 +53,7 @@ export interface BelugaClient {
   /** What the core asks this screen to do beyond its state (the store already shows navigation, dialogs and toasts). */
   onIntent(listener: (intent: Intent) => void): () => void;
   /** Attach to a terminal program by key (bytes both ways). */
-  attachTerminal(key: string): PtyLink;
+  attachTerminal(key: string, opts?: AttachOptions): PtyLink;
   /** Watch a phone's screen live (BLG-173): frames in, until close(). */
   watchPhone(device: string, opts?: { fps?: number; max?: number; video?: boolean }): PhoneMirror;
   /** Folder this screen was started in (new stand-alone chats run here). */

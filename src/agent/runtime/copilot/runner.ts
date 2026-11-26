@@ -41,6 +41,9 @@ export interface CopilotBackendOptions {
 const COPILOT_AGENT = { runtime: 'copilot', label: 'Copilot' } as const;
 /** A plan sent back for changes this many times: the run ends with the last plan as its answer. */
 const PLAN_ROUNDS = 5;
+
+/** The effort for a run: its own, else the conversation's (null: Auto picked there, so none). */
+const effortOf = (input: Pick<AgentRunInput, 'effort'>, place: AgentRunInput['place']): string | undefined => input.effort ?? place?.effort ?? undefined;
 /** Beluga's tools whose target is a path: one Copilot didn't name is turned down, never judged as the folder. */
 const PATHED = new Set(['Read', 'Write', 'Edit']);
 const WRITES = new Set(['Write', 'Edit']);
@@ -118,7 +121,7 @@ export function createCopilotBackend(opts: CopilotBackendOptions): AgentBackend 
       let failed = true;
       let closed = false;
       try {
-        conn = await connect({ cwd, env: { ...env, ...instructions.env }, args: copilotArgs({ ...(wanted ? { model: wanted } : {}), ...((input.effort ?? place?.effort) ? { effort: input.effort ?? place?.effort } : {}), own: ownModel(env) }), ...(opts.bin ? { bin: opts.bin } : {}) });
+        conn = await connect({ cwd, env: { ...env, ...instructions.env }, args: copilotArgs({ ...(wanted ? { model: wanted } : {}), ...(effortOf(input, place) ? { effort: effortOf(input, place) } : {}), own: ownModel(env) }), ...(opts.bin ? { bin: opts.bin } : {}) });
         const link = conn;
         input.onProcess?.(link.proc);
         const { rpc } = link;

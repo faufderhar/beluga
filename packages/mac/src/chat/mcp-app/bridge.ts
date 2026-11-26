@@ -1,5 +1,5 @@
 import { type DisplayMode, displayModeOf, isOpenableLink } from '../../../../../src/mcp-apps/domain/app-requests.js';
-import type { AppActResult, AppReadResult, AppToolResult } from '../../../../../src/shared/mcp-apps.js';
+import type { AppActResult, AppReadResult, AppToolResult, McpAppView } from '../../../../../src/shared/mcp-apps.js';
 
 /**
  * The host side of the MCP Apps bridge (SEP-1865): JSON-RPC 2.0 over postMessage with one app's
@@ -28,13 +28,38 @@ export interface HostContext {
   readonly containerDimensions: { readonly maxHeight: number; readonly width?: number };
   readonly locale: string;
   readonly platform: 'desktop';
+  /** The tool this app shows. A page that draws several tools picks its view by it (without it: "No binding"). */
+  readonly toolInfo?: ToolInfo;
+}
+
+/** SEP-1865's toolInfo. No `id`: that is the tools/call's JSON-RPC id, and Claude Code made the call, not Beluga. */
+export interface ToolInfo {
+  readonly tool: { readonly name: string; readonly inputSchema: { readonly type: 'object' } };
+}
+
+/** The tool by its own name on its server. The catalog keeps no schema, so a bare object one (apps match on the name). */
+export function toolInfoOf(name: string): ToolInfo {
+  return { tool: { name, inputSchema: { type: 'object' } } };
 }
 
 /** MCP's CallToolResult, as `ui/notifications/tool-result` carries it. */
 export interface ToolResultParams {
   readonly content: ReadonlyArray<{ readonly type: 'text'; readonly text: string }>;
   readonly structuredContent?: unknown;
+  /** The result's own `_meta`: data the server means for its view (never the model's). */
+  readonly _meta?: Readonly<Record<string, unknown>>;
   readonly isError?: boolean;
+}
+
+/** A step's result (`apps.get`'s `result`) as MCP's CallToolResult: its text, structuredContent, `_meta` and isError. */
+export function toolResultOf(r: Extract<McpAppView, { ok: true }>['result']): ToolResultParams | undefined {
+  if (!r) return undefined;
+  return {
+    content: r.text !== undefined ? [{ type: 'text', text: r.text }] : [],
+    ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}),
+    ...(r._meta ? { _meta: r._meta } : {}),
+    ...(r.isError ? { isError: true } : {}),
+  };
 }
 
 export interface BridgeInit {

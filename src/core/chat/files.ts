@@ -4,6 +4,7 @@ import type { FileFrame, Mesh } from '../../net/mesh/mesh.js';
 import type { ChatFile, ChatFileState, MessageView } from '../../net/mesh/views.js';
 import { FileStore, kindOf } from './file-store.js';
 import { FileServer, type FileLinks, Pull } from './file-transfer.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Files in chats: what you attach is taken into the file store and named in the message by its
@@ -136,7 +137,7 @@ export class ChatFiles {
   /** Where a file is on this Mac (it's here). */
   pathOf(sha: string): string {
     const at = this.store.pathOf(sha);
-    if (!at) throw new Error('That file isn’t on this Mac yet');
+    if (!at) throw new Error(`That file isn’t on ${THIS_COMPUTER} yet`);
     return at;
   }
 

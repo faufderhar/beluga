@@ -142,7 +142,7 @@ export function CommitDetail({ target, projectId, hash, refs, onSelect, onClose,
             <Icon name="copy" size={11} />
           </button>
         </Tip>
-        {compact ? null : <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />}
+        {compact ? null : <IconButton size="small" icon="x" label="Close" keys="Esc" onClick={onClose} />}
       </div>
       <div className={s.detailScroll}>
         <h2 className={cx(s.detailSubject, 'selectable')}>{c.subject}</h2>

@@ -282,17 +282,17 @@ function Head({ view, data, warnings, shape, setShape, copy, more, onExpand, inF
             {a.label}
           </button>
         ))}
-        {copy ? <IconButton icon={copy.copied ? 'check' : 'copy'} label={copy.copied ? 'Copied' : 'Copy Table'} className={cx(v.iconTool, copy.copied && v.iconDone)} onClick={copy.onCopy} /> : null}
-        {data.mode === 'live' ? <IconButton icon="refresh" label="Refresh" className={cx(v.iconTool, data.loading && v.spinning)} onClick={data.refresh} /> : null}
-        {onExpand ? <IconButton icon="expand" label="Open in Full Window" className={v.iconTool} onClick={onExpand} /> : null}
+        {copy ? <IconButton size="small" icon={copy.copied ? 'check' : 'copy'} label={copy.copied ? 'Copied' : 'Copy Table'} className={cx(v.iconTool, copy.copied && v.iconDone)} onClick={copy.onCopy} /> : null}
+        {data.mode === 'live' ? <IconButton size="small" icon="refresh" label="Refresh" className={cx(v.iconTool, data.loading && v.spinning)} onClick={data.refresh} /> : null}
+        {onExpand ? <IconButton size="small" icon="expand" label="Open in Full Window" className={v.iconTool} onClick={onExpand} /> : null}
         {more ? (
           <ActionsDropdown items={more}>
-            <IconButton icon="more" label="Copy or Save As" className={v.iconTool} />
+            <IconButton size="small" icon="more" label="Copy or Save As" className={v.iconTool} />
           </ActionsDropdown>
         ) : null}
         {onClose ? (
           <Dialog.Close asChild>
-            <IconButton icon="x" label="Close" keys="esc" className={v.iconTool} />
+            <IconButton size="small" icon="x" label="Close" keys="esc" className={v.iconTool} />
           </Dialog.Close>
         ) : null}
       </span>
@@ -359,7 +359,7 @@ function PlainTable({ children }: { children: React.ReactNode }) {
   return (
     <div ref={box} className={v.plainTable}>
       <span className={v.plainTools}>
-        <IconButton icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy Table'} className={cx(v.iconTool, copied && v.iconDone)} onClick={onCopy} />
+        <IconButton size="small" icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy Table'} className={cx(v.iconTool, copied && v.iconDone)} onClick={onCopy} />
       </span>
       {children}
     </div>

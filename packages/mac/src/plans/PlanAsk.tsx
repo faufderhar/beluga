@@ -48,6 +48,8 @@ export function PlanAsk({ q }: { q: PendingQuestion }) {
   const total = q.question.kind === 'question' ? q.question.questions.length : 1;
   const index = q.question.kind === 'question' ? q.question.questions.indexOf(current) : 0;
   const write = (): void => {
+    // A long paste still being kept as a file (BLG-988): this goes once it is.
+    if (att.whenSaved(write)) return;
     const { text, images, shown, putBack } = att.take(own.trim());
     if (!text) return;
     setOwn('');
@@ -65,7 +67,7 @@ export function PlanAsk({ q }: { q: PendingQuestion }) {
         },
       );
   };
-  const writing = Boolean(own.trim()) || att.images.length > 0;
+  const writing = Boolean(own.trim()) || att.images.length > 0 || att.files.length > 0;
   return (
     <div className={cx(a.card, s.card)} role="group" aria-label={decision ? 'Your call' : 'Your agent asks'} data-testid="plan-ask">
       <div className={a.head}>

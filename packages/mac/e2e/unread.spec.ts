@@ -135,3 +135,23 @@ test('the project you are in is lit, and its tools leave with the pointer', asyn
   await page.mouse.move(600, 400);
   await expect(project.getByRole('button', { name: 'New chat in bob-api' })).toHaveCSS('opacity', '0');
 });
+
+test("an Unread row has its chat's right-click menu, and Rename… there renames it", async ({ page }) => {
+  test.setTimeout(90_000);
+  // Its agent answers while you are elsewhere.
+  await openWorkspace(page, 'webhook-retries', 'bob-api');
+  await composer(page).fill('hello');
+  await composer(page).press('Enter');
+  await openWorkspace(page, 'new-hero', 'landing');
+  const listed = unreadSection(page).getByRole('button', { name: /^webhook-retries · / });
+  await expect(listed).toBeVisible({ timeout: 40_000 });
+
+  // The menu its row has in a project's list.
+  await listed.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Remind Me Later' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Rename…' }).click();
+  await page.getByLabel('Worktree name').fill('webhook-renamed');
+  await page.keyboard.press('Enter');
+  await expect(unreadSection(page).getByRole('button', { name: /^webhook-renamed · / })).toBeVisible();
+  await expect(row(page, 'webhook-renamed')).toBeVisible();
+});

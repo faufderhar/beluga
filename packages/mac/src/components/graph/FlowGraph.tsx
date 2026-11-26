@@ -526,16 +526,16 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} className={g.dots} />
         {!inline ? <MiniMap pannable zoomable className={g.minimap} nodeClassName={(n) => (n.type === 'group' ? g.miniGroup! : g.miniNode!)} /> : null}
         <Panel position="top-right" className={g.tools}>
-          {steps.length ? <IconButton icon="play" label={step >= 0 ? 'Leave the Walkthrough' : 'Walk Me Through It'} active={step >= 0} onClick={() => goStep(step >= 0 ? -1 : 0)} /> : null}
-          <IconButton icon={across ? 'chevronDown' : 'chevronRight'} label={across ? 'Lay Out Top to Bottom' : 'Lay Out Left to Right'} onClick={turn} />
-          <IconButton icon="outline" label="Fit to View" onClick={() => frameAll(duration)} />
-          {onCopy ? <IconButton icon="copy" label="Copy as JSON" onClick={onCopy} /> : null}
-          {onExpand ? <IconButton icon="expand" label="Open in Full Window" onClick={onExpand} /> : null}
+          {steps.length ? <IconButton size="small" icon="play" label={step >= 0 ? 'Leave the Walkthrough' : 'Walk Me Through It'} active={step >= 0} onClick={() => goStep(step >= 0 ? -1 : 0)} /> : null}
+          <IconButton size="small" icon={across ? 'chevronDown' : 'chevronRight'} label={across ? 'Lay Out Top to Bottom' : 'Lay Out Left to Right'} onClick={turn} />
+          <IconButton size="small" icon="outline" label="Fit to View" onClick={() => frameAll(duration)} />
+          {onCopy ? <IconButton size="small" icon="copy" label="Copy as JSON" onClick={onCopy} /> : null}
+          {onExpand ? <IconButton size="small" icon="expand" label="Open in Full Window" onClick={onExpand} /> : null}
         </Panel>
         {!inline ? (
           <Panel position="bottom-left" className={g.zoom}>
-            <IconButton icon="minus" label="Zoom Out" onClick={() => void flow.zoomOut({ duration })} />
-            <IconButton icon="plus" label="Zoom In" onClick={() => void flow.zoomIn({ duration })} />
+            <IconButton size="small" icon="minus" label="Zoom Out" onClick={() => void flow.zoomOut({ duration })} />
+            <IconButton size="small" icon="plus" label="Zoom In" onClick={() => void flow.zoomIn({ duration })} />
           </Panel>
         ) : null}
       </ReactFlow>

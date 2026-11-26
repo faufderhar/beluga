@@ -19,12 +19,11 @@ export interface RuntimeFallback {
 /** Per runtime, what it does differently. A runtime (or a feature) missing here works as Claude's does. */
 export const RUNTIME_FALLBACKS: Readonly<Record<string, Readonly<Partial<Record<FallbackId, RuntimeFallback>>>>> = {
   codex: {
-    compact: { capability: 'hasCompaction', reason: 'Codex compacts its own context when it fills up, so there’s no Compact on Codex.' },
     fork: { capability: 'canFork', reason: 'On Codex a fork starts a new conversation: the files come along, the chat so far doesn’t.' },
     rewind: { capability: 'canFork', reason: 'On Codex, going back puts the files back but starts a new conversation from your edited message.' },
     skills: { capability: 'skills', reason: 'Skills and commands are translated for Codex; what can’t be says “Not on Codex”.' },
     // agent-wording: claude (the way out is the Claude runtime, by name)
-  guests: { capability: 'canGateEveryTool', reason: 'Codex can’t check each step, so it can’t answer guests. Switch this conversation to Claude for them.' },
+    guests: { capability: 'canGateEveryTool', reason: 'Codex can’t check each step, so it can’t answer guests. Switch this conversation to Claude for them.' },
   },
   opencode: {
     rewind: { reason: 'On OpenCode, going back puts the files back but starts a new conversation from your edited message.' },
@@ -48,7 +47,31 @@ export const RUNTIME_FALLBACKS: Readonly<Record<string, Readonly<Partial<Record<
     // agent-wording: claude (the way out is the Claude runtime, by name)
     friends: { capability: 'canGateEveryTool', reason: 'Copilot reads files and runs read-only commands without Beluga asking, so friends’ tasks go to Claude (or Codex) instead.' },
   },
+  antigravity: {
+    fork: { capability: 'canFork', reason: 'On Antigravity a fork starts a new conversation: the files come along, the chat so far doesn’t.' },
+    rewind: { capability: 'canFork', reason: 'On Antigravity, going back puts the files back but starts a new conversation from your edited message.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+    guests: { capability: 'canGateEveryTool', reason: 'Antigravity reads files without Beluga asking, so it doesn’t answer guests. Switch this conversation to Claude for them.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+    friends: { capability: 'canGateEveryTool', reason: 'Antigravity reads files without Beluga asking, so friends’ tasks go to Claude (or Codex) instead.' },
+  },
+  // Any other ACP agent of yours (Cursor, Gemini CLI, a Registry agent, a command of yours): `acp` stands for each (acpKey).
+  acp: {
+    compact: { capability: 'hasCompaction', reason: 'This agent keeps its own context over ACP, so there’s no Compact for it; a /compact of its own runs as typed.' },
+    fork: { capability: 'canFork', reason: 'On this agent a fork starts a new conversation: the files come along, the chat so far doesn’t.' },
+    rewind: { capability: 'canFork', reason: 'On this agent, going back puts the files back but starts a new conversation from your edited message.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+    guests: { capability: 'canGateEveryTool', reason: 'ACP agents can run some steps without Beluga asking, so this one doesn’t answer guests. Switch this conversation to Claude for them.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+    friends: { capability: 'canGateEveryTool', reason: 'ACP agents can run some steps without Beluga asking, so friends’ tasks go to Claude (or Codex) instead.' },
+  },
 };
+
+/** Runtimes Beluga runs with code of its own: any other is an ACP agent of yours, and `acp` stands for it in these tables. */
+const OWN_RUNTIMES = new Set(['claude', 'codex', 'opencode', 'copilot', 'grok', 'antigravity', 'local', 'fake']);
+
+/** A runtime's key in these tables: its own, or `acp` for an ACP agent Beluga has no code of its own for. */
+const acpKey = (runtime: string): string => (OWN_RUNTIMES.has(runtime) ? runtime : 'acp');
 
 /**
  * What a runtime doesn't have at all (BLG-686), so the screens don't offer it there: no control
@@ -63,11 +86,13 @@ export const RUNTIME_MISSING: Readonly<Record<string, readonly FeatureId[]>> = {
   opencode: ['terminal', 'steer'],
   grok: ['terminal', 'steer'],
   copilot: ['btw', 'terminal', 'steer'],
+  antigravity: ['btw', 'terminal', 'steer'],
+  acp: ['btw', 'terminal', 'steer'],
 };
 
 /** Whether `feature` is there on `runtime` (unset: Claude's, which has them all). */
 export function runtimeHas(runtime: string | undefined, feature: FeatureId): boolean {
-  return !runtime || !RUNTIME_MISSING[runtime]?.includes(feature);
+  return !runtime || !RUNTIME_MISSING[acpKey(runtime)]?.includes(feature);
 }
 
 type Ref = { readonly runtime: string };
@@ -79,5 +104,5 @@ export function runtimeHere(agent: Ref | undefined, self?: { readonly defaultAge
 
 /** Why `feature` works differently (or not at all) on `runtime`; undefined when it works as on Claude. */
 export function fallbackFor(runtime: string | undefined, feature: FallbackId): string | undefined {
-  return runtime ? RUNTIME_FALLBACKS[runtime]?.[feature]?.reason : undefined;
+  return runtime ? RUNTIME_FALLBACKS[acpKey(runtime)]?.[feature]?.reason : undefined;
 }

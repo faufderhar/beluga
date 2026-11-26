@@ -41,7 +41,7 @@ describe('context facts', () => {
     expect(facts.autoCompactTitle).toMatch(/may still compact/);
   });
 
-  it('leaves Codex to compact itself', () => {
+  it('compacts Codex at Beluga’s threshold without inventing a window', () => {
     const facts = contextFacts(
       state({
         prefs: { ...prefs, defaultAgent: { runtime: 'codex', label: 'Codex' } },
@@ -49,7 +49,20 @@ describe('context facts', () => {
       }),
       'ws:w1',
     );
-    expect(facts.autoCompact).toBe('Codex compacts this chat itself');
+    expect(facts.autoCompact).toBe('At 75%');
+    expect(facts.autoCompactMark).toBe(true);
+    expect(facts.window).toBeUndefined();
+  });
+
+  it('leaves a generic ACP agent to compact itself', () => {
+    const facts = contextFacts(
+      state({
+        prefs: { ...prefs, defaultAgent: { runtime: 'cursor', label: 'Cursor' } },
+        projects: [{ name: 'beluga', workspaces: [{ id: 'w1', agent: { runtime: 'cursor' } }] }],
+      }),
+      'ws:w1',
+    );
+    expect(facts.autoCompact).toBe('This agent compacts this chat itself');
     expect(facts.autoCompactMark).toBe(false);
     expect(facts.window).toBeUndefined();
   });

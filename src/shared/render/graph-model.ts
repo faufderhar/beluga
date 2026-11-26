@@ -1,4 +1,5 @@
 import type { EdgeKind, Graph, GraphDirection, GraphEdge, GraphNode, GraphStatus, GraphStep, NodeKind } from '../graph-spec.js';
+import { knownOr } from '../known-or.js';
 
 /**
  * The pure half of drawing a `beluga-graph` (no DOM, no React Flow): what each kind looks like,
@@ -50,7 +51,7 @@ export const KIND_NAME: Readonly<Record<NodeKind, string>> = {
 
 export type Tone = 'muted' | 'claude' | 'info' | 'ok' | 'warn' | 'error';
 
-export const STATUS_INFO: Readonly<Record<GraphStatus, { readonly label: string; readonly tone: Tone }>> = {
+export const STATUS_INFO: Readonly<Record<GraphStatus, { readonly label: string; readonly tone: Tone }>> = knownOr({
   todo: { label: 'To do', tone: 'muted' },
   active: { label: 'In progress', tone: 'claude' },
   review: { label: 'In review', tone: 'info' },
@@ -58,7 +59,7 @@ export const STATUS_INFO: Readonly<Record<GraphStatus, { readonly label: string;
   blocked: { label: 'Blocked', tone: 'warn' },
   failed: { label: 'Failed', tone: 'error' },
   idle: { label: 'Idle', tone: 'muted' },
-};
+}, (v) => ({ label: v, tone: 'muted' }));
 
 /** How a line reads in words, for the details panel ("calls", "sends data to"…). */
 export const EDGE_VERB: Readonly<Record<EdgeKind, { readonly out: string; readonly in: string }>> = {

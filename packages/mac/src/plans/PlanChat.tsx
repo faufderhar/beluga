@@ -13,8 +13,8 @@ import { withChatWords } from "@beluga/shared/chat-ref.js";
 import { useSuggestions } from "../chat/Suggestions.js";
 import { suggest } from "@beluga/ui/suggest.js";
 import { MaxFire } from "../chat/MaxFire.js";
-import { shownEffort } from "../chat/ModelPicker.js";
 import { effectsOn, fireVars } from "../chat/fire-look.js";
+import { effortIn } from "@beluga/shared/agent-picker.js";
 import m from "../chat/max.module.css";
 import { usePrefs } from "../lib/prefs.js";
 import { useAttachments } from "../chat/use-attachments.js";
@@ -99,7 +99,7 @@ export function PlanChat({
   // The box burns here as in every message box (Settings › Fire & Confetti).
   const form = useRef<HTMLFormElement>(null);
   const fire = usePrefs().maxFire;
-  const effort = useApp((st) => shownEffort(st, channel));
+  const effort = useApp((st) => effortIn(st, channel));
   const effects = effectsOn(fire, effort);
   const burning = effects && fire.show !== "off";
   const busy = useApp((st) => activityOf(st.log, channel).running);
@@ -200,6 +200,8 @@ export function PlanChat({
   };
   /** While Claude works, your message reaches it now unless you queue it (⌥↩). */
   const send = (queue = false): void => {
+    // A long paste still being kept as a file (BLG-988): this goes once it is.
+    if (att.whenSaved(() => send(queue))) return;
     const { text: message, images, shown } = att.take(text.trim());
     if (!message) return;
     setText("");
@@ -251,7 +253,7 @@ export function PlanChat({
         ) : null}
         <span className={p.grow} />
         {wsId ? (
-          <IconButton
+          <IconButton size="small"
             icon="expand"
             label="Open the Whole Conversation"
             onClick={() =>
@@ -259,7 +261,7 @@ export function PlanChat({
             }
           />
         ) : null}
-        <IconButton icon="x" label="Hide the Conversation" onClick={onClose} />
+        <IconButton size="small" icon="x" label="Hide the Conversation" onClick={onClose} />
       </header>
       <div className={p.chatLog}>
         {/* A narrow pane: what you asked first folds to a few lines, so the conversation reads from the top; while the plan is being written, the line under it is Claude's one status. */}

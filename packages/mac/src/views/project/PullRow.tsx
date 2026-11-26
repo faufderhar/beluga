@@ -169,7 +169,7 @@ export const PullRow = memo(function PullRow({ projectId, pull }: { projectId: s
         </span>
         <span className={s.rowMore} onClick={(e) => e.stopPropagation()}>
           <ActionsDropdown items={menu()}>
-            <IconButton icon="more" label={`What to do with #${pull.number}`} />
+            <IconButton size="small" icon="more" label={`What to do with #${pull.number}`} />
           </ActionsDropdown>
         </span>
       </div>

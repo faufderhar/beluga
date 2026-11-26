@@ -144,11 +144,15 @@ export const effectsOn = (look: FireLook, effort: string | undefined): boolean =
 
 const tuningOf = (id: string): Tuning => PRESETS.find((p) => p.id === id)!.look;
 
-/** The welcome's three (onboarding › Fire): two pixel fires and none at all. Each sets what's on and the look; None keeps the look for later. */
+/**
+ * The welcome's three (onboarding › Fire): the two kinds of fire side by side, pixel and flame, and
+ * none at all. Both fires burn from the start (never only while typing), so the step shows them
+ * before anyone types. Flame is the app's default look. None keeps the look for later.
+ */
 export const STARTERS: ReadonlyArray<{ readonly id: string; readonly name: string; readonly blurb: string; readonly set: Partial<FireLook> }> = [
-  { id: 'arcade', name: 'Arcade', blurb: 'Red pixel fire that flares when you rush, and pixels fly as you type.', set: { ...tuningOf('arcade'), preset: 'arcade', show: 'always', typing: 'pixels', popDelete: true, border: true } },
-  { id: 'ghost', name: 'Ghost', blurb: 'Tall, calm violet pixels that burn while you type.', set: { ...tuningOf('ghost'), preset: 'ghost', show: 'typing', typing: 'pixels', popDelete: true, border: true } },
-  { id: 'none', name: 'None', blurb: 'A plain box: no fire, nothing flies. Settings has it if you change your mind.', set: { show: 'off', typing: 'off', popDelete: false } },
+  { id: 'pixel', name: 'Pixel', blurb: 'Blocky red fire, like an old arcade game. Pixels fly as you type.', set: { ...tuningOf('arcade'), preset: 'arcade', show: 'always', typing: 'pixels', popDelete: true, border: true } },
+  { id: 'flame', name: 'Flame', blurb: 'Smooth blue flames that flare when you type fast. Confetti flies as you type.', set: { ...tuningOf('hades'), preset: 'hades', show: 'always', typing: 'confetti', popDelete: true, border: true } },
+  { id: 'none', name: 'None', blurb: 'A plain box with no fire.', set: { show: 'off', typing: 'off', popDelete: false } },
 ];
 
 /** Which of the welcome's three these settings are, if any. */

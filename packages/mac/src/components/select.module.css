@@ -1,5 +1,5 @@
-/* Beluga's pop-up button and its menu (components/Select.tsx). A quiet Mac pop-up: raised, a
-   hairline, the value, grey up-and-down chevrons; the menu matches SpecMenu's. */
+/* Beluga's pop-up button and its menu (components/Select.tsx). NSPopUpButton: a push button's
+   bezel, the value, and the up-and-down chevrons in an accent box at its end; the menu matches SpecMenu's. */
 
 .trigger {
   display: inline-flex;
@@ -7,42 +7,44 @@
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  height: 24px;
-  padding: 0 7px 0 9px;
-  border-radius: 6px;
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.06);
+  height: var(--control-h);
+  padding: 0 3px 0 8px;
+  border-radius: var(--control-radius);
+  background: var(--control);
+  box-shadow: var(--control-bezel);
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: var(--control-text);
   text-align: left;
   white-space: nowrap;
   transition: background var(--dur-fast), box-shadow var(--dur-fast);
 }
-:global([data-theme='dark']) .trigger {
-  background: color-mix(in srgb, var(--bg-raised) 82%, white);
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.3);
-}
 .trigger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bg-raised) 94%, var(--text));
+  background: var(--control-hover);
 }
-:global([data-theme='dark']) .trigger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bg-raised) 76%, white);
-}
+.trigger:active:not(:disabled),
 .trigger[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--bg-raised) 90%, var(--text));
+  background: var(--control-press);
 }
 .trigger:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 0 0 0.5px var(--control-edge), var(--focus-ring);
 }
 .trigger:disabled {
-  opacity: 0.45;
+  opacity: var(--control-disabled);
 }
 .small {
-  height: 22px;
+  height: var(--control-h-small);
   gap: 5px;
-  padding: 0 6px 0 8px;
-  font-size: 0.88rem;
+  padding: 0 3px 0 7px;
+  border-radius: var(--control-radius-small);
+  font-size: var(--control-text-small);
+}
+.large {
+  height: var(--control-h-large);
+  gap: 7px;
+  padding: 0 6px 0 10px;
+  border-radius: var(--control-radius-large);
+  font-size: var(--control-text-large);
 }
 .full {
   display: flex;
@@ -85,14 +87,26 @@
   place-items: center;
   color: var(--text-2);
 }
+/* The arrows' box: 16px in a 22px button (14 in a small one), the accent unless the window isn't key. */
 .chevrons {
   flex: none;
+  box-sizing: content-box;
+  width: 7px;
+  height: 10px;
   margin-left: auto;
-  color: var(--text-3);
+  padding: 3px 4.5px;
+  border-radius: 4px;
+  background: var(--control-accent);
+  color: var(--on-accent);
 }
-.trigger:hover:not(:disabled) .chevrons,
-.trigger[aria-expanded='true'] .chevrons {
-  color: var(--text-2);
+.small .chevrons {
+  width: 6px;
+  height: 9px;
+  padding: 2.5px 4px;
+  border-radius: 3.5px;
+}
+.trigger:disabled .chevrons {
+  background: var(--text-3);
 }
 
 /* ---- the menu */
@@ -269,4 +283,72 @@
 .empty {
   padding: 6px 10px 6px 24px;
   color: var(--text-3);
+}
+
+/* Liquid Glass: the pop-up button as macOS 26's settings draw it, the value and one chevron and no
+   bezel; a soft capsule shows under it on hover and while its menu is open. The value sits by its
+   chevron. Its menu is a rounded card, the row under the pointer on a soft grey, the checkmark at the
+   row's end in the accent. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger {
+  gap: 5px;
+  padding-inline: 8px 7px;
+  background: none;
+  box-shadow: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger:hover:not(:disabled),
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger > .chevrons {
+  display: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger::after {
+  content: '';
+  flex: none;
+  width: 9px;
+  height: 6px;
+  margin-left: auto;
+  background: var(--text-2);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 6'%3E%3Cpath d='M1 1.2 4.5 4.6 8 1.2' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 6'%3E%3Cpath d='M1 1.2 4.5 4.6 8 1.2' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger > .value {
+  justify-items: end;
+  text-align: right;
+}
+/* Without a bezel the button is as wide as the value it shows, so its grey sits tight round it. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .trigger .ghost {
+  display: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .menu:has(.option) {
+  padding: 6px;
+  border-radius: 12px;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .option {
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 7px;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .option[data-active] {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .option[data-active] .optionIcon {
+  color: var(--text-2);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .option[data-active] .optionDescription {
+  color: var(--text-3);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .option > .check {
+  order: 2;
+  margin-left: auto;
+  color: var(--accent);
+}
+/* The list takes the keys, but the row under them is what shows it: no focus ring round the menu. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .list {
+  outline: none;
 }

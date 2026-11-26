@@ -10,13 +10,15 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await expect(welcome).toBeVisible();
+  // At launch it covers the window from its first frame: no fade-in for the app to show through.
+  expect(await welcome.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
   // The beluga opens the welcome, and comes back on the last step.
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
-  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await welcome.getByRole('button', { name: /Set Up Beluga/ }).click();
   // Your agents (BLG-507, its own spec: onboarding-agents.spec.ts), then the tour.
   await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(welcome.getByRole('heading', { name: 'Work on everything at once.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Run several tasks at the same time.' })).toBeVisible();
 
   // Skip Tour goes straight to the look.
   await welcome.getByRole('button', { name: 'Skip Tour' }).click();
@@ -36,18 +38,28 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await expect(welcome.getByRole('heading', { name: 'Coming from another terminal?' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
-  // The fire: it starts on Arcade, a box to try it in, and None is right there.
+  // The fire (BLG-989): the pixel fire and the flame side by side, the default (Flame) picked,
+  // typing in a box picks it, the switch turns it off, and Settings › Fire & Confetti is a click away.
   const fire = (): Promise<{ preset: string; show: string; typing: string }> => page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').maxFire);
-  await expect(welcome.getByRole('heading', { name: 'Set your words on fire.' })).toBeVisible();
-  await expect(welcome.getByRole('radio', { name: 'Arcade' })).toHaveAttribute('aria-checked', 'true');
-  await welcome.getByRole('textbox', { name: 'Try the fire' }).fill('Hello');
-  await welcome.getByRole('radio', { name: 'Ghost' }).click();
-  await expect.poll(async () => (await fire()).preset).toBe('ghost');
-  await welcome.getByRole('radio', { name: 'None' }).click();
+  await expect(welcome.getByRole('heading', { name: 'Pick a fire for your message box.' })).toBeVisible();
+  await expect(welcome.getByRole('radio', { name: /^Flame/ })).toHaveAttribute('aria-checked', 'true');
+  await welcome.getByRole('textbox', { name: 'Try the Pixel fire' }).fill('Hello');
+  await expect.poll(async () => (await fire()).preset).toBe('arcade');
+  await expect(welcome.getByRole('radio', { name: /^Pixel/ })).toHaveAttribute('aria-checked', 'true');
+  await welcome.getByRole('switch', { name: 'Fire around the message box' }).click();
   await expect.poll(async () => (await fire()).show).toBe('off');
-  await expect(welcome.getByRole('radio', { name: 'Everywhere' })).toHaveCount(0);
-  await welcome.getByRole('radio', { name: 'Arcade' }).click();
+  await expect(welcome.getByRole('radio', { name: 'Always' })).toHaveCount(0);
+  await welcome.getByRole('radio', { name: /^Pixel/ }).click();
   await expect.poll(async () => (await fire()).typing).toBe('pixels');
+  // While Typing: the same fire, burning only as you type (BLG-989).
+  await welcome.getByRole('radio', { name: 'While Typing' }).click();
+  await expect.poll(async () => (await fire()).show).toBe('typing');
+  await expect(welcome.getByRole('radio', { name: /^Pixel/ })).toHaveAttribute('aria-checked', 'true');
+  await welcome.getByRole('radio', { name: /^Flame/ }).click();
+  await expect.poll(async () => (await fire()).preset).toBe('hades');
+  await expect.poll(async () => (await fire()).show).toBe('typing');
+  await welcome.getByRole('radio', { name: 'On Max Only' }).click();
+  await expect.poll(async () => (await fire()).show).toBe('always');
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
   // The settings apply as they're changed.
@@ -64,7 +76,7 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await welcome.getByRole('button', { name: 'Skip Permissions' }).click();
 
   // On-screen popups (BLG-9): a sample shows on the pop-up, and notifications are asked for.
-  await expect(welcome.getByRole('heading', { name: 'Never miss it when your agent needs you.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Know when your agent needs you.' })).toBeVisible();
   await expect(welcome.getByRole('switch', { name: 'Show on-screen popups when something needs me' })).toHaveAttribute('aria-checked', 'true');
   const popup = await page.context().newPage();
   await popup.goto('/popup.html');
@@ -77,17 +89,21 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
   // The phone app: Android for now, and the real Pair a Phone….
-  await expect(welcome.getByRole('heading', { name: 'Your agent in your pocket.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Follow your agents from your phone.' })).toBeVisible();
   await expect(welcome.getByText('Android only for now')).toBeVisible();
   await expect(welcome.getByRole('button', { name: /Pair a Phone/ })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
-  // Usage statistics (BLG-922), the last setting: Limited picked, and Finish keeps it.
+  // Usage statistics (BLG-922), the last setting, with a privacy notice. It shows the level chosen before, and none
+  // for an install that never chose (Finish with none is Off). The demo has chosen Essential unless BELUGA_DEMO_ASKS=telemetry.
   await expect(welcome.getByRole('heading', { name: 'Help make Beluga better.' })).toBeVisible();
-  await expect(welcome.getByRole('radio', { name: /Limited/ })).toBeChecked();
+  const unchosen = process.env.BELUGA_DEMO_ASKS === 'telemetry';
+  for (const level of [/^Off/, /^On/]) await expect(welcome.getByRole('radio', { name: level })).not.toBeChecked();
+  await expect(welcome.getByRole('radio', { name: /Essential/ })).toBeChecked({ checked: !unchosen });
+  await expect(welcome.getByRole('button', { name: 'Privacy notice' })).toBeVisible();
   await welcome.getByRole('radio', { name: /^On/ }).check();
   await expect(welcome.getByRole('radio', { name: /^On/ })).toBeChecked();
-  await welcome.getByRole('radio', { name: /Limited/ }).check();
+  await welcome.getByRole('radio', { name: /Essential/ }).check();
   await welcome.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
 
@@ -99,6 +115,13 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await page.reload();
   await expect(page.getByRole('navigation').first()).toBeVisible();
   await expect(welcome).toHaveCount(0);
+
+  // The level picked in the welcome stands after it closes: closing sends Off only when nothing was picked here.
+  await page.keyboard.press('Meta+,');
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await settings.getByRole('combobox', { name: 'Search settings' }).fill('usage statistics');
+  await page.keyboard.press('Enter');
+  await expect(settings.getByRole('combobox', { name: 'Share usage statistics' })).toContainText('Essential');
 });
 
 test('Skip Setup leaves at once, and the palette brings the welcome back', async ({ page }) => {
@@ -118,14 +141,14 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   await page.addInitScript(() => (window.__BELUGA_PRIVACY__ = { screen: 'granted' }));
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
-  await welcome.getByRole('button', { name: /Get Started/ }).click();
-  // Your agents, then the tour's first two.
+  await welcome.getByRole('button', { name: /Set Up Beluga/ }).click();
+  // Your agents, then the tour's first two (worktrees, Scratch).
   await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   // The table weave: Claude picks Postgres, connects, and the answer is a table that sorts.
-  await expect(welcome.getByRole('heading', { name: 'Answers you can sort, not just read.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Ask about your data and get a table back.' })).toBeVisible();
   const table = welcome.getByRole('table');
   await expect(table).toBeVisible({ timeout: 10_000 });
   await table.getByRole('button', { name: 'MRR' }).click();
@@ -135,48 +158,64 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   // The look, another terminal's look, the fire, the defaults.
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(welcome.getByRole('heading', { name: 'Set your words on fire.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Pick a fire for your message box.' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByText('Allowed', { exact: true })).toBeVisible();
   await expect(welcome.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
 });
 
-test('the tour explains Sentinel: a sentence becomes a sentinel, then real ones at work', async ({ page }) => {
+test('the tour can be played with: Scratch, a friend’s agent, a shared session and Sentinel (BLG-989)', async ({ page }) => {
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
-  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await welcome.getByRole('button', { name: /Set Up Beluga/ }).click();
   await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-  for (const heading of ['Work on everything at once.', 'See every agent work. Steer any of them.', 'Answers you can sort, not just read.', 'Your app here. The work on any computer.', 'Your agent, and your friends’ agents.']) {
-    await expect(welcome.getByRole('heading', { name: heading })).toBeVisible();
-    await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-  }
+  const next = (): Promise<void> => welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(welcome.getByRole('heading', { name: 'Run several tasks at the same time.' })).toBeVisible();
+  await next();
 
-  // A sentence becomes a sentinel: its trigger, its steps, its access; the names pick another.
-  await expect(welcome.getByRole('heading', { name: 'Say when. Say what. Beluga keeps watch.' })).toBeVisible();
-  await expect(welcome.getByText('Every day at 7:00')).toBeVisible();
-  await welcome.getByRole('tab', { name: 'Site watch' }).click();
+  // Scratch: files land while the agent works, and one opens.
+  await expect(welcome.getByRole('heading', { name: 'Watch screenshots and logs arrive as your agent works.' })).toBeVisible();
+  await welcome.getByRole('radio', { name: 'Run the tests' }).click();
+  await welcome.getByRole('button', { name: 'Open test-run.log' }).click();
+  await expect(welcome.getByText('27 passed, 1 failed').last()).toBeVisible();
+  await welcome.getByRole('button', { name: 'Close' }).click();
+  await next();
+  await expect(welcome.getByRole('heading', { name: 'Ask about your data and get a table back.' })).toBeVisible();
+  await next();
+  await expect(welcome.getByRole('heading', { name: 'Run tasks on your other computers.' })).toBeVisible();
+  await next();
+
+  // A friend's agent: pick the errand, Allow as Ada, the result comes back.
+  await expect(welcome.getByRole('heading', { name: 'Your agent can ask a friend’s agent.' })).toBeVisible();
+  await welcome.getByRole('radio', { name: 'A page Ada is signed in to' }).click();
+  await welcome.getByRole('button', { name: 'Allow', exact: true }).click();
+  await expect(welcome.getByText('staging-dashboard.png')).toBeVisible({ timeout: 10_000 });
+  await next();
+
+  // A shared session: Share, Follow, Invite; Ada joins to follow along.
+  await expect(welcome.getByRole('heading', { name: 'Invite a friend into your session.' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Share' }).click();
+  await welcome.getByRole('radio', { name: /^Follow/ }).click();
+  await welcome.getByRole('button', { name: 'Invite', exact: true }).click();
+  await expect(welcome.getByText('Ada joined to follow along')).toBeVisible();
+  await next();
+
+  // Sentinel, once: pick a use case and its run plays to a report.
+  await expect(welcome.getByRole('heading', { name: 'Start work every morning, or when tests fail.' })).toBeVisible();
+  await welcome.getByRole('radio', { name: /Site watch/ }).click();
   await expect(welcome.getByText('When example.com stops answering')).toBeVisible();
-  await expect(welcome.getByText('Run a script')).toBeVisible();
-  await expect(welcome.getByText('Call a service')).toBeVisible();
   await expect(welcome.getByText('Back up', { exact: true })).toBeVisible({ timeout: 10_000 });
-  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-
-  // Sentinel at work: its page's films, each with the sentence that sets it up.
-  await expect(welcome.getByRole('heading', { name: 'Real work, done while you sleep.' })).toBeVisible();
-  await welcome.getByRole('tab', { name: 'Failing tests' }).click();
-  await expect(welcome.getByText('When the tests break, your agent fixes them and asks you to merge')).toBeVisible();
-  await expect(welcome.getByText(/When the tests fail on GitHub for one of my projects/)).toBeVisible();
-  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(welcome.getByRole('heading', { name: 'Know what every project earns.' })).toBeVisible();
+  await next();
+  await expect(welcome.getByRole('heading', { name: 'See what each project earns.' })).toBeVisible();
 });
 
 test('the tour’s table opens in a full window over the welcome, and Continue still goes on after it', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
-  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await welcome.getByRole('button', { name: /Set Up Beluga/ }).click();
   await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
   // Your agents, then the tour's first two steps, then the table.
   for (let i = 0; i < 3; i++) await welcome.getByRole('button', { name: 'Continue', exact: true }).click();

@@ -94,8 +94,11 @@ export interface WorkspaceRecord {
   readonly envKept?: Readonly<Record<string, string>>;
   /** Model picked for this conversation (unset: your default). */
   readonly model?: string;
-  /** Thinking effort for this conversation (the chat’s meter, or a Sentinel step; unset: Settings'). */
-  readonly effort?: Effort;
+  /**
+   * Thinking effort picked for this conversation (its composer, or a Sentinel step's, BLG-498):
+   * null is Auto picked here (the agent decides, whatever Settings says); unset: Settings'.
+   */
+  readonly effort?: Effort | null;
   readonly usage?: WorkspaceUsage;
   /** Handed off to a friend (their name), who continues it on their computer. */
   readonly handedTo?: string;
@@ -127,6 +130,11 @@ export interface WorkspaceRecord {
    * if they fail or it conflicts). Not GitHub's auto-merge: that merges at once when no check is required.
    */
   readonly mergeWhenReady?: MergeWait;
+  /**
+   * Straight to main: each time its agent's turn ends, its work lands on its base in the main folder
+   * (rebased onto it, then fast-forwarded; no pull request, nothing pushed). See workspaces/land.ts.
+   */
+  readonly landOnBase?: boolean;
   /**
    * Remind Me Later from before BLG-770 (epoch ms): read once at start, carried into triage.json
    * (core/triage/service.ts, which keeps Remind Me Later now, per person), then cleared.

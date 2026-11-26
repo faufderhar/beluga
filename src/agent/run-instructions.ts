@@ -1,10 +1,12 @@
 import os from 'node:os';
 import type { AgentRef } from '../protocol.js';
 import { buildGraphAppend } from './graph-prompt.js';
-import { type ShellSetup, buildAskOnlyAppend, buildChatSendAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShellAppend, buildShippedAppend, buildSystemAppend, loginShellSetup } from './prompt.js';
+import { type ShellSetup, buildAskOnlyAppend, buildChatSendAppend, buildChatVarsAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShellAppend, buildShippedAppend, buildSystemAppend, loginShellSetup } from './prompt.js';
+import { buildForkedAppend } from './fork-prompt.js';
 import { buildSyncMainAppend } from './sync-main.js';
 import { buildTerminalAppend } from './terminal-prompt.js';
 import type { AgentRunInput } from './types.js';
+import { prTitleRuleText } from '../shared/naming.js';
 import { buildChatLinkAppend, buildViewAppend } from './view-prompt.js';
 
 /** Your login shell as the system has it (Codex runs commands in that one, not $SHELL); $SHELL when it can't say. */
@@ -45,11 +47,14 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (input.dialogue?.brief ?? '') +
     (input.setup && !askOnly ? input.setup.brief : '') +
     (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') +
+    (input.chatVars?.length ? buildChatVarsAppend(input.chatVars) : '') +
     // On zsh, how to write commands for it: the Claude runner says whether zsh-compat.sh is in (runtime/claude/zsh-compat.ts).
     buildShellAppend(shell) +
     (worktree ? buildKeepAppend(agent) : '') +
-    (worktree && !input.planBrief && !askOnly ? buildCommitAppend(place?.openPr) : '') +
+    (worktree && !input.planBrief && !askOnly ? buildCommitAppend(place?.openPr, place?.landsOn) : '') +
+    (worktree && !askOnly && place?.prTitleRule ? `\n${prTitleRuleText(place.prTitleRule)}` : '') +
     (place?.shipped && !askOnly ? buildShippedAppend(place.shipped) : '') +
+    (place?.forked && !askOnly ? buildForkedAppend(place.forked) : '') +
     (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree), Boolean(input.board))) : '') +
     (input.terminal ? buildTerminalAppend() : '') +
     (input.env?.BELUGA_REMOTE_CLIENT ? buildRemoteClientAppend() : '')

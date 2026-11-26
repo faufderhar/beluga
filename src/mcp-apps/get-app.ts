@@ -37,10 +37,12 @@ export async function getApp(deps: GetAppDeps, channel: string, itemId: string, 
 function resultOf(step: StepRecord): Pick<Extract<McpAppView, { ok: true }>, 'result'> {
   if (step.status === 'running') return {};
   const structuredContent = step.app?.structuredContent;
+  const meta = step.app?.resultMeta;
   return {
     result: {
       ...(step.output !== undefined ? { text: step.output } : {}),
       ...(structuredContent !== undefined ? { structuredContent } : {}),
+      ...(meta ? { _meta: meta } : {}),
       ...(step.isError ? { isError: true } : {}),
     },
   };

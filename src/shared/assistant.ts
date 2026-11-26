@@ -34,6 +34,19 @@ export const ASSISTANT_TITLE = assistantTitleFor(COMPUTER);
 export const thisComputerFor = (kind: ComputerKind): string => (kind === 'windows' ? 'this PC' : kind === 'linux' ? 'this computer' : 'this Mac');
 export const THIS_COMPUTER = thisComputerFor(COMPUTER);
 
+/** The computer's own word, for "your own Mac" or "the PC" (#526): Mac, PC, computer. */
+export const computerWordFor = (kind: ComputerKind): string => (kind === 'windows' ? 'PC' : kind === 'linux' ? 'computer' : 'Mac');
+export const COMPUTER_WORD = computerWordFor(COMPUTER);
+
+/** Yours in a sentence: "your Mac", "your PC", "your computer". */
+export const YOUR_COMPUTER = `your ${COMPUTER_WORD}`;
+
+/** The computer as against the phone: "the Mac", "the PC", "the computer". */
+export const THE_COMPUTER = `the ${COMPUTER_WORD}`;
+
+/** A phrase at the start of a sentence: "This Mac", "Your PC". */
+export const upFirst = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
+
 /** Where your files are shown (BLG-629): Finder on a Mac, File Explorer on Windows, Files on Linux. */
 export const fileManagerFor = (kind: ComputerKind): string => (kind === 'windows' ? 'File Explorer' : kind === 'linux' ? 'Files' : 'Finder');
 export const FILE_MANAGER = fileManagerFor(COMPUTER);

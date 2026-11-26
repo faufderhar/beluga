@@ -25,6 +25,12 @@
     display: none;
   }
 }
+/* Narrower still (the chat beside a tab in a small window): its icon alone, never a word cut to a letter. */
+@container composer (max-width: 360px) {
+  .chipText {
+    display: none;
+  }
+}
 .chip:hover,
 .chip[data-state='open'] {
   background: var(--bg-hover);

@@ -4,7 +4,7 @@
  * so the picker can grey one that isn't answering. Ollama on this Mac counts without being added
  * while you have none of your own there. A run asks `resolve` for the endpoint a model value names.
  */
-import { type EndpointChoice, type EndpointView, OLLAMA_ID, OLLAMA_URL, parseLocalModel } from '../shared/local-endpoints.js';
+import { type EndpointChoice, type EndpointFormat, type EndpointView, OLLAMA_ID, OLLAMA_URL, openaiUrl, parseLocalModel } from '../shared/local-endpoints.js';
 import type { Endpoint } from './env-vars.js';
 
 /** What a run on an endpoint needs: where, the key (if any) and the model's own name. */
@@ -14,6 +14,7 @@ export interface ResolvedEndpoint {
   readonly baseUrl: string;
   readonly key?: string;
   readonly model: string;
+  readonly format?: EndpointFormat;
 }
 
 export interface LocalEndpointsDeps {
@@ -52,14 +53,14 @@ export class LocalEndpoints {
   }
 
   private seenOf(e: Endpoint): Seen | undefined {
-    return this.seen.get(`${e.id}|${e.baseUrl}|${e.key ? 'k' : ''}`);
+    return this.seen.get(seenKey(e));
   }
 
   /** For Settings: every endpoint with its URL, never its key. */
   views(): EndpointView[] {
     return this.all().map((e) => {
       const seen = this.seenOf(e);
-      return { id: e.id, label: e.label, baseUrl: e.baseUrl, hasKey: Boolean(e.key), models: e.models, ...(seen ? { reachable: seen.reachable, found: seen.found } : {}), ...(e.builtIn ? { builtIn: true } : {}) };
+      return { id: e.id, label: e.label, baseUrl: e.baseUrl, ...(e.format === 'openai' ? { format: e.format } : {}), hasKey: Boolean(e.key), models: e.models, ...(seen ? { reachable: seen.reachable, found: seen.found } : {}), ...(e.builtIn ? { builtIn: true } : {}) };
     });
   }
 
@@ -77,7 +78,7 @@ export class LocalEndpoints {
     const parsed = parseLocalModel(value);
     const e = parsed && this.all().find((x) => x.id === parsed.id);
     if (!parsed || !e) return undefined;
-    return { id: e.id, label: e.label, baseUrl: e.baseUrl, ...(e.key ? { key: e.key } : {}), model: parsed.model };
+    return { id: e.id, label: e.label, baseUrl: e.baseUrl, ...(e.key ? { key: e.key } : {}), model: parsed.model, ...(e.format === 'openai' ? { format: e.format } : {}) };
   }
 
   /** Look now and every 30 seconds. */
@@ -99,7 +100,7 @@ export class LocalEndpoints {
       const all = this.all();
       const results = await Promise.all(all.map(async (e) => [e, await this.lookAt(e)] as const));
       this.seen.clear();
-      for (const [e, seen] of results) this.seen.set(`${e.id}|${e.baseUrl}|${e.key ? 'k' : ''}`, seen);
+      for (const [e, seen] of results) this.seen.set(seenKey(e), seen);
       if (JSON.stringify([...this.seen]) !== before) this.deps.onChange?.();
     })().finally(() => {
       this.looking = undefined;
@@ -110,10 +111,10 @@ export class LocalEndpoints {
   /** Any answer at all is "answering" (a 401 says the key is wrong, not that it's down); its models when it lists them. */
   private async lookAt(e: Endpoint): Promise<Seen> {
     const fit = (names: readonly string[]): string[] => [...new Set(names)].filter((m) => m && e.id.length + 1 + m.length <= MAX_VALUE).slice(0, 40);
-    const v1 = await this.get(`${e.baseUrl}/v1/models`, e.key);
+    const v1 = await this.get(e.format === 'openai' ? openaiUrl(e.baseUrl, 'models') : `${e.baseUrl}/v1/models`, e.key);
     if (!v1) return { reachable: false, found: [] };
     const listed = namesIn(v1.body);
-    if (listed.length) return { reachable: true, found: fit(listed) };
+    if (listed.length || e.format === 'openai') return { reachable: true, found: fit(listed) };
     // Ollama's own list, for an Ollama that doesn't list on /v1/models.
     const tags = await this.get(`${e.baseUrl}/api/tags`, e.key);
     return { reachable: true, found: fit(tags ? namesIn(tags.body) : []) };
@@ -130,6 +131,8 @@ export class LocalEndpoints {
     }
   }
 }
+
+const seenKey = (e: Endpoint): string => `${e.id}|${e.baseUrl}|${e.key ? 'k' : ''}|${e.format ?? ''}`;
 
 /** Model names in an OpenAI/Anthropic-style list ({ data: [{ id }] }) or Ollama's ({ models: [{ name }] }). */
 function namesIn(body: unknown): string[] {

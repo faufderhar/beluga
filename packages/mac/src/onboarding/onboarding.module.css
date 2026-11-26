@@ -60,11 +60,16 @@
   z-index: 1;
   flex: 1;
   min-height: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  /* A step taller than a small window scrolls instead of running under the step controls. */
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 64px 56px 24px;
 }
 .page {
+  /* Centred while it fits; from the top (never cut off above) once it doesn't. */
+  margin: auto;
   width: 100%;
   max-width: 1080px;
   display: grid;
@@ -100,7 +105,8 @@
   line-height: 1.08;
   font-weight: 650;
   letter-spacing: -0.028em;
-  text-wrap: balance;
+  /* No text-wrap: balance. Its words animate in as inline blocks (fx.tsx, Words), and WebKit's
+     balancing of those broke the line differently mid-animation than at rest on some Macs. */
 }
 .body {
   margin-top: 14px;
@@ -144,6 +150,9 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* Room under the line for descenders (g, y, p): text-clipped paint stops at the box's edge. */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
   animation: sheen 6s ease-in-out 2.6s infinite;
 }
 @keyframes sheen {
@@ -273,25 +282,27 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  max-width: 400px;
 }
-.points {
-  list-style: none;
-  margin: 22px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  color: var(--text-2);
-  font-size: 13.5px;
+/* Every other step: the scene on the left, the words on the right (onboarding-model, sceneFirst). */
+.tour[data-flip] {
+  grid-template-columns: minmax(480px, 1.15fr) minmax(300px, 0.85fr);
 }
-.points li {
-  display: flex;
+.tour[data-flip] .tourText {
+  order: 2;
+}
+/* What to click in the scene: one quiet line under the words. */
+.tryHint {
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
+  margin-top: 18px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-3);
 }
-.points li svg {
-  color: var(--ok);
-  flex: none;
+.tryHint svg {
+  color: var(--accent);
 }
 .scene {
   height: 440px;
@@ -510,19 +521,68 @@
 }
 
 /* The Fire step: a box like the message box, its flames rising over the backdrop. */
-.fireTry {
+.fireSetup {
+  max-width: 780px;
+}
+/* The two fires side by side, each burning in its own box, its name and what it does under it. */
+.fires {
   width: 100%;
-  max-width: 560px;
-  margin-top: -40px;
+  margin-top: -18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
   text-align: left;
+}
+.fireOption {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 .fireStage {
   position: relative;
-  padding: 0 24px;
+}
+.firePick {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 10px;
+  text-align: left;
+  transition: background var(--dur);
+}
+.firePick:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.firePick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.firePick .radio {
+  flex: none;
+  margin-top: 2px;
+}
+.fireText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fireName {
+  font-weight: 600;
+}
+.fireBlurb {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
 }
 .fireRows {
-  margin-top: 26px;
+  margin-top: 22px;
   text-align: left;
+}
+/* A quiet way into the step's whole page in Settings. */
+.allSettings {
+  margin-top: 14px;
 }
 .fireRows :global(.glass-surface__content) {
   display: block;

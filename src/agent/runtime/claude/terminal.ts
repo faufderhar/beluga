@@ -15,6 +15,8 @@ import { gateTool } from '../../tool-gate.js';
 import type { AgentRunInput, RoomBridge, TerminalLaunch, TerminalSink } from '../../types.js';
 import { TerminalShelf } from '../../view-tools.js';
 import { claudeShellSetup, zshCompatEnv } from './zsh-compat.js';
+import { holdSignIn } from './sign-in-env.js';
+import { claudePlansDir } from './plan-text.js';
 
 /** Claude Code's own settings file (~/.claude.json, or in $CLAUDE_CONFIG_DIR). */
 const claudeJson = (env: NodeJS.ProcessEnv = process.env): string => (env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json'));
@@ -126,7 +128,8 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
   const askOnly = place.askOnly;
   const autoEdit = !askOnly && place.autoEdit;
   const extraDirs = place.additionalDirectories;
-  const policy: PolicyContext = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, yourRun: isYourRun(input), askOnly: Boolean(askOnly), ...(place.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
+  // Its plan file, in Claude Code's plan folder, is written from a main folder too (#607).
+  const policy: PolicyContext = { cwd, plans: claudePlansDir({ ...process.env, ...input.env }), roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, boardAsks: input.boardAsks, dotenv: Boolean(input.canUseSecret) && !input.guest, yourRun: isYourRun(input), askOnly: Boolean(askOnly), ...(place.alsoEdit?.length ? { alsoEdit: place.alsoEdit } : {}) };
   const bridge = input.channel && opts.bridge.inChannel ? opts.bridge.inChannel(input.channel) : opts.bridge;
   const mounted = await (opts.toolHost ?? toolHost()).mount(
     runToolSuites(input, bridge, new TerminalShelf(sink), cwd),
@@ -173,7 +176,8 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
     return {
       file: opts.claudePath ?? claudeCodeCommand(),
       args,
-      env: { ...compat, ...input.env, [GATE_URL_ENV]: mounted.hookUrl ?? '', [GATE_TOKEN_ENV]: mounted.token },
+      // A project's or chat's Anthropic key goes to its commands, never to how Claude Code signs in (sign-in-env.ts).
+      env: { ...(compat.CLAUDE_ENV_FILE ? holdSignIn({ ...compat, ...input.env }, input.env) : { ...compat, ...input.env }), [GATE_URL_ENV]: mounted.hookUrl ?? '', [GATE_TOKEN_ENV]: mounted.token },
       session: id,
       fresh,
       close,

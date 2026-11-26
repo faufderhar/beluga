@@ -48,7 +48,7 @@ export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabe
           <span className={g.inspectorTitle}>{node.label}</span>
           <span className={g.sublabel}>{[KIND_NAME[node.type], node.tag].filter(Boolean).join(' · ')}</span>
         </span>
-        <IconButton icon="x" label="Close" onClick={onClose} />
+        <IconButton size="small" icon="x" label="Close" onClick={onClose} />
       </header>
       <div className={g.inspectorBody}>
         {onOpen ? (

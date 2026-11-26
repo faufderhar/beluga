@@ -8,16 +8,18 @@ import { HANDLERS } from '../src/ipc/handlers.js';
 import { isMainCheckout } from '../src/workspaces/discovery.js';
 import { cloneError, cloneProject } from '../src/workspaces/new-project.js';
 
-// git.ts reads its environment once: before it loads, https://git.example.test/ is pointed at local
-// repositories with git's own url.<base>.insteadOf, so real clones run without a network.
+// https://git.example.test/ is pointed at local repositories with git's own url.<base>.insteadOf, so
+// real clones run without a network. It goes in this file's own global config (tests/setup.ts gives
+// each file one): git.ts drops GIT_CONFIG_COUNT and the like from Beluga's git (git-env.ts).
 const repos = await vi.hoisted(async () => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const p = await import('node:path');
   const dir = fs.mkdtempSync(p.join(os.tmpdir(), 'beluga-clone-repos-'));
-  process.env.GIT_CONFIG_COUNT = '1';
-  process.env.GIT_CONFIG_KEY_0 = `url.file://${dir}/.insteadOf`;
-  process.env.GIT_CONFIG_VALUE_0 = 'https://git.example.test/';
+  const config = process.env.GIT_CONFIG_GLOBAL;
+  if (!config) throw new Error('tests/setup.ts sets GIT_CONFIG_GLOBAL');
+  // file:///C:/… on Windows (a backslash or a bare drive isn't a file URL git reads), file:///tmp/… elsewhere.
+  fs.appendFileSync(config, `[url "file:///${dir.replace(/\\/g, '/').replace(/^\//, '')}/"]\n\tinsteadOf = https://git.example.test/\n`);
   return dir;
 });
 

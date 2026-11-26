@@ -26,12 +26,12 @@ test('a plain chat is shared with a friend from its Share sheet, in words that f
   if (shots) await page.screenshot({ path: `${shots}/01-chat-share-sheet.png` });
 
   await pick(sheet, 'Friend to share with', 'bob');
-  await pick(sheet, 'What they can do', 'Can follow');
+  await pick(sheet, 'What they can do', 'Can see');
   if (shots) await sheet.screenshot({ path: `${shots}/02-chat-share-picked.png` });
   await sheet.getByRole('button', { name: 'Share', exact: true }).click();
   const people = sheet.getByRole('list', { name: 'People with access' });
   await expect(people.getByRole('listitem')).toHaveCount(2);
-  await expect(sheet.getByRole('combobox', { name: 'Access for bob' })).toContainText('Can follow');
+  await expect(sheet.getByRole('combobox', { name: 'Access for bob' })).toContainText('Can see');
   await expect(page.getByRole('status').filter({ hasText: 'can now follow along in trip plans' })).toBeVisible();
   await expect(page.getByText('can’t be shared this way')).toHaveCount(0);
   if (shots) await page.screenshot({ path: `${shots}/03-chat-shared.png` });

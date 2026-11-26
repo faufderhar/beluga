@@ -89,7 +89,9 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
     'Keep this task true as you work, with the task tools (mcp__beluga_board__*): record each real decision',
     'with task_brief_edit (section "decisions", mode "append", one line with the why) when you make it; tick',
     'acceptance criteria ("- [x]") as they become true (one you can\'t make true gets a short reason on its line,',
-    '"- [ ] … — deferred: why" or "— not done: why": it can\'t go to In Review while one is neither); split off or found work as sub-tasks with task_create',
+    '"- [ ] … — deferred: why" or "— not done: why": it can\'t go to In Review while one is neither). In a turn that',
+    'commits, settle every criterion before you end it: the pull request is often opened and merged right after,',
+    'and a merge only makes the task Done once each is ticked or explained. Split off or found work as sub-tasks with task_create',
     '(parent: this task); attach proof (screenshots in the scratch folder, URLs, a beluga-graph) with',
     'task_attach_proof. Before ending a turn that changed things, rewrite "handoff" (notes for the next agent:',
     'where things stand, what is left, gotchas). Don\'t mark it Done yourself unless asked: In Review and Done',
@@ -216,6 +218,9 @@ export function ownTaskPrompt(): string {
     'open its task with mcp__beluga_board__task_define before you start (a short title, the goal in your own words,',
     'acceptance criteria). It is linked to this worktree, assigned to the user, and private: only they see it until',
     'they Share with Team. Then say in your answer that you opened it and that it is private, with its `task:KEY`.',
+    'Before you end the turn that commits its work, settle its acceptance criteria with one task_brief_edit (section',
+    'acceptance): tick each one that is true ("- [x]"), give each other one its reason on its line ("— deferred: why"',
+    'or "— not done: why"). Its pull request merging makes it Done only then.',
     'A question, a look around or a quick one-off gets no task: say nothing about tasks then.',
   ].join('\n');
 }

@@ -196,18 +196,17 @@
   line-height: 1.35;
 }
 
-/* You, at the bottom of the sidebar: your avatar, name and status (a button to change it). */
+/* You, at the start of the sidebar's bottom card: your avatar, name and status (a button to change it). */
 .me {
-  --ring: var(--bg-sidebar-solid);
+  --ring: var(--bg-raised);
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
+  gap: 10px;
   min-width: 0;
-  height: 42px;
+  height: 52px;
   margin: 0;
-  padding: 0 10px 0 12px;
-  border-top: 0.5px solid var(--hairline);
+  padding: 0 6px 0 12px;
   text-align: left;
 }
 .me:hover,
@@ -234,10 +233,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.meChevron {
-  flex: none;
-  color: var(--text-3);
-}
 
 /* ---- the status menu */
 
@@ -258,6 +253,12 @@
     opacity: 0;
     transform: scale(0.97);
   }
+}
+/* The room, under your status in the same card (dialogs/native/RoomPopover.tsx). */
+.roomPart {
+  margin: 6px -6px -6px;
+  padding: 12px 14px 12px;
+  border-top: 0.5px solid var(--hairline);
 }
 .statusHead {
   display: flex;
@@ -1326,10 +1327,12 @@
   gap: 6px;
   max-width: 100%;
 }
-/* A picture is its own card: its name and Show in Finder sit on it while you point at it. */
+/* A picture is its own card: its name and Show in Finder sit on it while you point at it.
+   A plain 420px cap, not min(420px, 100%): a percentage is dropped when the row measures itself,
+   so the row grew to the picture's full size and yours sat on the left instead of the right. */
 .picture {
   position: relative;
-  max-width: min(420px, 100%);
+  max-width: 420px;
   border-radius: var(--radius-l);
   overflow: hidden;
   box-shadow: 0 0 0 0.5px var(--hairline-strong);

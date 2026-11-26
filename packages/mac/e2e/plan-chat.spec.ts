@@ -151,5 +151,6 @@ test('an image path pasted in a sentence goes with the message as the image', as
   await box(page).press('Enter');
   await expect(chat(page).getByRole('group', { name: 'Images to send' })).toBeHidden();
   await expect(chat(page).getByRole('button', { name: /^Open image \d+/ }).last()).toBeVisible({ timeout: 15_000 });
-  await expect(main(page).getByRole('alert')).toHaveCount(0);
+  // Nothing went wrong (the docks' screen-reader regions are there, and empty).
+  await expect(main(page).getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0);
 });

@@ -78,7 +78,7 @@ export function ScratchEmpty({ working, off, dir, onReveal }: ScratchEmptyProps)
               </div>
             ) : null}
             {onReveal ? (
-              <Button icon="folder" title={dir} onClick={onReveal}>
+              <Button size="small" icon="folder" title={dir} onClick={onReveal}>
               {revealLabel()}
             </Button>
             ) : null}

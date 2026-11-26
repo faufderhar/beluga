@@ -111,3 +111,20 @@ test('a long folder path wraps inside the Delete Project alert', async ({ page }
   await alert.screenshot({ path: '../../.beluga/scratch/03-delete-alert-long-path.png' });
   await alert.getByRole('button', { name: 'Cancel' }).click();
 });
+
+test('a long menu stays below the title bar and its rows start in one column', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 760 });
+  const row = project(page, 'bob-api');
+  const box = (await row.boundingBox())!;
+  // Right-clicked near the top: the menu is too tall to open downward, so it moves up.
+  await row.click({ button: 'right', position: { x: 20, y: box.height / 2 } });
+  const menu = page.getByRole('menu').first();
+  await expect(menu).toBeVisible();
+  const edges = (await menu.boundingBox())!;
+  expect(edges.y).toBeGreaterThanOrEqual(52);
+  expect(edges.y + edges.height).toBeLessThanOrEqual(760);
+  // A name from the shared menu lines up with one of this window's own (which have icons).
+  const nameX = (name: string) => page.getByRole('menuitem', { name, exact: true }).locator('span[class*="label"]').evaluate((el) => el.getBoundingClientRect().left);
+  expect(await nameX('Open in Finder')).toBeCloseTo(await nameX('Hide Project'), 0);
+  await page.screenshot({ path: '../../.beluga/scratch/02-project-menu-short-window.png' });
+});

@@ -18,6 +18,7 @@ import { type ExternalLookup, externalRequester, isExternalRequester, requesterT
 import type { WorkspaceController } from './workspace-controller.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 import { StepBook, importedKey, runKey } from './step-book.js';
+import { BeforeRuns } from './before-run.js';
 import { Compactor } from './compactor.js';
 import { BtwDesk } from './btw.js';
 import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
@@ -38,7 +39,7 @@ import { explainTaskMentions } from '../shared/task-refs.js';
 import { HostChatLinks, type RunChain } from './chat-links/host.js';
 import type { ChatSendService, Delivered } from './chat-links/service.js';
 import { explainWorktreeRefs } from '../shared/worktree-refs.js';
-import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, isAssistant, YOUR_COMPUTER } from '../shared/assistant.js';
 import { type SlotWait, clampParallelRuns } from '../shared/run-slots.js';
 import { fallbackFor } from '../shared/runtime-fallbacks.js';
 import { agentForAsk } from './gateway/serve.js';
@@ -284,6 +285,12 @@ function withoutAskOnly<T extends { readonly askOnly?: unknown }>(place: T): T {
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** The names of a chat's own variables (keys pasted into it, BLG-965), for its run's instructions. */
+function chatVarsOf(byWorktree: Readonly<Record<string, readonly string[]>> | undefined, channel: string): { chatVars?: readonly string[] } {
+  const names = channel.startsWith('ws:') ? byWorktree?.[channel.slice(3)] : undefined;
+  return names?.length ? { chatVars: names } : {};
+}
+
 /** Who a Chrome card says wants your Chrome (agent/chrome.ts). */
 function chromeAsker(own: boolean, external: string | undefined, requesterName: string, sentinelRun: boolean | undefined): string {
   if (external) return `${external}, your external agent,`;
@@ -344,6 +351,8 @@ export class AgentHost {
 
   /** Every step of your Claude's runs in detail, for the screens on this computer (see step-book.ts). */
   readonly steps: StepBook;
+  /** Your messages whose worktree is still being made: their card's first step (see before-run.ts). */
+  readonly beforeRuns: BeforeRuns;
   /** Compacting conversations, by hand or when they're nearly full (see compactor.ts). */
   private readonly compactor: Compactor;
   /** Side questions (/btw), answered beside conversations (see btw.ts). */
@@ -353,6 +362,7 @@ export class AgentHost {
 
   constructor(private readonly deps: AgentHostDeps) {
     this.steps = deps.steps ?? new StepBook();
+    this.beforeRuns = new BeforeRuns({ emit: (requestId, event, text, channel) => this.emitAgent(requestId, this.selfId, event, text, channel), put: (requestId, record) => this.steps.put(runKey(requestId), record) });
     this.compactor = new Compactor({
       store: deps.store,
       agent: () => this.agent,
@@ -410,7 +420,7 @@ export class AgentHost {
     return this.links.sends;
   }
 
-  /** Why this conversation's runtime can't be compacted by Beluga (Codex compacts itself); undefined when it can. */
+  /** Why this conversation's runtime can't be compacted by Beluga (an ACP agent keeps its own); undefined when it can. */
   private noCompact(channel: string): string | undefined {
     if (this.deps.terminalDriving?.(channel)) return TERMINAL_DRIVING;
     return fallbackFor(this.deps.agentRef?.(channel).runtime, 'compact');
@@ -706,6 +716,13 @@ export class AgentHost {
     const lane = this.lanes.get(channel);
     const mine = lane?.waiting.filter((w) => w.from === this.selfId) ?? [];
     const threads = opts.threads ? `${opts.threads} thread${opts.threads === 1 ? '' : 's'}` : '';
+    // Messages still waiting for their worktree to be made (before-run.ts): taken back, nothing ran yet.
+    const early = this.beforeRuns.stop(channel);
+    if (early.length && (!lane || (!lane.current && !mine.length))) {
+      const back = `${early.length} message${early.length === 1 ? '' : 's'} back in the box`;
+      if (!opts.quiet) this.toast(`Stopped your agent here${threads ? ` and ${threads}` : ''} · ${back}`, 'success');
+      return { stopped: true, returned: early };
+    }
     if (!lane || (!lane.current && !mine.length)) {
       if (threads) this.toast(`Stopped ${threads}`, 'success');
       else if (!opts.quiet) this.toast([...this.lanes.values()].some((l) => l.current || l.waiting.length) ? "Your agent isn't working here" : 'Your agent is not running anything');
@@ -725,10 +742,10 @@ export class AgentHost {
     }
     // A message from another chat is dropped, never put in your box as your words.
     const yours = mine.filter((w) => !w.compact && !w.body.origin);
-    const n = yours.length;
+    const n = yours.length + early.length;
     const back = n ? ` · ${n} queued message${n === 1 ? '' : 's'} back in the box` : '';
     if (!opts.quiet) this.toast(`Stopped your agent here${threads ? ` and ${threads}` : ''}${back}`, 'success');
-    return { stopped: true, returned: yours.map((w) => w.body.prompt) };
+    return { stopped: true, returned: [...early, ...yours.map((w) => w.body.prompt)] };
   }
 
   /**
@@ -1633,7 +1650,7 @@ export class AgentHost {
         ...(mcpTools ? { mcpTools } : {}),
         ...(chats ? { chatTools: chats } : {}),
         ...(previewBrief ? { previewBrief } : {}),
-        ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
+        ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.inRun ? { sentinelRun: true } : {}), ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
         // What MCP Apps here said for the model: your own runs only, wrapped as data (apps are third-party).
         prompt: withAppContext(this.promptOf(body, from, lane.sent), from === this.selfId ? (this.deps.appContext?.(body.channel) ?? []) : []),
         ...this.promptIdOf(body),
@@ -1690,12 +1707,17 @@ export class AgentHost {
         ...this.modelFor(place?.model, place?.agent ?? named, place?.effort),
         // Your MCP servers (your logins: Figma, Linear…) are for runs you asked for, never a friend's.
         ...(yours ? { ownerMcp: true } : {}),
+        // Its MCP Apps are drawn for you to see (a server may tell the model so and say less): not for a
+        // Sentinel run's report, an external agent or another chat's agent, who read only the answer.
+        ...(yours && !external && !sentinel?.inRun && !body.viaAgent ? { appsShown: true } : {}),
         // Claude in Chrome: as usual on what you sent yourself, asking you on anything else (a Sentinel run included).
         ...this.chromeFor({ requestId: body.requestId, from, ...(external ? { external } : {}), guest: from !== this.selfId && Boolean(this.deps.isGuest?.(from)), automatic: Boolean(sentinel?.inRun), channel: body.channel, who: chromeAsker(from === this.selfId, external ? requesterName : undefined, requesterName, sentinel?.inRun) }),
         // Your own flags for `claude` and `codex` (Settings › Agents), never on a friend's run or an agent's below full.
         ...(yours ? this.launchArgs() : {}),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
         // Your own runs also get adb on PATH (and ANDROID_SERIAL) when a phone is set up, so Bash can drive it (BLG-174).
+        // Keys pasted into this chat and kept out of it (BLG-965): Claude is told their names (the values are in env).
+        ...(yours ? chatVarsOf(this.store.getState().envKeys.worktrees, body.channel) : {}),
         ...(yours && (this.deps.envFor || phone?.env) ? { env: { ...this.deps.envFor?.(body.channel, place?.cwd), ...(phone?.env ?? {}), ...tag } } : worktree || remote ? { env: tag } : {}),
         ...this.compactor.threshold(),
       }))]);
@@ -1857,12 +1879,12 @@ export class AgentHost {
   /**
    * The model and effort for a run: the conversation's own pick, else its agent's (a project's own
    * agent, or yours), else Settings' model, which is Claude's: another runtime then takes its default.
-   * The effort: the conversation's own (a Sentinel step's), else Settings'.
+   * The effort: the conversation's own (its composer's, a Sentinel step's; null is Auto there), else Settings'.
    */
   private modelFor(own: string | undefined, agent?: AgentRef, ownEffort?: AgentPlace['effort']): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
     const prefs = this.store.getState().prefs;
     const model = own ?? agent?.model ?? (agent && agent.runtime !== CLAUDE_AGENT.runtime ? undefined : prefs.model);
-    const effort = ownEffort ?? prefs.effort;
+    const effort = ownEffort === null ? undefined : (ownEffort ?? prefs.effort);
     return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
   }
 
@@ -1971,7 +1993,7 @@ export class AgentHost {
     // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once, whatever was allowed before.
     if (!asOwner && writesCode(toolName, input, cwd ?? process.cwd())) {
       const file = String(input.file_path ?? input.notebook_path);
-      const answer = await this.askTool(requester, `${wants} change ${path.basename(file)}, a file that can run commands on your Mac`, file, channel, { once: true });
+      const answer = await this.askTool(requester, `${wants} change ${path.basename(file)}, a file that can run commands on ${YOUR_COMPUTER}`, file, channel, { once: true });
       return answer !== 'no';
     }
     // Invited by link to edit this project: as if you prompted, inside its folder (secrets were already refused).

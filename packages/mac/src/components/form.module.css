@@ -89,9 +89,10 @@
   align-items: start;
   gap: 12px;
 }
+/* As an AppKit form: the label in the primary colour, right-aligned on the control's first line. */
 .label {
-  padding-top: 4px;
-  color: var(--text-2);
+  padding-top: 2px;
+  color: var(--text);
   text-align: right;
 }
 .control {
@@ -115,32 +116,30 @@
   color: var(--error);
   font-size: 0.88rem;
 }
+/* A text field (NSTextField, rounded bezel): the text background, a hairline well, the focus ring outside it. */
 .input {
   flex: 1;
   min-width: 0;
-  height: 26px;
-  padding: 0 8px;
+  height: var(--control-h);
+  padding: 0 6px;
   border: 0;
-  border-radius: 6px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), inset 0 1px 1.5px rgba(0, 0, 0, 0.04);
+  border-radius: var(--control-radius);
+  background: var(--text-bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), inset 0 0.5px 0 var(--hairline);
   user-select: text;
   -webkit-user-select: text;
   transition: box-shadow var(--dur-fast);
-}
-:global([data-theme='dark']) .input {
-  background: color-mix(in srgb, var(--bg-raised) 70%, black);
 }
 .input::placeholder {
   color: var(--text-3);
 }
 .input:focus {
   outline: none;
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 70%, var(--hairline-strong)), var(--focus-ring);
 }
 .invalid,
 .invalid:focus {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--error) 70%, transparent), 0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--error), 0 0 0 3px color-mix(in srgb, var(--error) 40%, transparent);
 }
 .area {
   height: auto;
@@ -149,9 +148,10 @@
   line-height: 1.45;
   resize: vertical;
 }
+/* Code in a field: the monospaced face a pixel under the system text, as Xcode's fields. */
 .mono {
   font-family: var(--font-mono);
-  font-size: 0.92rem;
+  font-size: calc(var(--control-text) - 1px);
 }
 /* The FormSheet's pop-up (a Select): at least as wide as a short field. */
 .popup {
@@ -254,10 +254,7 @@
   padding: 3px;
   border-radius: 8px;
   box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
-  background: var(--bg);
-}
-:global([data-theme='dark']) .list {
-  background: color-mix(in srgb, var(--bg-raised) 70%, black);
+  background: var(--text-bg);
 }
 .row {
   display: flex;
@@ -310,5 +307,20 @@
 .list:focus-visible {
   outline: none;
   border-radius: 8px;
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), var(--focus-ring);
+}
+
+/* Liquid Glass: fields are capsules. Their ring was a 0.5px inset shadow, which WebKit breaks up round
+   a capsule's ends; a real 0.5px border draws whole. A text area keeps the rounded rectangle of
+   macOS's own text views, or its corners would cut into the text. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .input {
+  border: 0.5px solid var(--hairline-strong);
+  box-shadow: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .input:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--hairline-strong));
+  box-shadow: var(--focus-ring);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .area {
+  border-radius: 8px;
 }

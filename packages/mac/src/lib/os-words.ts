@@ -1,4 +1,4 @@
-import { fileManagerFor, thisComputerFor } from '../../../../src/shared/assistant.js';
+import { computerWordFor, fileManagerFor, thisComputerFor, upFirst } from '../../../../src/shared/assistant.js';
 import { type KeyPlatform, keyPlatform } from './shortcuts-model.js';
 
 /**
@@ -20,13 +20,13 @@ export const revealLabel = (what?: string, p: KeyPlatform = keyPlatform()): stri
 export const openFolderLabel = (p: KeyPlatform = keyPlatform()): string => (p === 'linux' ? 'Open Folder' : `Open in ${fileManager(p)}`);
 
 /** A phrase at the start of a sentence: "This Mac", "Your PC". */
-export const upFirst = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
+export { upFirst };
 
 /** The computer in a sentence: "this Mac", "this PC", "this computer". */
 export const thisComputer = (p: KeyPlatform = keyPlatform()): string => thisComputerFor(p);
 
 /** The computer's own word, for "my Mac" or "the PC": Mac, PC, computer. */
-export const computerWord = (p: KeyPlatform = keyPlatform()): string => (p === 'mac' ? 'Mac' : p === 'windows' ? 'PC' : 'computer');
+export const computerWord = (p: KeyPlatform = keyPlatform()): string => computerWordFor(p);
 
 /** Yours in a sentence: "your Mac", "your PC", "your computer". */
 export const yourComputer = (p: KeyPlatform = keyPlatform()): string => `your ${computerWord(p)}`;
@@ -55,6 +55,13 @@ export const cmdReturn = (space = '', p: KeyPlatform = keyPlatform()): string =>
 /** Where Beluga's notifications are allowed. */
 export const notificationSettings = (p: KeyPlatform = keyPlatform()): string =>
   p === 'mac' ? 'System Settings › Notifications' : p === 'windows' ? 'Settings › System › Notifications' : 'your desktop’s notification settings';
+
+/** Where Beluga is let use the camera. */
+export const cameraSettings = (p: KeyPlatform = keyPlatform()): string =>
+  p === 'mac' ? 'System Settings › Privacy & Security › Camera' : p === 'windows' ? 'Settings › Privacy & security › Camera' : 'your desktop’s privacy settings';
+
+/** What to check when sharing the screen fails: only macOS asks for Screen Recording. */
+export const screenShareHint = (p: KeyPlatform = keyPlatform()): string => (p === 'mac' ? ' Check Screen Recording in System Settings › Privacy & Security.' : '');
 
 /** Where Beluga is let use the microphone. */
 export const microphoneSettings = (p: KeyPlatform = keyPlatform()): string =>

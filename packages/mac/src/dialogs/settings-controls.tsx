@@ -15,11 +15,14 @@ export function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boo
   return <button type="button" role="switch" aria-checked={on} aria-label={label} className={cx(s.switch, on && s.switchOn)} onClick={() => onChange(!on)} />;
 }
 
-export function Row({ label, detail, children }: { label: string; detail?: ReactNode; children: ReactNode }) {
+/** A setting's row. `name`: its label is a name (an agent's), shown as it is in every language. */
+export function Row({ label, detail, children, name }: { label: string; detail?: ReactNode; children?: ReactNode; name?: boolean }) {
   return (
     <div className={s.row} data-setting={settingAnchor(label)}>
       <div className={s.rowText}>
-        <div className={s.rowLabel}>{label}</div>
+        <div className={s.rowLabel} {...(name ? { translate: 'no' as const } : {})}>
+          {label}
+        </div>
         {detail ? <div className={s.rowDetail}>{detail}</div> : null}
       </div>
       <div className={s.control}>{children}</div>

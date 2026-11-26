@@ -3,7 +3,7 @@ import { ATTACHMENT_SCHEME } from '@beluga/core/attachment-share.js';
 import type { LinkedImage } from '@beluga/shared/attachment-links.js';
 import type { Location } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
-import { copyPng } from '../lib/copy.js';
+import { copyPng, pngOf } from '../lib/copy.js';
 import { sourceTag } from '../machines/pane-model.js';
 
 /**
@@ -270,21 +270,5 @@ export function useLightbox(): Lightbox | undefined {
 
 /** Put the image on the clipboard as PNG, which every app pastes. */
 export async function copyImage(url: string): Promise<void> {
-  const blob = await (await fetch(url)).blob();
-  const png =
-    blob.type === 'image/png'
-      ? blob
-      : await new Promise<Blob>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            canvas.getContext('2d')?.drawImage(img, 0, 0);
-            canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't convert the image"))), 'image/png');
-          };
-          img.onerror = () => reject(new Error("Couldn't read the image"));
-          img.src = url;
-        });
-  await copyPng(png);
+  await copyPng(pngOf(url));
 }

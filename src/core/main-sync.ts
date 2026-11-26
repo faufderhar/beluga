@@ -2,6 +2,7 @@ import { syncForkPrompt, syncMainPrompt, syncWorktreePrompt } from '../agent/syn
 import { conflictedFiles } from '../workspaces/git.js';
 import { type ForkOf, type GhRunner, type GitHubInfo, type GitHubRepo, fetchFork, fetchGitHubInfo, ghHosts, mergeUpstream, parseGitHubRemote, runGh } from '../workspaces/github.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
+import { type PushMainOutcome, pushDefault, pushWords } from '../workspaces/push-main.js';
 import * as sync from '../workspaces/sync.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { FETCH_EVERY_DEFAULT } from '../shared/background-fetch.js';
@@ -13,7 +14,7 @@ import { pace } from './power-saver.js';
  * never, if you turned it off), and when you open a project, fast-forwarding
  * the default branch, setting uncommitted changes aside or into a worktree, and handing anything
  * harder to Claude: in a worktree of its own, or (for what's stuck in the main folder's own files)
- * in a run there that may only sync git. Never pushes; never discards.
+ * in a run there that may only sync git. Pushes only when you ask (Push main); never discards.
  */
 
 export interface MainSyncDeps {
@@ -222,6 +223,25 @@ export class MainSync {
     else if (outcome.kind === 'up_to_date') this.deps.toast(`${outcome.branch} is already up to date with ${outcome.upstream}${outcome.ahead ? ` (and ${outcome.ahead} ahead)` : ''}${extra}`, 'info');
     else if (outcome.kind === 'fetch_failed') this.deps.toast(outcome.message, outcome.reason === 'auth' ? 'warn' : 'error');
     else if (outcome.kind === 'no_upstream') this.deps.toast(`${outcome.branch} doesn’t track a remote branch, so there’s nothing to update from`, 'info');
+  }
+
+  /**
+   * "Push main": the default branch's own commits (what Straight to main landed) go to its remote,
+   * on top of anything new there, never forced. How it went is a toast; the outcome comes back too.
+   */
+  push(projectId: string): Promise<PushMainOutcome> {
+    return this.alone(projectId, async () => {
+      const project = this.project(projectId);
+      this.deps.manager.setFetchState(projectId, { fetching: true });
+      this.deps.publish();
+      const outcome = await pushDefault(project.root, project.base).catch((err: unknown): PushMainOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }));
+      this.tried.set(projectId, this.now);
+      this.deps.manager.setFetchState(projectId, {});
+      await this.deps.refresh();
+      const words = pushWords(outcome);
+      this.deps.toast(words.text, words.level);
+      return outcome;
+    });
   }
 
   /** "Stash, update, and put them back". */

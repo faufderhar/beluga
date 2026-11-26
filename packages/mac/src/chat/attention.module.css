@@ -207,3 +207,28 @@
 :global(:root[data-edges='lit']) .card {
   box-shadow: 0 0 0 0.5px var(--hairline-strong), var(--rim);
 }
+
+/* Another chat waits for you: one quiet line that takes you there (you answer it in that chat). */
+.elsewhere {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 12px;
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font-size: 0.9rem;
+  animation: rise var(--dur) var(--ease-out);
+}
+.elsewhereText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.elsewhereText strong {
+  color: var(--text);
+  font-weight: 600;
+}

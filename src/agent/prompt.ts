@@ -87,6 +87,24 @@ export function buildSystemAppend(ownerName: string, agent: AgentRef = CLAUDE_AG
   ].join('\n');
 }
 
+/**
+ * Variables kept for this chat alone (BLG-965): keys the owner pasted, which Beluga kept out of the
+ * chat (their message says `$NAME` where the key was). They are in the environment of every command.
+ */
+export function buildChatVarsAppend(names: readonly string[]): string {
+  if (!names.length) return '';
+  const list = names.slice(0, 20).map((n) => `$${n}`).join(', ');
+  return [
+    '',
+    `Variables kept for this chat: ${list}. When a message says $NAME where a key would be, the owner pasted that key and`,
+    'Beluga kept it out of the chat: it is already in the environment of every command you run here, so use it by name',
+    '(curl -H "Authorization: Bearer $NAME", process.env.NAME, os.environ["NAME"]). Never print, echo, log or write its',
+    'value into a file, a commit or your answer; to check it is set, test it (e.g. [ -n "$NAME" ]). Code that needs it',
+    'reads it from the environment, and a project with a .env.example lists its name there (Beluga already added it).',
+    'Archiving or merging this worktree asks the owner whether the project keeps these variables.',
+  ].join('\n');
+}
+
 /** A workspace's scratch folder: where screenshots and intermediate output go (shown live to the owner). */
 export function buildScratchAppend(dir: string): string {
   return [
@@ -105,11 +123,11 @@ export function buildScratchAppend(dir: string): string {
 /**
  * A worktree's run: what it leaves running is stopped when the turn ends, unless kept on purpose (see
  * workspaces/test-procs.ts). Claude Code's Bash call is rewritten to detach a kept one (keptBashInput);
- * Codex's, OpenCode's and Copilot's commands can't be, so they're told to detach it themselves (nohup, output to a file, `&`).
+ * Codex's, OpenCode's, Copilot's and Antigravity's commands can't be, so they're told to detach it themselves (nohup, output to a file, `&`).
  */
 export function buildKeepAppend(agent: AgentRef = CLAUDE_AGENT): string {
   const how =
-    agent.runtime === 'codex' || agent.runtime === 'opencode' || agent.runtime === 'copilot' || agent.runtime === 'grok'
+    agent.runtime === 'codex' || agent.runtime === 'opencode' || agent.runtime === 'copilot' || agent.runtime === 'grok' || agent.runtime === 'antigravity'
       ? [
           'BELUGA_KEEP=1 in front, detached with its output in a file, e.g.',
           '`BELUGA_KEEP=1 nohup npm run dev > .beluga/dev.log 2>&1 &` (so your command returns at once),',
@@ -171,13 +189,21 @@ export function buildShellAppend(setup: ShellSetup): string {
  * With an open PR (BLG-840) it pushes there too, unless the owner turned that off, so Merge never
  * merges an older version; and its last answer always says where the work is.
  */
-export function buildCommitAppend(pr?: OpenPr): string {
+export function buildCommitAppend(pr?: OpenPr, landsOn?: string): string {
   const lines = [
     '',
     'You are on a branch of your own (a git worktree). When your turn changed files, commit them before you',
     'end it: one commit with a short message in the style of `git log` here (no attribution lines unless the',
     'repo uses them). Leave out scratch files, build output and anything secret. If the request says not to run git, don\'t.',
   ];
+  if (!pr && landsOn) {
+    return [
+      ...lines,
+      `This worktree goes straight to ${landsOn}: when your turn ends, Beluga lands your commits on ${landsOn} in the`,
+      `owner's main folder (rebased onto it, no pull request; nothing is pushed). Never push, merge, rebase or open`,
+      `a pull request yourself unless asked. Your last answer says the work lands on ${landsOn} in the main folder.`,
+    ].join('\n');
+  }
   if (!pr) {
     return [
       ...lines,

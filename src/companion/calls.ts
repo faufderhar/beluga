@@ -31,12 +31,15 @@ export type TaskDraftResult = z.infer<typeof TaskDraftResult>;
 /** What `put` answers: a piece taken, then the file's ref. */
 /** A sentinel's run as the phone reads it (src/core/sentinel/model.ts RunSummary; more fields pass through). */
 export const SentinelRunResult = z.object({ id: z.string(), sentinelId: z.string(), state: z.string(), startedAt: z.number(), headline: z.string() }).passthrough();
+/** One of a chat's schedules (BLG-399): the phone's conversation sheet lists them (BLG-401). */
+export const ChatScheduleResult = z.object({ id: z.string(), name: z.string(), paused: z.boolean(), prompt: z.string(), running: z.boolean(), nextAt: z.number().optional() }).passthrough();
 export const PutResult =z.union([z.object({ received: z.number().int().min(0) }), z.object({ ref: z.string() })]);
 
 export const PhoneCalls = {
   'session.submit': entry('session.submit', done),
   // 1.41 (BLG-702): an emoji reaction in a worktree's or the room's chat.
   'session.react': entry('session.react', done),
+  'session.setAutopilot': entry('session.setAutopilot', done),
   'host.answerApproval': entry('host.answerApproval', done),
   'host.promote': entry('host.promote', done),
   'host.sendNext': entry('host.sendNext', done),
@@ -175,6 +178,8 @@ export const PhoneCalls = {
   // 1.35 (BLG-498): who works a task, and a plan's work, from their next start → what happened, in words.
   'board.setAgent': entry('board.setAgent', z.string()),
   'plans.setWorkAgent': entry('plans.setWorkAgent', z.string()),
+  'plans.setRoleAgent': entry('plans.setRoleAgent', z.string()),
+  'plans.setFullAuto': entry('plans.setFullAuto', done),
   // 1.7: a worktree's files (read-only) and terminals (shared with the Mac).
   'companion.files.list': entry('companion.files.list', FolderView),
   'companion.files.find': entry('companion.files.find', FoundView),
@@ -193,6 +198,7 @@ export const PhoneCalls = {
   // report, and Merge / Not Now on a run waiting for you.
   'sentinel.run': entry('sentinel.run', SentinelRunResult),
   'sentinel.pause': entry('sentinel.pause', done),
+  'sentinel.forChat': entry('sentinel.forChat', z.array(ChatScheduleResult)),
   'sentinel.runs': entry('sentinel.runs', z.array(SentinelRunResult)),
   'sentinel.runGet': entry('sentinel.runGet', z.object({ run: SentinelRunResult, sentinel: z.object({ id: z.string(), name: z.string() }).optional(), report: z.string().optional() }).passthrough()),
   'sentinel.decide': entry('sentinel.decide', SentinelRunResult),

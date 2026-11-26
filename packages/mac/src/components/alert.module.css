@@ -128,42 +128,72 @@
 .flex {
   flex: 1;
 }
+/*
+ * A sheet's or an alert's push buttons (NSButton) at AppKit's regular size. On a sheet, macOS 26
+ * draws them filled, a light grey on the sheet's own colour (a lighter one in dark), with no edge:
+ * a white button with a hairline on a white sheet hardly shows.
+ */
 .button {
-  min-width: 78px;
-  height: 26px;
-  padding: 0 13px;
-  border-radius: 6px;
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.07);
-  font-weight: 500;
+  --sheet-button: color-mix(in srgb, var(--text) 8%, var(--bg-raised));
+  min-width: 76px;
+  height: var(--control-h);
+  padding: 0 12px;
+  border-radius: var(--control-radius);
+  font-size: var(--control-text);
+  color: var(--text);
+  background: var(--sheet-button);
+  box-shadow: none;
+  font-weight: 400;
   white-space: nowrap;
-  transition: background var(--dur-fast);
-}
-:global([data-theme='dark']) .button:not(.default) {
-  background: color-mix(in srgb, var(--bg-raised) 80%, white);
+  transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-out);
 }
 .button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bg-raised) 92%, var(--text));
+  background: color-mix(in srgb, var(--text) 12%, var(--bg-raised));
+}
+.button:active:not(:disabled) {
+  background: var(--control-press);
+  transform: scale(0.97);
 }
 .button:disabled {
-  opacity: 0.45;
+  opacity: var(--control-disabled);
 }
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 0.5px var(--control-edge), var(--focus-ring);
+}
+/* The default button (Return): the accent, flat. */
 .default {
-  background: var(--accent);
-  color: white;
-  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.15), inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+  background: var(--control-accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 0.5px var(--control-accent-edge), var(--control-drop);
 }
 .default:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, black);
+  background: var(--control-accent-hover);
+}
+.default:active:not(:disabled) {
+  background: var(--control-accent-press);
+}
+/*
+ * While the window isn't key, or while it can't be pressed, the default button is drawn as any
+ * other, as AppKit's is: grey, its words dimmed with the rest of it (never faded white on pale blue).
+ */
+:global(:root[data-window='idle']) .default:not(.destructive),
+.default:disabled,
+.destructive:disabled {
+  background: var(--sheet-button);
+  color: var(--text);
+  box-shadow: none;
 }
 .destructive {
-  background: var(--error);
-}
-:global([data-theme='dark']) .destructive {
-  background: #d9483f;
+  background: var(--control-destructive);
+  color: var(--on-destructive);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--control-destructive) 70%, var(--text)), var(--control-drop);
 }
 .destructive:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--error) 88%, black);
+  background: var(--control-destructive-hover);
+}
+.destructive:active:not(:disabled) {
+  background: var(--control-destructive-press);
 }
 .destructiveText {
   color: var(--error);
@@ -183,17 +213,17 @@
   height: 14px;
   margin: 1.5px 0 0;
   border-radius: 3.5px;
-  background: var(--bg-raised);
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.08);
+  background: var(--control);
+  box-shadow: inset 0 0 0 0.5px var(--control-edge), 0 0 0 0.5px var(--control-edge), var(--control-drop), var(--control-sheen);
   appearance: none;
   transition: background var(--dur-fast);
 }
-:global([data-theme='dark']) .box {
-  background: color-mix(in srgb, var(--bg-raised) 80%, white);
-}
 .box:checked {
-  background: var(--accent);
-  box-shadow: none;
+  background: var(--control-accent);
+  box-shadow: 0 0 0 0.5px var(--control-accent-edge), var(--control-drop), var(--control-accent-sheen);
+}
+.box:active {
+  filter: brightness(0.94);
 }
 .box:checked::after {
   content: '';
@@ -202,13 +232,16 @@
   top: 1.5px;
   width: 3.5px;
   height: 7.5px;
-  border: solid white;
+  border: solid var(--on-accent);
   border-width: 0 1.6px 1.6px 0;
   transform: rotate(42deg);
 }
 .box:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: 0 0 0 0.5px var(--control-edge), var(--focus-ring);
+}
+.checkOff .box {
+  opacity: 0.55;
 }
 .checkText {
   display: flex;
@@ -228,4 +261,21 @@
 .message code {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Liquid Glass: the buttons are capsules, so their 0.5px ring is a real border (see ui.module.css). */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .button {
+  border: 0.5px solid var(--control-edge);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .default {
+  border-color: var(--control-accent-edge);
+  box-shadow: var(--control-drop), var(--control-accent-sheen);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos'][data-window='idle']) .default:not(.destructive) {
+  border-color: var(--control-edge);
+  box-shadow: var(--control-bezel);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .destructive {
+  border-color: color-mix(in srgb, var(--control-destructive) 70%, var(--text));
+  box-shadow: var(--control-drop), var(--control-accent-sheen);
 }

@@ -1,0 +1,448 @@
+/*
+ * The tour's scenes you can play with (BLG-989): Scratch, a friend's agent, a shared session and
+ * Sentinel. The same glass, hairlines and colours as scenes.module.css; your accent marks what
+ * you can press.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--text);
+}
+.glass {
+  background: color-mix(in srgb, var(--bg-raised) 86%, transparent);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 0.5px var(--hairline-strong),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.12),
+    0 30px 80px -24px rgba(0, 0, 0, 0.3),
+    0 12px 30px -12px rgba(0, 0, 0, 0.16);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+.dim {
+  color: var(--text-3);
+}
+.ok {
+  color: var(--ok);
+}
+.claude {
+  color: var(--claude);
+}
+.spin {
+  color: var(--claude);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Choices along the top of a scene: one is on, the pill slides between them. */
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pick {
+  position: relative;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 13px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  transition: color var(--dur-fast);
+}
+.pick:hover {
+  color: var(--text);
+}
+.pick[aria-checked='true'] {
+  color: var(--accent-fg, white);
+}
+.pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pickOn {
+  position: absolute;
+  inset: 0;
+  border-radius: 13px;
+  background: var(--accent);
+}
+.pickLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* A window: lights, a title, a state on the right. */
+.window {
+  composes: glass;
+  position: relative;
+  overflow: hidden;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 12px;
+  border-bottom: 0.5px solid var(--hairline);
+  color: var(--text-2);
+}
+.lights {
+  display: flex;
+  gap: 6px;
+}
+.lights i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--hairline-strong);
+}
+.state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--claude);
+}
+.state[data-done] {
+  color: var(--ok);
+}
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--claude);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.3;
+  }
+}
+.ask {
+  align-self: flex-end;
+  max-width: 90%;
+  padding: 7px 11px;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--bg-hover);
+}
+.answer {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.45;
+}
+.answer svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* ── Scratch ──────────────────────────────────────────────── */
+
+.scratch {
+  width: 580px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 288px;
+  min-height: 276px;
+}
+.talk {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+.doing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.doingLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+}
+.folder {
+  padding: 10px;
+  border-left: 0.5px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg-sunken) 55%, transparent);
+}
+.folderHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.count {
+  margin-left: auto;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-hover);
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.tile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 9px;
+  text-align: left;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  cursor: pointer;
+}
+.tile:hover {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+.tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tileBody {
+  height: 74px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  font-size: 7.5px;
+}
+.tileName {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-2);
+}
+.tileName span:not(.newDot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.newDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* What a file looks like inside: a drawn screenshot, log lines, JSON. */
+.shot {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6%;
+  padding: 8%;
+}
+.shot i {
+  display: block;
+  font-style: normal;
+}
+.shot[data-page='phone'] {
+  margin: 0 auto;
+  width: 46%;
+  justify-content: flex-start;
+  padding-top: 12%;
+  border-inline: 0.5px solid var(--hairline-strong);
+}
+.shotTitle {
+  width: 60%;
+  height: 7%;
+  border-radius: 3px;
+  background: var(--text-3);
+  opacity: 0.55;
+}
+.shotField {
+  width: 100%;
+  height: 11%;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.shotOff {
+  position: absolute;
+  bottom: 4%;
+  left: 50%;
+  translate: -50% 0;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.85em;
+  white-space: nowrap;
+  color: white;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--error);
+}
+.shotBanner {
+  width: 100%;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 13%, var(--bg));
+}
+.shotRow {
+  width: 100%;
+  height: 8%;
+  border-radius: 3px;
+  background: var(--bg-hover);
+}
+.shotButton {
+  width: 50%;
+  height: 11%;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.shotListRow {
+  width: 100%;
+  height: 14%;
+  display: flex !important;
+  gap: 8%;
+  align-items: center;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.shotListRow b {
+  height: 40%;
+  border-radius: 2px;
+  background: var(--text-3);
+  opacity: 0.4;
+}
+.shotListRow b:first-child {
+  flex: 1;
+}
+.shotListRow b:last-child {
+  width: 22%;
+  background: var(--ok);
+  opacity: 0.6;
+}
+.log,
+.json {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 7px 8px;
+  font-family: var(--font-mono);
+  line-height: 1.25;
+  color: var(--text-2);
+}
+.log span {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  /* Wraps rather than running out of its tile. */
+  overflow-wrap: anywhere;
+}
+.log span svg {
+  flex: none;
+  margin-top: 0.15em;
+}
+.log [data-tone='ok'] {
+  color: var(--ok);
+}
+.log [data-tone='bad'] {
+  color: var(--error);
+}
+.log [data-tone='warn'] {
+  color: var(--warn);
+}
+.json b {
+  font-weight: 500;
+  color: var(--info);
+}
+.json em {
+  font-style: normal;
+  color: var(--claude);
+}
+
+/* An opened file, grown out of its tile over the window. */
+.veil {
+  position: absolute;
+  inset: 34px 0 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-sunken) 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: zoom-out;
+}
+.preview {
+  width: 330px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 0.5px var(--hairline-strong),
+    0 24px 60px -20px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+.previewHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.close {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+.close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.previewBody {
+  height: 190px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  font-size: 11px;
+}

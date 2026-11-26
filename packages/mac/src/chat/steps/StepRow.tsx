@@ -33,7 +33,7 @@ const ICONS: Record<ToolFamily, IconName> = {
 };
 
 /** Beluga's own tools, by what they do. */
-const BELUGA_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
+const BELUGA_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', make_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
 
 export const iconOf = (step: Pick<StepSummary, 'kind' | 'tool'>): IconName =>
   step.kind === 'thinking' ? 'bulb' : (BELUGA_ICONS[(step.tool ?? '').replace(/^mcp__(?:beluga|klaud)(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);

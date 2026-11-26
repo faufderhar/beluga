@@ -139,9 +139,9 @@ describe('the sentinel.* API', () => {
     expect(s.store.getState().sentinel.items.map((i) => i.id)).toEqual([copy.id]);
   });
 
-  it('the phone may run, pause, read runs and decide; the rest is the Mac’s', () => {
+  it('the phone may run, pause, read runs, list a chat’s schedules and decide; the rest is the Mac’s', () => {
     const methods = Object.keys(API).filter((m) => m.startsWith('sentinel.'));
-    expect(methods.filter((m) => PHONE[m as keyof typeof PHONE] === 'phone').sort()).toEqual(['sentinel.dataList', 'sentinel.decide', 'sentinel.document', 'sentinel.documentOpen', 'sentinel.metricRead', 'sentinel.pause', 'sentinel.run', 'sentinel.runFileOpen', 'sentinel.runGet', 'sentinel.runRow', 'sentinel.runs', 'sentinel.signStorage', 'sentinel.storageOpen']);
+    expect(methods.filter((m) => PHONE[m as keyof typeof PHONE] === 'phone').sort()).toEqual(['sentinel.dataList', 'sentinel.decide', 'sentinel.document', 'sentinel.documentOpen', 'sentinel.forChat', 'sentinel.metricRead', 'sentinel.pause', 'sentinel.run', 'sentinel.runFileOpen', 'sentinel.runGet', 'sentinel.runRow', 'sentinel.runs', 'sentinel.signStorage', 'sentinel.storageOpen']);
   });
 });
 

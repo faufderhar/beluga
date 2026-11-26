@@ -32,7 +32,7 @@ export function AppMenu() {
   };
   return (
     <ActionsDropdown items={APP_MENU.map(toItem)} align="start">
-      <IconButton icon="gear" label="Settings and menus" />
+      <IconButton size="large" icon="gear" label="Settings and menus" />
     </ActionsDropdown>
   );
 }

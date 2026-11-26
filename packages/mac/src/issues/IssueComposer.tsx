@@ -94,7 +94,7 @@ export function IssueComposer({ projectId, number, task }: { projectId: string; 
     <section className={cx(h.composer, s.composer)} aria-label={`Hand #${number} to your agent`}>
       <div className={h.composerHead}>
         <h2 className={cx(h.prompt, s.composerPrompt)}>{task ? `${task.key} is on the board. What should your agent do?` : 'What should your agent do?'}</h2>
-        <Segmented<Way>
+        <Segmented<Way> size="small"
           label="What the agent does"
           value={shown}
           onChange={(w) => {

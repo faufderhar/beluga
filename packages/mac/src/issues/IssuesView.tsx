@@ -92,7 +92,7 @@ export function IssuesView() {
               <Icon name="chevronDown" size={11} />
             </button>
           </PickMenu>
-          <Segmented<GhIssueState> label="Show" value={prefs.state} onChange={(state) => setIssuesPrefs({ state })} options={STATES} />
+          <Segmented<GhIssueState> size="small" label="Show" value={prefs.state} onChange={(state) => setIssuesPrefs({ state })} options={STATES} />
         </div>
         <div className={cx(t.barGroup, t.barActions)}>
           <label className={cx(t.find, s.find)}>
@@ -114,7 +114,7 @@ export function IssuesView() {
               </button>
             ) : null}
           </label>
-          <IconButton icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} disabled={!repo} />
+          <IconButton size="small" icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} disabled={!repo} />
           {repo ? (
             <Tip label={`${repo.url}/issues`}>
               <Button size="small" icon="external" onClick={() => openOnGitHub(`${repo.url}/issues`)}>
@@ -126,7 +126,7 @@ export function IssuesView() {
       </div>
       <div className={t.body}>
         {error ? (
-          <Empty icon="alert" title="Couldn’t read the issues" detail={error} action={<Button onClick={refresh}>Try Again</Button>} />
+          <Empty icon="alert" title="Couldn’t read the issues" detail={error} action={<Button size="small" onClick={refresh}>Try Again</Button>} />
         ) : !list ? (
           <Empty icon="issue" title="Asking GitHub…" detail={`For ${here.name}’s issues`} />
         ) : list.kind === 'none' ? (
@@ -138,14 +138,14 @@ export function IssuesView() {
             detail={`Beluga reads ${repoSlug(list.repo)}’s issues with GitHub’s command-line tool, signed in as you. Set it up once, then check again.`}
             action={
               <EmptyActions>
-                <Button variant="primary" onClick={() => setConnect(true)}>
+                <Button size="small" variant="primary" onClick={() => setConnect(true)}>
                   Connect GitHub…
                 </Button>
               </EmptyActions>
             }
           />
         ) : list.kind === 'error' ? (
-          <Empty icon="alert" title="Couldn’t read the issues" detail={list.message} action={<Button onClick={refresh}>Try Again</Button>} />
+          <Empty icon="alert" title="Couldn’t read the issues" detail={list.message} action={<Button size="small" onClick={refresh}>Try Again</Button>} />
         ) : !list.issues.length ? (
           <Empty
             icon={prefs.state === 'open' && !search ? 'task' : 'issue'}

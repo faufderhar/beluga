@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type PickerState, agentPicker, pickAction } from '../src/shared/agent-picker.js';
+import { type PickerState, agentPicker, effortIn, pickAction } from '../src/shared/agent-picker.js';
 import { CLOSED_WHY } from '../src/shared/open-models.js';
 import { runtimeChoices } from '../src/shared/agent-runtimes.js';
 import { modelMenu } from '../src/ui/settings-menus.js';
@@ -26,6 +26,7 @@ function state(workspaces: PickerState['projects'][number]['workspaces'] = [], c
 describe('agentPicker', () => {
   it('groups by runtime, your default first, and keeps one this Mac does not run, saying why', () => {
     const p = agentPicker(state([], false), 'ws:a');
+    // The fixed agents; Antigravity is one of your ACP agents, listed only once you added it.
     expect(p.groups.map((g) => [g.runtime, g.available, g.isDefault])).toEqual([
       ['claude', true, true],
       ['codex', false, false],
@@ -83,6 +84,17 @@ describe('agentPicker', () => {
     expect(missing.groups.find((g) => g.runtime === 'codex')?.why).toBe("Codex isn't set up on this Mac yet");
     // Nothing chosen: every model.
     expect(agentPicker(state(), 'ws:a').groups[0]?.models.map((m) => m.label)).toEqual(['Default', 'Opus', 'Haiku']);
+  });
+});
+
+describe('effortIn', () => {
+  it('is each conversation’s own effort, Auto picked there included; else the default', () => {
+    const st = { prefs: { effort: 'high' as const }, projects: [{ workspaces: [{ id: 'a', effort: 'max' as const }, { id: 'b', effort: null }, { id: 'c' }] }] };
+    expect(effortIn(st, 'ws:a')).toBe('max');
+    expect(effortIn(st, 'ws:b')).toBeUndefined();
+    expect(effortIn(st, 'ws:c')).toBe('high');
+    expect(effortIn(st, 'room')).toBe('high');
+    expect(effortIn({ ...st, prefs: {} }, 'ws:c')).toBeUndefined();
   });
 });
 

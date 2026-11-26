@@ -87,7 +87,7 @@ export const RunRow = memo(function RunRow({ projectId, run, now, compact }: { p
         </NowText>
         <span className={s.rowMore} onClick={(e) => e.stopPropagation()}>
           <ActionsDropdown items={menu(run)}>
-            <IconButton icon="more" label={`What to do with run #${run.number}`} />
+            <IconButton size="small" icon="more" label={`What to do with run #${run.number}`} />
           </ActionsDropdown>
         </span>
       </div>

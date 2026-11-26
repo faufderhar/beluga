@@ -29,6 +29,7 @@
   "include": [
     "src",
     "vite.config.ts",
+    "touch-reveal.ts",
     "../../src/net/hyperdht.d.ts"
   ]
 }

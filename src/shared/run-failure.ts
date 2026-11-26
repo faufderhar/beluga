@@ -1,5 +1,6 @@
 import { hhmm } from './clock.js';
 import { isLimitNotice } from './claude-notices.js';
+import { THIS_COMPUTER } from './assistant.js';
 
 /**
  * How a run of Claude's ended when it didn't finish: it hit your usage limit (and when that
@@ -35,6 +36,7 @@ const WHO: Readonly<Record<string, { readonly agent: string; readonly app: strin
   opencode: { agent: 'OpenCode', app: 'OpenCode', vendor: 'its model provider' },
   grok: { agent: 'Grok Build', app: 'Grok Build', vendor: 'xAI' },
   copilot: { agent: 'Copilot', app: 'Copilot', vendor: 'GitHub' },
+  antigravity: { agent: 'Antigravity', app: 'the Antigravity CLI', vendor: 'Google' },
 };
 
 /** What Continue (and an automatic resume) sends: the same session goes on. */
@@ -56,12 +58,12 @@ export function resetWords(at: number, now = Date.now()): string {
 /** The card's headline: "Claude hit your usage limit · resets at 15:00". */
 export function failureTitle(f: RunFailure, now = Date.now()): string {
   const who = WHO[f.runtime ?? 'claude'] ?? WHO.claude!;
-  if (f.envSignIn && (f.kind === 'signed_out' || f.kind === 'api')) return `${who.app} couldn’t sign in for this run: this Mac signs it in with ${f.envSignIn}, which friends’ runs never get`;
+  if (f.envSignIn && (f.kind === 'signed_out' || f.kind === 'api')) return `${who.app} couldn’t sign in for this run: ${THIS_COMPUTER} signs it in with ${f.envSignIn}, which friends’ runs never get`;
   switch (f.kind) {
     case 'usage_limit':
       return `You hit your ${who.agent} plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
     case 'signed_out':
-      return EXPIRED.test(f.detail) ? `${who.app}’s sign-in on this Mac expired` : `${who.app} isn’t signed in on this Mac`;
+      return EXPIRED.test(f.detail) ? `${who.app}’s sign-in on ${THIS_COMPUTER} expired` : `${who.app} isn’t signed in on ${THIS_COMPUTER}`;
     case 'crash':
       return `${who.app} stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
     case 'network':

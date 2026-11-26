@@ -1,6 +1,6 @@
-import { type OtlpLog, type OtlpSpan, type Sender, logsRequest, tracesRequest } from './otlp.js';
+import { type ExtraResource, type OtlpLog, type OtlpSpan, type Sender, logsRequest, tracesRequest } from './otlp.js';
+import { tracesProto } from './otlp-proto.js';
 import { type TurnFacts, turnSpans } from './turn.js';
-import type { ReleaseConfig } from './config.js';
 
 /**
  * Sends what was collected, in batches, without ever getting in the way: nothing here runs while a
@@ -10,11 +10,39 @@ import type { ReleaseConfig } from './config.js';
  * Nothing here throws.
  */
 
+/** Where one destination takes OTLP JSON: its traces URL, its logs URL (none: logs are dropped) and the headers it wants. */
+export interface ExportTarget {
+  readonly traces: string;
+  readonly logs?: string;
+  readonly headers: Readonly<Record<string, string>>;
+  /** Resource attributes it reads (a project name), beside Beluga's own. */
+  readonly resource?: ExtraResource;
+  /** Traces as protobuf, which every OTLP endpoint takes (default: JSON, as Ratel reads usage statistics). */
+  readonly protobuf?: boolean;
+}
+
+/** How a send went: sent, the key refused (sending stops), the data refused (dropped), or try again later. */
+export type SendStatus = 'ok' | 'refused' | 'rejected' | 'retry';
+
+/** One Ratel project as a target: `<url>/v1/traces` and `<url>/v1/logs`, its key as a Bearer token. */
+export const ratelTarget = (config: { readonly url: string; readonly key: string }): ExportTarget => ({
+  traces: `${config.url}/v1/traces`,
+  logs: `${config.url}/v1/logs`,
+  headers: { authorization: `Bearer ${config.key}` },
+});
+
 export interface ExporterDeps {
-  readonly config: ReleaseConfig;
+  /** One Ratel project: its ingest base and its ingest-only key (or `target`). */
+  readonly config?: { readonly url: string; readonly key: string };
+  /** Anywhere else that takes OTLP JSON (your own traces, src/telemetry/destinations.ts). */
+  readonly target?: ExportTarget;
+  /** Told how each request went, with its HTTP status (0: it never got an answer). */
+  readonly onSend?: (status: SendStatus, code: number) => void;
   readonly sender: () => Sender;
-  /** Masks a turn's text (level "on"); turns without text pass as they are. */
-  readonly prepare: (turn: TurnFacts) => TurnFacts;
+  /** Masks a turn's text (level "on"); undefined drops the turn (the level went down since). */
+  readonly prepare: (turn: TurnFacts) => TurnFacts | undefined;
+  /** A turn's spans as this destination reads them best (its own attribute names beside gen_ai's); else as built. */
+  readonly shape?: (spans: OtlpSpan[]) => OtlpSpan[];
   readonly fetch?: typeof fetch;
   readonly flushMs?: number;
   readonly now?: () => number;
@@ -42,7 +70,13 @@ export class Exporter {
   private failures = 0;
   private waitUntil = 0;
 
-  constructor(private readonly deps: ExporterDeps) {}
+  private readonly target: ExportTarget;
+
+  constructor(private readonly deps: ExporterDeps) {
+    const target = deps.target ?? (deps.config ? ratelTarget(deps.config) : undefined);
+    if (!target) throw new Error('An exporter needs somewhere to send');
+    this.target = target;
+  }
 
   start(): void {
     if (this.timer) return;
@@ -75,8 +109,15 @@ export class Exporter {
     if (this.turns.length >= SOON) void this.flush();
   }
 
+  /** Spans already built (nothing in them to mask): sent with the next batch. */
+  spans(list: readonly OtlpSpan[]): void {
+    if (this.refused || !list.length) return;
+    this.unsent = [...this.unsent, ...list].slice(-MAX_SPANS);
+    if (this.unsent.length >= SOON * 5) void this.flush();
+  }
+
   log(record: OtlpLog): void {
-    if (this.refused) return;
+    if (this.refused || !this.target.logs) return;
     this.logs.push(record);
     if (this.logs.length > MAX_LOGS) this.logs.splice(0, this.logs.length - MAX_LOGS);
     if (this.logs.length >= SOON * 5) void this.flush();
@@ -98,10 +139,14 @@ export class Exporter {
     for (const t of turns) {
       // A tick between turns: masking a long conversation never holds the daemon up.
       await new Promise((r) => setImmediate(r));
-      spans.push(...turnSpans(this.deps.prepare(t), sender.installId));
+      const ready = this.deps.prepare(t);
+      if (ready) {
+        const built = turnSpans(ready, sender.installId);
+        spans.push(...(this.deps.shape ? this.deps.shape(built) : built));
+      }
     }
     // post() takes what it sent off the front of each list: what's left is what didn't go.
-    if (!(await this.post('traces', spans, (part) => tracesRequest(sender, part)))) {
+    if (!(await this.post('traces', spans, (part) => tracesRequest(sender, part, this.target.resource)))) {
       this.retry(now, spans, logs);
       return;
     }
@@ -139,21 +184,37 @@ export class Exporter {
     return true;
   }
 
-  private async request(kind: 'traces' | 'logs', payload: unknown): Promise<'ok' | 'refused' | 'rejected' | 'retry'> {
-    try {
-      const res = await (this.deps.fetch ?? fetch)(`${this.deps.config.url}/v1/${kind}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${this.deps.config.key}` },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      if (res.ok) return 'ok';
-      if (res.status === 401 || res.status === 403) return 'refused';
-      if (res.status === 429 || res.status >= 500) return 'retry';
-      return 'rejected';
-    } catch {
-      return 'retry';
-    }
+  private async request(kind: 'traces' | 'logs', payload: unknown): Promise<SendStatus> {
+    const url = kind === 'traces' ? this.target.traces : this.target.logs;
+    if (!url) return 'ok';
+    const { status, code } = await postOtlp(url, this.target.headers, kind === 'traces' && this.target.protobuf ? tracesProto(payload) : payload, this.deps.fetch);
+    this.deps.onSend?.(status, code);
+    return status;
   }
 
+}
+
+/** One OTLP request: JSON, or protobuf when it's already bytes. Never throws: what went wrong is in the status. */
+export async function postOtlp(url: string, headers: Readonly<Record<string, string>>, payload: unknown, fetcher: typeof fetch = fetch): Promise<{ status: SendStatus; code: number }> {
+  const bytes = payload instanceof Uint8Array;
+  try {
+    const res = await fetcher(url, {
+      method: 'POST',
+      headers: { 'content-type': bytes ? 'application/x-protobuf' : 'application/json', ...headers },
+      body: bytes ? (payload as Uint8Array<ArrayBuffer>) : JSON.stringify(payload),
+      // A key never follows a redirect elsewhere (only Authorization is dropped across origins).
+      redirect: 'error',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return { status: statusOf(res.status, res.ok), code: res.status };
+  } catch {
+    return { status: 'retry', code: 0 };
+  }
+}
+
+function statusOf(code: number, ok: boolean): SendStatus {
+  if (ok) return 'ok';
+  if (code === 401 || code === 403) return 'refused';
+  if (code === 429 || code >= 500) return 'retry';
+  return 'rejected';
 }

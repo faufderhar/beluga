@@ -22,6 +22,9 @@ import { askBeforeWork, asksBeforeWork } from './work-confirm.js';
 import { mergeNeedsWarning } from './plan-merge.js';
 import { isPlanAction, runPlanAction } from './plan-task.js';
 import { openFolderThere } from './remote-open.js';
+import { folderRoute } from './folder-route.js';
+import { openFolderInFinder } from './files.js';
+import { filesWsOf, showPanelTab } from './panel.js';
 
 export interface Actions {
   /** Do what a clicked row, button or card means (the shared actions, some done this window's way). */
@@ -71,12 +74,29 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
       if (view.kind !== 'files' && view.kind !== 'shared' && !ownWorktree) client.store.dispatch({ type: 'view', view: { kind: 'files' } });
       void client.api.files.open(at);
     };
+    // A folder on this Mac: its worktree's Files, Files for a folder you share, else Finder (BLG-958).
+    const openLocalFolder = (at: Location, path: string): void => {
+      const state = client.store.getState();
+      const route = folderRoute(state, at);
+      if (route.kind === 'finder') {
+        void openFolderInFinder(client, path);
+        return;
+      }
+      if (route.kind === 'files') {
+        client.store.dispatch({ type: 'view', view: { kind: 'files' } });
+        void client.api.files.browseTo(at);
+        return;
+      }
+      // The worktree or project on screen keeps its page and shows the folder in its panel.
+      if (filesWsOf(state) !== route.wsId || !showPanelTab(state, 'files')) actions.run({ type: 'open_ws', id: route.wsId, tab: 'files' });
+      setTimeout(() => void client.api.files.browseTo(at), 40);
+    };
     switch (link.kind) {
       case 'url':
         void openExternal(link.url);
         return;
       case 'local':
-        void client.api.session.localLocation(link.path, link.dir).then((at) => go(at, link.dir));
+        void client.api.session.localLocation(link.path, link.dir).then((at) => (link.dir ? openLocalFolder(at, link.path) : go(at, false)));
         return;
       case 'peer':
         go({ owner: link.owner, share: link.share, path: link.path }, !link.path || !/\.[^/]+$/.test(link.path));

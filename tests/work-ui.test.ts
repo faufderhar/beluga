@@ -563,23 +563,6 @@ describe('workMenuSpec', () => {
     expect(manage.options[1]).toMatchObject({ label: 'Remove "T mine"', hint: 'x'.repeat(60) });
   });
 
-  it('handoff: lists people with a Claude (not you)', () => {
-    let s = reduce(base(), { type: 'welcome', self: ME });
-    s = reduce(s, { type: 'peers', peers: [ME, peer('fr000001', 'ana'), peer('nc000001', 'noclaude', { agent: false })] });
-    const m = spec(s, { kind: 'handoff', id: 'w1' })!;
-    expect(m.title).toBe('Hand off fix-auth');
-    expect(ids(m)).toEqual(['ho:fr000001', 'close']);
-    expect(m.options[0]!.label).toBe('Hand off to ana');
-    expect(m.intro.join('\n')).not.toContain('No friends to hand');
-  });
-
-  it('handoff: without people says to add a friend; unknown workspace is undefined', () => {
-    const m = spec(base(), { kind: 'handoff', id: 'w1' })!;
-    expect(ids(m)).toEqual(['close']);
-    expect(m.intro).toContain('No friends to hand it to yet. Type /invite to add one.');
-    expect(spec(base(), { kind: 'handoff', id: 'nope' })).toBeUndefined();
-  });
-
   it("remote_ws: lists the friend's projects", () => {
     const s = reduce(base(), { type: 'peers', peers: [peer('fr000001', 'ana', { projects: ['web', 'api'] }), peer('fr000002', 'bob')] });
     const m = spec(s, { kind: 'remote_ws', peerId: 'fr000001' })!;
@@ -605,7 +588,7 @@ describe('workspaceHeaderModel overflow and hidden buttons', () => {
 
   it('shows every button when there is room, with no More', () => {
     const m = header(withProjects([project()]), 200);
-    expect(wsActions(m)).toEqual(['review_claude', 'commit', 'pr', 'merge', 'handoff', 'fork', 'finder', 'archive', 'share']);
+    expect(wsActions(m)).toEqual(['review_claude', 'commit', 'pr', 'merge', 'fork', 'finder', 'archive', 'share']);
     expect(m.zones.some((z) => z.action.type === 'ws_more')).toBe(false);
   });
 
@@ -619,14 +602,14 @@ describe('workspaceHeaderModel overflow and hidden buttons', () => {
     expect(more.x1).toBeLessThan(60);
     if (more.action.type !== 'ws_more') throw new Error('expected ws_more');
     expect(more.action.id).toBe('w1');
-    // Merge (uncommitted changes) and Hand off (nobody here) are disabled, so they're left out
+    // Merge (uncommitted changes) is disabled, so it's left out
     expect(more.action.actions.map((a) => a.action)).toEqual(['pr', 'fork', 'finder', 'archive', 'share']);
     expect(more.hint).toBe('PR, Fork, Finder, Archive, Share');
   });
 
   it('hides buttons listed in hiddenButtons, but never "Solve conflict"', () => {
     let s = withProjects([project()], initialState('r', 'ask', { hiddenButtons: ['review_claude', 'merge', 'share'] }));
-    expect(wsActions(header(s, 200))).toEqual(['commit', 'pr', 'handoff', 'fork', 'finder', 'archive']);
+    expect(wsActions(header(s, 200))).toEqual(['commit', 'pr', 'fork', 'finder', 'archive']);
     s = reduce(s, { type: 'conflicts', id: 'w1', files: ['a.ts'] });
     expect(wsActions(header(s, 200))).toContain('merge_claude');
     const shown = reduce(withProjects([project()]), { type: 'conflicts', id: 'w1', files: ['a.ts'] });
@@ -634,7 +617,7 @@ describe('workspaceHeaderModel overflow and hidden buttons', () => {
   });
 
   it('hidden buttons make room so fewer go under More', () => {
-    const s = withProjects([project()], initialState('r', 'ask', { hiddenButtons: ['review_claude', 'commit', 'merge', 'handoff', 'share'] }));
+    const s = withProjects([project()], initialState('r', 'ask', { hiddenButtons: ['review_claude', 'commit', 'merge', 'share'] }));
     const m = header(s, 60);
     expect(wsActions(m)).toEqual(['pr', 'fork']);
     const more = m.zones.at(-1)!;

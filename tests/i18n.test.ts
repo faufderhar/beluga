@@ -79,6 +79,9 @@ describe('the zh-CN catalog', () => {
     const cases: Record<string, string | undefined> = {
       'zoe joined': 'zoe 加入了',
       'zoe left': 'zoe 离开了',
+      // A question card's title: the agent that asks, by its name.
+      'Antigravity asks': 'Antigravity 提问',
+      'Claude asks': 'Claude 提问',
       '3 days left': '剩余 3 天',
       'Now: chenshizhong': '现在：chenshizhong',
       'Theme: Catppuccin Mocha': '主题：Catppuccin Mocha',

@@ -63,7 +63,7 @@ export function AuditPanel({ issues, onShow, onAgain, onClose }: { issues: reado
         <Button size="small" variant="quiet" onClick={onAgain}>
           Check Again
         </Button>
-        <IconButton icon="x" label="Close" onClick={onClose} />
+        <IconButton size="small" icon="x" label="Close" onClick={onClose} />
       </div>
       {issues.length ? (
         <ul className={s.issues}>

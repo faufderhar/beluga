@@ -31,7 +31,7 @@ function TaskLine({ issue, onRemove, removeLabel }: { issue: Issue; onRemove?: (
         <span className={cx(t.lineTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
       </button>
       {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
-      {onRemove ? <IconButton icon="x" label={removeLabel ?? 'Remove'} className={t.lineRemove} onClick={onRemove} /> : null}
+      {onRemove ? <IconButton size="small" icon="x" label={removeLabel ?? 'Remove'} className={t.lineRemove} onClick={onRemove} /> : null}
     </li>
   );
 }
@@ -105,7 +105,7 @@ export function Relations({ issue }: { issue: Issue }) {
             <header className={t.blockHead}>
               <h3 className={t.sectionTitle}>{g.title}</h3>
               <TaskPicker label={`Add to ${g.title}`} candidates={others.filter((o) => !g.items.some((x) => x.id === o.id))} onPick={(other) => void act(() => api.relate(issue.id, g.rel, other.id, true))} align="end">
-                <IconButton icon="plus" label={`Add: ${g.hint}`} />
+                <IconButton size="small" icon="plus" label={`Add: ${g.hint}`} />
               </TaskPicker>
             </header>
             {g.items.length ? (
@@ -158,7 +158,7 @@ export function FilesList({ issue }: { issue: Issue }) {
         <h3 className={t.sectionTitle}>Files</h3>
         {files.length ? <span className={t.sectionCount}>{files.length}</span> : null}
         <span className={t.grow} />
-        {inApp() || webServed() ? <IconButton icon="plus" label="Add Files" onClick={() => void add()} /> : null}
+        {inApp() || webServed() ? <IconButton size="small" icon="plus" label="Add Files" onClick={() => void add()} /> : null}
       </header>
       {files.length ? (
         <ProofItems issue={issue} items={files} />
@@ -202,7 +202,7 @@ export function ProofList({ issue }: { issue: Issue }) {
             { label: 'Link…', icon: 'link', onSelect: () => setLink('') },
           ]}
         >
-          <IconButton icon="plus" label="Add Proof" />
+          <IconButton size="small" icon="plus" label="Add Proof" />
         </ActionsDropdown>
       </header>
       {link !== undefined ? (
@@ -253,7 +253,7 @@ function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnTy
   const actions = useActions();
   const [preview, setPreview] = useState(false);
   const by = `${proof.by.kind === 'claude' ? 'Agent' : proof.by.kind === 'person' ? proof.by.name : 'Beluga'} · ${ago(proof.at)}`;
-  const remove = onRemove ? <IconButton icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} /> : null;
+  const remove = onRemove ? <IconButton size="small" icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} /> : null;
   if (proof.kind === 'graph' && proof.body) {
     return (
       <figure className={cx(t.proofItem, t.proofWide)}>

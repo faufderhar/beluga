@@ -9,6 +9,7 @@ import { Group, Row } from '../settings-controls.js';
 import st from '../settings.module.css';
 import { PlayButton, SoundPicker } from './SoundPicker.js';
 import s from './sound.module.css';
+import { keyPlatform } from '../../lib/shortcuts-model.js';
 
 const GROUP_LABELS: Readonly<Record<SoundGroup, string>> = {
   needsYou: 'Your agent needs you',
@@ -103,7 +104,7 @@ export function SoundSettings({ n, save, test }: SoundSettingsProps) {
           })}
         </div>
       ) : (
-        <Row label="Notification sound" detail="Plays with each banner. Focus and System Settings can still silence it.">
+        <Row label="Notification sound" detail={/* computer-wording: mac (System Settings only on a Mac) */ `Plays with each banner. ${keyPlatform() === 'mac' ? 'Focus and System Settings' : 'Do Not Disturb and Settings'} can still silence it.`}>
           <span className={s.current}>{soundTitle(value)}</span>
           <PlayButton choice={value} volume={volume} label={soundTitle(value)} />
         </Row>

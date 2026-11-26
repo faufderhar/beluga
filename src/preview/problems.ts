@@ -22,7 +22,7 @@ export function packageOf(spec: string): string {
   return spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
 }
 
-const isRelative = (spec: string): boolean => /^(\.{1,2}\/|\/|[@~#]\/)/.test(spec);
+const isRelative = (spec: string): boolean => /^(\.{1,2}\/|\/|[@~#]\/|\$lib(\/|$))/.test(spec);
 
 /** How the bundler's messages read in the details Claude gets. */
 export function detailsOf(messages: readonly BuildMessage[]): string {

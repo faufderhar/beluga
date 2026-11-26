@@ -126,7 +126,7 @@ describe('the project home’s line about the default branch', () => {
       dirty: '2 uncommitted changes in the main folder',
       elsewhere: 'The main folder is on feat/panel-first',
     });
-    expect(defaultLineOf(sync({ branch: 'master', upstream: 'origin/master', ahead: 2, behind: 1 }))).toMatchObject({ label: '2 ahead, 1 behind origin/master', tone: 'warn', canUpdate: true, branch: 'master' });
+    expect(defaultLineOf(sync({ branch: 'master', upstream: 'origin/master', ahead: 2, behind: 1 }))).toMatchObject({ label: '2 commits not pushed · 1 behind origin/master', tone: 'info', canUpdate: true, canPush: true, branch: 'master' });
     expect(defaultLineOf(sync({ local: false, onDefault: false, current: 'dev' }))).toMatchObject({ label: 'Only on origin/main so far', canUpdate: true, elsewhere: 'The main folder is on dev' });
     expect(defaultLineOf(sync({ upstream: undefined }))).toMatchObject({ label: 'Not tracking a remote branch', tone: 'muted' });
     expect(defaultLineOf(sync({ current: undefined, onDefault: false })).elsewhere).toBe('The main folder is on a detached HEAD');

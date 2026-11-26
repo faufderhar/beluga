@@ -114,7 +114,11 @@ describe('the Scratch tab keeps what you sent apart', () => {
     expect(claude.view).toBe('claude');
     expect(claude.shown.map((f) => f.path)).toEqual(['.beluga/scratch/log.txt', '.context/notes.md']);
     expect(splitSent(files, 'sent', isSentPath).shown.map((f) => f.path)).toEqual([`${SENT_DIR}/shot.png`]);
-    expect(splitSent(files.slice(0, 1), 'claude', isSentPath).view).toBe('sent');
+    // Not picked: what you sent, while your agent has saved nothing. Picked: your agent's view, empty or not.
+    expect(splitSent(files.slice(0, 1), undefined, isSentPath).view).toBe('sent');
+    expect(splitSent(files.slice(0, 1), 'claude', isSentPath).view).toBe('claude');
+    expect(splitSent(files.slice(0, 1), 'claude', isSentPath).shown).toEqual([]);
+    expect(splitSent(files, undefined, isSentPath).view).toBe('claude');
     expect(splitSent(files.slice(1), 'sent', isSentPath).view).toBe('claude');
   });
   it('counts each view on its own', () => {

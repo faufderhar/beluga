@@ -93,13 +93,13 @@ export function AddProjectSheet() {
     if (!open || mode !== 'add' || !inApp()) return;
     let off: (() => void) | undefined;
     let alive = true;
-    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
-      const un = await getCurrentWebview().onDragDropEvent((e) => {
-        if (e.payload.type === 'over' || e.payload.type === 'enter') setOver(true);
-        else if (e.payload.type === 'leave') setOver(false);
-        else if (e.payload.type === 'drop') {
+    void import('../lib/file-drop.js').then(async ({ onFileDrop }) => {
+      const un = await onFileDrop((p) => {
+        if (p.type === 'over' || p.type === 'enter') setOver(true);
+        else if (p.type === 'leave') setOver(false);
+        else if (p.type === 'drop') {
           setOver(false);
-          void add(e.payload.paths);
+          void add(p.paths);
         }
       });
       if (alive) off = un;
@@ -254,7 +254,7 @@ export function AddProjectSheet() {
                 }}
               >
                 <input className={s.path} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Or type a path, like ~/code/app" aria-label="Folder path" spellCheck={false} />
-                <Button size="small" type="submit" disabled={!typed.trim()}>
+                <Button type="submit" disabled={!typed.trim()}>
                   Add
                 </Button>
                 <span className={s.flex} />
@@ -306,7 +306,7 @@ function Where({ parent, onChange, label }: { parent: string | undefined; onChan
             <span className={s.whereText}>
               <Icon name="folder" size={13} /> {parent ? short(parent) : 'Your code folder'}
             </span>
-            <Button size="small" onClick={() => void change()}>
+            <Button onClick={() => void change()}>
               Change…
             </Button>
           </>

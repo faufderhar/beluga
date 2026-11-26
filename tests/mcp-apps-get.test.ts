@@ -36,6 +36,13 @@ describe('getApp (apps.get)', () => {
     });
   });
 
+  it('hands the view the result’s own _meta as CallToolResult._meta', async () => {
+    const meta = { 'sh.ratel/view': { kind: 'session_chat' } };
+    const step = { ...STEP, app: { ...STEP.app!, resultMeta: meta } };
+    const view = await getApp(deps({ step: () => step }), 'ws:1', 'i1', 't1');
+    expect(view).toMatchObject({ ok: true, result: { text: '{"time":"now"}', structuredContent: { time: 'now' }, _meta: meta } });
+  });
+
   it('gives no app on a Claude Code without the MCP Apps capabilities, and reads nothing', async () => {
     // The run as the runner wires it: this CLI's system/init lacks mcp_read_resource_v1.
     let kept: StepRecord | undefined;

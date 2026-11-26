@@ -86,7 +86,7 @@ export function useConversationHeader(id: string): HeaderParts {
         <>
           <CallButton id={id} label={f.name} />
           <ActionsDropdown items={items}>
-            <IconButton icon="more" label={`More for ${f.name}`} />
+            <IconButton size="small" icon="more" label={`More for ${f.name}`} />
           </ActionsDropdown>
         </>
       ),
@@ -129,7 +129,7 @@ export function useConversationHeader(id: string): HeaderParts {
           {g.active ? <CallButton id={id} label={`#${g.name}`} /> : null}
           <MembersButton g={g} />
           <ActionsDropdown items={items}>
-            <IconButton icon="more" label={`More for ${g.name}`} />
+            <IconButton size="small" icon="more" label={`More for ${g.name}`} />
           </ActionsDropdown>
         </>
       ),

@@ -62,6 +62,12 @@ working, no program in a terminal); otherwise it says what runs and offers **Whe
 **Now**. Before your app updates to a version a computer couldn't follow, the update sheet names
 the computers it would leave behind and offers to update them first.
 
+Whatever their versions, your app reads each computer's state whole (`src/ipc/state-compat.ts`). A
+part an older computer doesn't have, or a field it doesn't have inside one, reads as empty, never
+as missing. An action from a newer computer that your app doesn't know is skipped, and a fresh copy
+of its state follows within a few seconds. An action your app can't apply brings a fresh copy at
+once. The computer's cached state on this Mac (`machines/cache.ts`) skips such an action the same way.
+
 ## Where new work runs
 
 ### Run New Work On

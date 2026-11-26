@@ -2,12 +2,14 @@ import { z } from 'zod';
 import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EmojiSchema } from '../shared/reactions.js';
 import { ARCHIVE_SETTLED_DAYS_MAX, BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, LOW_POWER, NotifySettings, RUN_ON, SETTLE_IDLE_DAYS_MAX, THEMES, ThreadLimitsSchema, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { NamingRules, PR_TITLE_RULE_MAX } from '../shared/naming.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
 import { CHAT_LIMIT_MAX } from '../shared/chat-limit.js';
 import { AUTO_CONTINUE_OFF_MAX } from '../shared/auto-continue.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { MAX_RANGE } from '../shared/text-range.js';
+import { CarryPicks } from '../shared/fork-carry.js';
 import { type ArgsRuntime, MAX_AGENT_ARGS, MAX_AGENT_ARG_LENGTH, agentArgsProblem } from '../shared/agent-args.js';
 import { NETWORK_API } from './network-api.js';
 import { STRIPE_API } from './stripe-api.js';
@@ -15,6 +17,8 @@ import { REVENUECAT_API } from './revenuecat-api.js';
 import { TRIAGE_API } from './triage-api.js';
 import { SUPPORT_API } from './support-api.js';
 import { TELEMETRY_API } from './telemetry-api.js';
+import { ACP_API } from './acp-api.js';
+import { TRACES_API } from './traces-api.js';
 import { STATS_API } from './stats-api.js';
 import { WEB_API } from './web-api.js';
 import { DIAGNOSTICS_API } from './diagnostics-api.js';
@@ -45,6 +49,7 @@ import { TERMINAL_IMPORT_API } from './terminal-import-api.js';
 import { AGENT_TERM_API } from './agent-term-api.js';
 import { HANDOFF_MODES } from '../shared/agent-handoff.js';
 import { FETCH_EVERY_MAX, FETCH_EVERY_MIN } from '../shared/background-fetch.js';
+import { AUTOPILOT_WAIT_MAX } from '../shared/autopilot-wait.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -71,7 +76,7 @@ function args(...items: z.ZodType[]): { args: z.ZodTuple } {
 export const Location = z.object({ owner: id, share: z.string().min(1).max(200), path });
 
 /** A project (all its worktrees, now and later) or one worktree, shared with a friend over the network. */
-const FriendShare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id), role: WsRole, whole: opt(bool) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
+const FriendShare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id), role: WsRole, fork: opt(z.enum(['none', 'code', 'secrets'])), whole: opt(bool) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
 const FriendUnshare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
 
 /** Your flags for one agent's command line, refused when Beluga sets one of them itself (shared/agent-args.ts). */
@@ -108,6 +113,9 @@ export const PrefsPatch = z
     projectAgents: z.record(z.string().min(1).max(80), AgentRef),
     autoSetup: bool,
     branchPrefix: z.string().regex(BRANCH_PREFIX_RE, 'Use letters, digits and . _ - / only'),
+    // How pull request titles are written (null: no rule), and a project's own rules by project name (BLG-1033).
+    prTitleRule: z.string().trim().max(PR_TITLE_RULE_MAX).nullable().optional(),
+    projectNaming: z.record(z.string().min(1).max(80), NamingRules),
     contextMeter: bool,
     autoCompact: bool,
     autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),
@@ -126,6 +134,8 @@ export const PrefsPatch = z
     // Minutes between background fetches; 0: never on its own (#479).
     fetchEvery: z.union([z.literal(0), z.number().int().min(FETCH_EVERY_MIN).max(FETCH_EVERY_MAX)]),
     prOnReview: bool,
+    // Minutes Autopilot waits for your answer; 0: until you answer (BLG-998).
+    autopilotWait: z.number().int().min(0).max(AUTOPILOT_WAIT_MAX),
     scratchFolder: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
@@ -167,6 +177,10 @@ export const API = {
   'session.copyText': args(str, z.string().max(500)),
   'session.setPrefs': args(PrefsPatch),
   'session.setPlanMode': args(channel, bool),
+  // Full Autopilot in a conversation (BLG-981): a stand-in agent answers what your agent asks there (a plan's own: the plan).
+  'session.setAutopilot': args(channel, bool),
+  // Plan here, build with another agent (BLG-982): who builds what's planned in this conversation once approved (null: the same agent).
+  'session.setBuildWith': args(channel, AgentRef.nullish()),
   'session.setClaudeSharing': args(Policy),
   'session.rename': args(z.string().max(64)),
   'session.zoom': args(z.enum(['in', 'out', 'reset'])),
@@ -248,6 +262,10 @@ export const API = {
   'sharing.runHere': args(id, id, z.string().min(1).max(100_000)),
   // Fork a friend's shared worktree to this Mac: its changes, Scratch and conversation, as a worktree of yours (owner, worktree id, name?).
   'sharing.fork': args(id, id, z.string().max(120).optional()),
+  // What forks of your worktree bring besides its commits, Scratch and conversation (BLG-1017): what git ignores there, what's picked, its files and size, before any goes (worktree id, picks to try without keeping them?).
+  'sharing.forkCarry': args(id, opt(CarryPicks)),
+  // Pick what forks of your worktree bring: git-ignored paths, and each secret-looking file in them that may go (worktree id, picks) → the new preview.
+  'sharing.setForkCarry': args(id, CarryPicks),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),
@@ -260,9 +278,12 @@ export const API = {
 
   // ---- work on a friend's computer
   'remote.requestWorktree': args(id, z.string().max(80), str, opt(bool)),
+  // Take it over (BLG-967): their agent continues it on their computer, from Share's "Take it over".
   'remote.handoff': args(id, id),
-  // Can this worktree go to them (who they are, and whether their Mac has the repository)? Asked as the Hand Off sheet opens.
+  // Can this worktree go to them (who they are, and whether their Mac has the repository)? Asked when Share's "Take it over" is picked.
   'remote.canHandOff': args(id, id),
+  // Your agent writes a handoff note for whoever you share with (or whoever joins): in the chat and as HANDOFF.md in Scratch.
+  'remote.handoffNote': args(id, opt(id)),
 
   // ---- a workspace shared with you: what changed, and its read-only shell
   'diff.load': args(id),
@@ -309,7 +330,8 @@ export const API = {
   // → the new worktree's id. `plan`: its Claude plans first. `tasks`: Plan with Tasks, its conversation is a
   // draft plan's home, written from the first message. `quiet`: started from the phone, the Mac's window stays put.
   // `id`: the id it gets, chosen by the screen that shows it as being made already (BLG-942; taken only when free).
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), tasks: opt(bool), quiet: opt(bool), agent: opt(AgentRef), terminal: opt(bool), id: opt(WorktreeId) }))),
+  // `land`: Straight to main, its work lands on its base in the main folder each time its agent's turn ends (no PR).
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), tasks: opt(bool), quiet: opt(bool), agent: opt(AgentRef), terminal: opt(bool), id: opt(WorktreeId), vars: opt(EnvRows), land: opt(bool) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
@@ -343,6 +365,10 @@ export const API = {
   'workspaces.remove': args(id, opt(z.object({ children: opt(z.enum(['with', 'keep'])), quiet: opt(bool) }).strict())),
   'workspaces.commit': args(id, opt(z.string().max(2000))),
   'workspaces.merge': args(id),
+  // Straight to main: land a worktree's work on its base in the main folder now (rebased, fast-forwarded, nothing pushed) → how it went.
+  'workspaces.land': args(id),
+  // Straight to main on or off for a worktree: on, each finished turn of its agent lands on its base in the main folder.
+  'workspaces.setLandOnBase': args(id, bool),
   'workspaces.prepareRemoval': args(id),
   'workspaces.applyEnvBack': args(id, opt(bool)),
   // A worktree's env changes stay there: not asked about again until they change (BLG-369).
@@ -398,11 +424,8 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
-  /**
-   * Thinking effort for one conversation (the composer’s meter). `''` clears it, so Settings apply again.
-   * The phone does not set effort.
-   */
-  'workbench.setEffort': args(channel, z.union([z.enum(EFFORTS), z.literal('')])),
+  /** A conversation's thinking effort, its own ('auto': the agent decides); no conversation: the default for new ones. */
+  'workbench.setEffort': args(opt(channel), z.enum([...EFFORTS, 'auto'])),
   /**
    * A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts).
    * Then, when the new agent can't read the session (BLG-592): 'quiet' switches now and sends the recent conversation with your next message; 'note' (left out) has the old agent write a handoff note first.
@@ -479,6 +502,12 @@ export const API = {
   'env.setWorktree': args(id, EnvRows),
   // Before a worktree goes: its own variables into the project's (same name: the worktree's wins) → how many.
   'env.carryWorktree': args(id),
+  // API keys in text just pasted into a chat (BLG-965): where it's going (a workspace, or a new worktree's project), named the way it names its keys.
+  'env.pastedKeys': args(z.object({ workspaceId: opt(id), projectId: opt(id) }), str),
+  // Keep pasted keys as a chat's own variables (its workspace's; none: yours everywhere) → the .env.example it listed them in.
+  'env.keepPasted': args(z.object({ workspaceId: opt(id), projectId: opt(id) }), EnvRows),
+  // "Not a key" on a paste's card (BLG-977): that prefix (`rtl_`) is never asked about as maybe a key again; on false takes it back.
+  'env.notAKey': args(z.string().min(3).max(24), z.boolean()),
   // A project's environment in names and counts (its page, the phone): never a value.
   'env.overview': args(id),
   // List in the main folder's .env.example what's set and it doesn't list (placeholders, never values) → the names added.
@@ -488,7 +517,7 @@ export const API = {
   // Local and bring-your-own endpoints (BLG-449): → each with its URL and models, never its key (hasKey).
   'env.endpoints': args(),
   // Add (no id) or change one; key unset keeps it, '' removes it → its id.
-  'env.saveEndpoint': args(z.object({ id: opt(z.string().max(20)), label: z.string().min(1).max(40), baseUrl: z.string().min(1).max(500), key: opt(z.string().max(4000)), models: opt(z.array(z.string().max(40)).max(20)) })),
+  'env.saveEndpoint': args(z.object({ id: opt(z.string().max(20)), label: z.string().min(1).max(40), baseUrl: z.string().min(1).max(500), key: opt(z.string().max(4000)), models: opt(z.array(z.string().max(40)).max(20)), format: opt(z.enum(['anthropic', 'openai'])) })),
   'env.removeEndpoint': args(z.string().max(20)),
   // Look at every endpoint again now → the list, with which answer.
   'env.checkEndpoints': args(),
@@ -497,6 +526,8 @@ export const API = {
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
   // An image file on this Mac (its path was pasted), copied in and made smaller if it's too big. → { n, chip, file }
   'attachments.addFile': args(path),
+  // A long paste kept as a text file (BLG-988): it goes with the message as its path. → PathInfo
+  'attachments.addText': args(z.string().min(1).max(2_000_000)),
   // An image you linked in a message (its file name), waiting in the box again. → { n, chip }
   'attachments.reattach': args(z.string().min(1).max(255)),
   // `only`: the images waiting in the box (others' "[image N]" stay words). `shown`: the number each
@@ -515,6 +546,8 @@ export const API = {
   'projects.add': args(path),
   // A project's git origin (none: it has none), for matching it on, or cloning it to, one of your computers (BLG-788).
   'projects.origin': args(id),
+  // A project's naming rules (BLG-1033): its branch prefix and pull request title rule (null clears one), yours or, team: in its beluga.json → 'yours' or the file's name.
+  'projects.setNaming': args(id, z.object({ branchPrefix: z.string().regex(BRANCH_PREFIX_RE, 'Use letters, digits and . _ - / only').nullable().optional(), prTitle: z.string().trim().max(PR_TITLE_RULE_MAX).nullable().optional() }).strict(), opt(bool)),
   'projects.addFolder': args(path),
   // Make a folder that isn't a git project one (git, a .gitignore, a first commit), then add it.
   'projects.initGit': args(path),
@@ -548,8 +581,11 @@ export const API = {
   ...REVENUECAT_API,
   // ---- supporting Beluga: the star and coffee asks merges bring (support-api.ts)
   ...SUPPORT_API,
-  // ---- usage statistics: your level (Off, Limited, On), the ask after an update, what's sent (telemetry-api.ts)
+  // ---- usage statistics: your level (Off, Essential, On), the ask after an update, what's sent (telemetry-api.ts)
   ...TELEMETRY_API,
+  ...ACP_API,
+  // ---- your own traces: the observability tools you connect, apart from usage statistics (traces-api.ts)
+  ...TRACES_API,
   // ---- your stats in the Usage tab: counted by the daemon, pastes and dictation from the Mac (stats-api.ts)
   ...STATS_API,
   // ---- problem reports: the daemon's black box in one redacted file (diagnostics-api.ts)

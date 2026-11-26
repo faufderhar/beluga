@@ -86,7 +86,7 @@ export function WorkSwitch({ page }: { page: WorkPage }) {
   if (options.length < 2) return null;
   return (
     <div className={w.switch}>
-      <Segmented<WorkPage> label="Work" value={page} onChange={open} options={options} />
+      <Segmented<WorkPage> size="small" label="Work" value={page} onChange={open} options={options} />
     </div>
   );
 }

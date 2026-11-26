@@ -95,6 +95,28 @@ describe('combining the branches a task builds on', () => {
     expect(existsSync(at)).toBe(false);
   });
 
+  it('a conflict in a file with a Chinese name: its markers are seen, and once fixed it is added as it is', async () => {
+    const dir = repo();
+    // git quotes this name by default (core.quotepath): "docs/\345\257\271\347\250\277-v39/H5.md".
+    const file = path.join('docs', '对稿-v39', 'H5.md');
+    for (const [name, text] of [['beluga/h5', 'h5\n'], ['beluga/h6', 'h6\n']] as const) {
+      sh(dir, 'checkout', '-q', '-b', name, 'main');
+      mkdirSync(path.join(dir, 'docs', '对稿-v39'), { recursive: true });
+      writeFileSync(path.join(dir, file), text);
+      sh(dir, 'add', '.');
+      sh(dir, 'commit', '-qm', `work on ${name}`);
+      sh(dir, 'checkout', '-q', 'main');
+    }
+    const at = hidden();
+    const first = await combineBranches(dir, at, 'plan/app', ['beluga/h5', 'beluga/h6']);
+    expect(first).toMatchObject({ ok: false, merging: 'beluga/h6', files: [file.split(path.sep).join('/')] });
+    // Not fixed yet: the markers are found in it, not passed over.
+    expect(await combineBranches(dir, at, 'plan/app', ['beluga/h5', 'beluga/h6'])).toMatchObject({ ok: false, merging: 'beluga/h6' });
+    writeFileSync(path.join(at, file), 'h5 and h6\n');
+    expect(await combineBranches(dir, at, 'plan/app', ['beluga/h5', 'beluga/h6'])).toEqual({ ok: true, branch: 'plan/app' });
+    expect(sh(dir, 'show', 'plan/app:docs/对稿-v39/H5.md')).toBe('h5 and h6\n');
+  });
+
   it('through the manager: beluga/<key>-base in a hidden worktree that never shows as the project’s; one branch needed is just that one', async () => {
     const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-combine-m-')));
     const dir = path.join(base, 'code', 'app');

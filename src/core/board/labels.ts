@@ -1,4 +1,5 @@
 import type { BoardState } from './model.js';
+import { knownOr } from '../../shared/known-or.js';
 
 /**
  * Labels come from a set, never typed in passing: a few built-in ones every board has (Bug,
@@ -11,7 +12,7 @@ import type { BoardState } from './model.js';
 export const LABEL_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey'] as const;
 export type LabelColor = (typeof LABEL_COLORS)[number];
 
-export const LABEL_COLOR_INFO: Readonly<Record<LabelColor, { readonly label: string; readonly hue: number; readonly sat: number }>> = {
+export const LABEL_COLOR_INFO: Readonly<Record<LabelColor, { readonly label: string; readonly hue: number; readonly sat: number }>> = knownOr({
   red: { label: 'Red', hue: 4, sat: 62 },
   orange: { label: 'Orange', hue: 28, sat: 70 },
   yellow: { label: 'Yellow', hue: 44, sat: 72 },
@@ -21,7 +22,7 @@ export const LABEL_COLOR_INFO: Readonly<Record<LabelColor, { readonly label: str
   purple: { label: 'Purple', hue: 264, sat: 48 },
   pink: { label: 'Pink', hue: 330, sat: 54 },
   grey: { label: 'Grey', hue: 220, sat: 8 },
-};
+}, (v) => ({ label: v, hue: 0, sat: 0 }));
 
 /** Icons a label can have (names in the Mac app's icon set). */
 export const LABEL_ICONS = ['tag', 'bug', 'exclaim', 'sparkles', 'palette', 'book', 'wrench', 'flag', 'star', 'bulb', 'bolt', 'lock', 'gauge', 'globe', 'phone', 'heart'] as const;

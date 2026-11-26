@@ -124,7 +124,7 @@ export const IssueRow = memo(function IssueRow({ projectId, repo, issue, compact
         <span className={s.when}>{ago(issue.updatedAt)}</span>
         <span className={s.rowMore} onClick={(e) => e.stopPropagation()}>
           <ActionsDropdown items={menu(issue, stage)}>
-            <IconButton icon="more" label={`What to do with #${issue.number}`} />
+            <IconButton size="small" icon="more" label={`What to do with #${issue.number}`} />
           </ActionsDropdown>
         </span>
       </div>

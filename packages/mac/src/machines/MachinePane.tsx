@@ -1,10 +1,11 @@
-import { type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from 'react';
+import { type ReactNode, useContext, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { Button, Empty } from '../components/ui.js';
 import { MenuSheet } from '../dialogs/MenuSheet.js';
 import { NativeSheets } from '../dialogs/native/WorkSheets.js';
 import { Main } from '../layout/Main.js';
 import { RightPanel } from '../layout/RightPanel.js';
+import { FrameContext } from '../layout/frame.js';
 import { MachineProvider, useApp, useBeluga } from '../lib/beluga.js';
 import s from '../layout/Shell.module.css';
 import { MachineMark } from './MachineMark.js';
@@ -17,18 +18,36 @@ import c from './machines.module.css';
  * The window's center and panel (BLG-784): this Mac's, or, on a page of one of your computers,
  * the same views drawn with that computer's client, so its chat, files, terminal and changes are
  * its own. The UI is always this app's; only state and calls come from the computer.
+ *
+ * They're two regions of the window's frame (layout/Workbench.tsx), so the pane comes in two
+ * parts: the center (which also keeps the window and the computer's screen in step, and draws its
+ * menus and sheets) and the panel. Both draw with the same client (machines/pane-clients.ts keeps one per computer).
  */
-export function Pane() {
+export function CenterPane() {
   const machine = useApp((st) => paneOf(st.view).machine);
-  if (!machine) {
-    return (
-      <>
-        <Main />
-        <RightPanel />
-      </>
-    );
-  }
-  return <MachinePane key={machine} machine={machine} />;
+  return machine ? <MachinePane key={machine} machine={machine} /> : <Main />;
+}
+
+export function PanelPane({ onMinWidth }: { onMinWidth: (px: number) => void }) {
+  const machine = useApp((st) => paneOf(st.view).machine);
+  return machine ? <MachinePanel key={machine} machine={machine} onMinWidth={onMinWidth} /> : <RightPanel onMinWidth={onMinWidth} />;
+}
+
+/** A computer's panel: there once its screen is open (until then the center says what's happening, across the window). */
+function MachinePanel({ machine, onMinWidth }: { machine: string; onMinWidth: (px: number) => void }) {
+  const { client: home, ui: windowUi } = useBeluga();
+  const pane = useMachinePane(machine, home, windowUi);
+  const { onPanelOpen } = useContext(FrameContext);
+  const ready = Boolean(pane.client);
+  useLayoutEffect(() => {
+    if (!ready) onPanelOpen(false);
+  }, [ready]);
+  if (!pane.client) return null;
+  return (
+    <MachineProvider machine={machine} client={pane.client} ui={pane.ui}>
+      <RightPanel onMinWidth={onMinWidth} />
+    </MachineProvider>
+  );
 }
 
 function MachinePane({ machine }: { machine: string }) {
@@ -62,7 +81,6 @@ function MachinePane({ machine }: { machine: string }) {
       <Synced machine={machine} home={home} client={pane.client}>
         <div className={c.pane} data-machine-pane={machine}>
           <Main />
-          <RightPanel />
           {/* Its menus and sheets act on it: drawn here, with its client. */}
           <MenuSheet />
           <NativeSheets />

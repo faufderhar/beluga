@@ -9,6 +9,7 @@ import { openExternal } from '../../lib/system.js';
 import s from './ports.module.css';
 import { everyWhileShown } from '../../lib/window-active.js';
 import { oneAtATime } from '../../lib/one-at-a-time.js';
+import { computerTitle, thisComputer, upFirst } from '../../lib/os-words.js';
 
 /**
  * A worktree's servers (BLG-802), above its Background: each port its dev servers listen on, with
@@ -61,7 +62,7 @@ export function PortsTab({ wsId }: { wsId: string }) {
           <span className={s.text}>
             <strong>{r.name}</strong>
             <code>localhost:{r.local}</code>
-            {r.where ? <span className={s.detail}>{r.local === r.port ? `from ${r.where}` : `from ${r.where}’s ${r.port} · ${r.port} is in use on this Mac`}</span> : null}
+            {r.where ? <span className={s.detail}>{r.local === r.port ? `from ${r.where}` : `from ${r.where}’s ${r.port} · ${r.port} is in use on ${thisComputer()}`}</span> : null}
           </span>
           <Tip label={`Open http://localhost:${r.local} in your browser`}>
             <Button size="small" variant="quiet" onClick={() => void openExternal(`http://localhost:${r.local}`)}>
@@ -74,7 +75,7 @@ export function PortsTab({ wsId }: { wsId: string }) {
         <div key={`share:${p.port}`} className={s.row}>
           <Icon name="share" size={13} className={s.icon} />
           <span className={s.text}>
-            <strong>This Mac</strong>
+            <strong>{upFirst(thisComputer())}</strong>
             <code>localhost:{p.port}</code>
             <span className={s.detail}>shared with this worktree</span>
           </span>
@@ -98,9 +99,9 @@ function ShareRow({ wsId }: { wsId: string }) {
   const valid = Number.isInteger(port) && port > 0 && port < 65536;
   if (!open)
     return (
-      <Tip label="A database or API running on this Mac, reachable from this worktree at the same localhost port">
+      <Tip label={`A database or API running on ${thisComputer()}, reachable from this worktree at the same localhost port`}>
         <Button size="small" variant="quiet" icon="share" onClick={() => setOpen(true)}>
-          Share a Port from This Mac…
+          Share a Port from This {computerTitle()}…
         </Button>
       </Tip>
     );
@@ -118,7 +119,7 @@ function ShareRow({ wsId }: { wsId: string }) {
   return (
     <div className={s.row}>
       <Icon name="share" size={13} className={s.icon} />
-      <input className={s.input} inputMode="numeric" placeholder="5432" aria-label="Port on this Mac" autoFocus value={typed} onChange={(e) => setTyped(e.target.value.replace(/\D/g, '').slice(0, 5))} onKeyDown={(e) => (e.key === 'Enter' ? share() : e.key === 'Escape' ? setOpen(false) : undefined)} />
+      <input className={s.input} inputMode="numeric" placeholder="5432" aria-label={`Port on ${thisComputer()}`} autoFocus value={typed} onChange={(e) => setTyped(e.target.value.replace(/\D/g, '').slice(0, 5))} onKeyDown={(e) => (e.key === 'Enter' ? share() : e.key === 'Escape' ? setOpen(false) : undefined)} />
       <span className={s.hint}>{said ?? 'reachable there at the same localhost port'}</span>
       <Button size="small" disabled={!valid} onClick={share}>
         Share

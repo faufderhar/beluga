@@ -39,6 +39,9 @@ export function registerAttachment(file: string, size: number): Attachment {
 
 export const attachment = (n: number): Attachment | undefined => registry.get(n);
 
+/** Every image pasted into a box this session (sent or not): the cleanup never takes one of these. */
+export const pastedThisSession = (): ReadonlySet<string> => new Set([...registry.values()].map((a) => path.resolve(a.path)));
+
 /**
  * An image you linked in a message, waiting again (a queued message pulled back into the box):
  * the number it had while this session still knows it, else a new one for the same file.
@@ -358,6 +361,23 @@ export async function saveImageBytes(bytes: Uint8Array, ext: string, dir = attac
   const file = path.join(dir, `${stamp()}.${ext.toLowerCase().replace(/^\./, '')}`);
   await fs.writeFile(file, bytes);
   return file;
+}
+
+/** Long texts pasted into a message box, kept as files (they go as their path, not their words). */
+export const pastesDir = (): string => path.join(attachmentsDir(), 'pastes');
+/** Longest paste kept as a file (in characters; it has to fit in one message to the daemon). */
+export const MAX_PASTE_CHARS = 2_000_000;
+
+/**
+ * A long paste saved as a text file (BLG-988), so the agent reads it when it needs to instead of
+ * getting all of it in the prompt. → the file, as a pasted path to it would be.
+ */
+export async function savePastedText(text: string, dir = pastesDir()): Promise<PathInfo> {
+  if (text.length > MAX_PASTE_CHARS) throw new Error(`That paste is too long to keep (${text.length.toLocaleString('en-US')} characters; up to ${MAX_PASTE_CHARS.toLocaleString('en-US')})`);
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `pasted-${stamp()}.txt`);
+  await fs.writeFile(file, text, 'utf8');
+  return { path: file, name: path.basename(file), kind: 'file', size: Buffer.byteLength(text, 'utf8'), image: false };
 }
 
 /** Put a copy where friends can fetch it; returns the file name to link to. */

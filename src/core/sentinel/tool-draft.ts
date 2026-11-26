@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ACCESS, BELUGA_EVENTS, GITHUB_EVENTS, KEEP_CHATS, NOTIFY_WHERE, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 import { SOURCE_KINDS } from '../../shared/view-spec.js';
-import { LimitsSchema, MetricSpecSchema, ScheduleTriggerSchema } from './schema.js';
+import { LimitsSchema, MetricSpecSchema, OnceTriggerSchema, ScheduleTriggerSchema } from './schema.js';
 import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
@@ -24,6 +24,7 @@ const stepName = z.string().max(80);
 const TOOL_TRIGGER = z
   .discriminatedUnion('kind', [
     ScheduleTriggerSchema.describe('every: minutes (with minutes: 1|5|10|15|30, on the clock: every 15 is :00, :15, :30, :45; at is not used), hours (with hours: 1|2|3|6|12), day, other-day, week (with days: 0 Sunday…6 Saturday), month (with day: 1…28); at: "HH:MM" local time. A missed slot (the Mac asleep) runs once at most (catch-up) or not at all (skip). Every few minutes with an Ask your agent step uses the user’s plan quickly: prefer 15 or 30 (never 1 without a reason), or set limits.perDay'),
+    OnceTriggerSchema.describe('One time, at "at": an ISO date and time with its offset, like "2026-11-12T14:00:00+01:00" (for "in 5 hours", add 5 hours to now). The time must be in the future. After the run, the sentinel stays and does not run again. A missed time (the Mac asleep) runs when the Mac is back (catch-up) or not at all (skip)'),
     z.object({ kind: z.literal('manual') }),
     z.object({ kind: z.literal('after'), sentinelId: z.string().min(1).max(80).describe('The other sentinel’s id (sentinel_list)'), on: z.enum(['success', 'failure', 'always']) }),
     z.object({ kind: z.literal('beluga'), what: z.enum(BELUGA_EVENTS), projectId: z.string().max(80).optional() }).describe('Something in Beluga happened'),
@@ -36,7 +37,7 @@ const TOOL_TRIGGER = z
   .describe('When it runs');
 
 const TOOL_STEP = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: z.string().min(1).max(20_000).describe('What the agent does each run; may use {{date}}, {{project}}, {{tasks}}, {{previous}}'), where: z.enum(['project', 'worktree', 'mac']).describe('project: reads only (briefs, triage); worktree: changes code; mac: about the Mac itself'), runtime: z.string().regex(/^[a-z][\w-]{0,31}$/).optional().describe('The agent that does it: "claude", "codex", "opencode" or "copilot" (leave out: the user’s default agent)'), model: z.string().max(80).optional().describe('Its model (leave out: the agent’s default)'), effort: z.string().max(20).optional().describe('Its thinking effort (low, medium, high…; leave out: Settings’ effort)') }),
+  z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: z.string().min(1).max(20_000).describe('What the agent does each run; may use {{date}}, {{project}}, {{tasks}}, {{previous}}'), where: z.enum(['project', 'worktree', 'mac']).describe('project: reads only (briefs, triage); worktree: changes code; mac: about the Mac itself'), runtime: z.string().regex(/^[a-z][\w-]{0,31}$/).optional().describe('The agent that does it: "claude", "codex", "opencode", "copilot", "grok" or "antigravity" (leave out: the user’s default agent)'), model: z.string().max(80).optional().describe('Its model (leave out: the agent’s default)'), effort: z.string().max(20).optional().describe('Its thinking effort (low, medium, high…; leave out: Settings’ effort)') }),
   z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: z.string().min(1).max(4000), cwd: z.enum(['project', 'home']).optional(), timeoutSec: z.number().int().min(1).max(3600).optional() }),
   z.object({ kind: z.literal('notify'), id: stepId, name: stepName, title: z.string().max(200).optional(), body: z.string().max(4000).optional(), phone: z.boolean().optional() }),
   z.object({
@@ -53,6 +54,9 @@ const TOOL_STEP = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('pr'), id: stepId, name: stepName, draft: z.boolean().optional() }).describe('Opens a pull request from the worktree an earlier agent step (where: worktree) made; needs work access'),
   z.object({ kind: z.literal('merge'), id: stepId, name: stepName, require: z.object({ checks: z.literal(true), approval: z.boolean() }).optional(), method: z.enum(['squash', 'merge']).optional() }).describe('Merges that pull request once the checks pass, a review says ship and the user approves; needs ship access'),
   z.object({ kind: z.literal('message'), id: stepId, name: stepName, to: z.string().regex(/^(dm|group):[\w-]{1,80}$/).describe('dm:<peerId> or group:<id>'), text: z.string().min(1).max(8000) }),
+  z
+    .object({ kind: z.literal('chat'), id: stepId, name: stepName, to: z.string().min(1).max(400).describe('The chat that gets the prompt. Use "this chat" for the chat you are in. For another chat of the user, use its ref: "<owner>/ws:<id>"'), text: z.string().min(1).max(20_000).describe('The prompt the chat’s agent gets, as if the user sent it') })
+    .describe('Wake one of the user’s own chats. The step sends the prompt to the chat, waits for the answer, and keeps the first line of the answer. The step does not accept a chat that is shared with a contributor.'),
   z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: z.string().min(1).max(80), prompt: z.string().min(1).max(20_000), project: z.string().max(200).optional() }),
   z.object({ kind: z.literal('trigger'), id: stepId, name: stepName, sentinelId: z.string().min(1).max(80) }),
   z

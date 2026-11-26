@@ -1,3 +1,4 @@
+import { THIS_COMPUTER, upFirst, YOUR_COMPUTER } from './assistant.js';
 /**
  * When a push or a GitHub step fails because of how this Mac reaches GitHub (an SSH key GitHub
  * doesn't know, the GitHub CLI missing or logged out, no network…), what it means in plain words
@@ -178,7 +179,7 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
   const useHttps: GitFix | undefined = ssh && https ? { id: 'use_https', label: 'Always Use HTTPS for This Project…', detail: `Changes origin to ${https} (asks first). You can change it back any time.` } : undefined;
   const thenHttps = 'Then Beluga pushes over HTTPS with that login.';
   const thenRetry = 'Then Beluga tries again.';
-  const addSshKey: GitFix = { id: 'add_ssh_key', label: 'Add an SSH Key to GitHub', detail: `Makes a key on this Mac if there isn’t one (${SSH_KEY}: it asks for an optional passphrase) and adds it to your GitHub account, in the terminal.`, command: `${gh} auth refresh --hostname ${host} --scopes admin:public_key && { [ -f ${SSH_KEY}.pub ] || ssh-keygen -t ed25519 -f ${SSH_KEY}; } && ${gh} ssh-key add ${SSH_KEY}.pub --title "Beluga on $(scutil --get ComputerName 2>/dev/null || hostname)"` };
+  const addSshKey: GitFix = { id: 'add_ssh_key', label: 'Add an SSH Key to GitHub', detail: `Makes a key on ${THIS_COMPUTER} if there isn’t one (${SSH_KEY}: it asks for an optional passphrase) and adds it to your GitHub account, in the terminal.`, command: `${gh} auth refresh --hostname ${host} --scopes admin:public_key && { [ -f ${SSH_KEY}.pub ] || ssh-keygen -t ed25519 -f ${SSH_KEY}; } && ${gh} ssh-key add ${SSH_KEY}.pub --title "Beluga on $(scutil --get ComputerName 2>/dev/null || hostname)"` };
   const sshGuide: GitFix = { id: 'link', label: 'GitHub’s SSH Guide', detail: 'Making a key and adding it to your account.', url: SSH_DOCS };
   // Each fix once (two routes can land on the same page).
   const out = (title: string, explain: string, fixes: ReadonlyArray<GitFix | undefined>): GitTrouble => ({ kind, title, explain, fixes: fixes.filter((f, i, all): f is GitFix => Boolean(f) && all.findIndex((g) => g && (g.id === 'link' ? g.url === f!.url : g.id === f!.id)) === i), raw: raw.trim() });
@@ -187,10 +188,10 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
     case 'ssh_denied':
     case 'host_key': {
       const hostKey = kind === 'host_key';
-      const title = hostKey ? `This Mac hasn’t met ${host} over SSH yet` : `${host === 'github.com' ? 'GitHub' : host} didn’t accept this Mac’s SSH key`;
+      const title = hostKey ? `${upFirst(THIS_COMPUTER)} hasn’t met ${host} over SSH yet` : `${host === 'github.com' ? 'GitHub' : host} didn’t accept ${THIS_COMPUTER}’s SSH key`;
       const explain = hostKey
         ? `Your project talks to ${host} over SSH, and SSH wants you to confirm it’s really ${host} the first time (or its fingerprint changed). The easiest way around it is HTTPS with your GitHub login.`
-        : `Your project pushes over SSH, which needs a key on this Mac that your GitHub account knows. There isn’t one yet (or SSH can’t reach it). The easiest way around it is HTTPS with your GitHub login.`;
+        : `Your project pushes over SSH, which needs a key on ${THIS_COMPUTER} that your GitHub account knows. There isn’t one yet (or SSH can’t reach it). The easiest way around it is HTTPS with your GitHub login.`;
       const sshFix: GitFix = hostKey
         ? { id: 'check_host', label: `Check ${host}’s Fingerprint`, detail: `Connects once in the terminal so you can compare the fingerprint with GitHub’s list and accept it.`, command: `ssh -T git@${host}` }
         : setup.gh === 'ok'
@@ -213,7 +214,7 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
     }
     case 'https_auth': {
       const setupGh = ghSetupFix(setup, thenRetry);
-      return out(`git isn’t logged in to ${host === 'github.com' ? 'GitHub' : host}`, `Your project pushes over HTTPS, and git has no GitHub login on this Mac (or an old password, which GitHub stopped taking). Your GitHub CLI login can do it.`, [
+      return out(`git isn’t logged in to ${host === 'github.com' ? 'GitHub' : host}`, `Your project pushes over HTTPS, and git has no GitHub login on ${THIS_COMPUTER} (or an old password, which GitHub stopped taking). Your GitHub CLI login can do it.`, [
         setupGh ?? { id: 'push_https', label: 'Push With Your GitHub Login', detail: 'Pushes with your GitHub CLI login. Nothing else changes.' },
         setupGh ? undefined : { id: 'gh_login', label: 'Log In Again', detail: `Opens github.com in your browser to log in. ${thenRetry}`, command: `${gh} auth login --web --git-protocol https --hostname ${host}` },
         retry,
@@ -229,15 +230,15 @@ export function explainGitTrouble(raw: string, setup: GitSetup = { gh: 'unknown'
       ]);
     }
     case 'gh_missing':
-      return out('The GitHub CLI isn’t on this Mac', 'Beluga opens pull requests and merges with GitHub’s own command-line tool (gh). It takes a minute to set up, once.', [ghSetupFix({ ...setup, gh: 'missing' }, thenRetry), setup.brew ? { id: 'link', label: 'About GitHub CLI', detail: 'GitHub’s page for it.', url: GH_CLI_URL } : undefined, retry]);
+      return out(`The GitHub CLI isn’t on ${THIS_COMPUTER}`, 'Beluga opens pull requests and merges with GitHub’s own command-line tool (gh). It takes a minute to set up, once.', [ghSetupFix({ ...setup, gh: 'missing' }, thenRetry), setup.brew ? { id: 'link', label: 'About GitHub CLI', detail: 'GitHub’s page for it.', url: GH_CLI_URL } : undefined, retry]);
     case 'gh_logged_out':
       return out('The GitHub CLI isn’t logged in', 'Beluga opens pull requests and merges with GitHub’s own command-line tool, and it needs your GitHub login (once).', [ghSetupFix({ ...setup, gh: setup.gh === 'missing' ? 'missing' : 'logged_out' }, thenRetry), retry]);
     case 'no_remote':
       return out('This project isn’t on GitHub yet', 'There’s no GitHub repository to push to: the project has no “origin” remote. Add one (or publish the project on GitHub), then try again.', [{ id: 'link', label: 'How Remotes Work', detail: 'GitHub’s guide to adding a remote.', url: REMOTE_DOCS }, retry]);
     case 'offline':
-      return out(`Couldn’t reach ${host === 'github.com' ? 'GitHub' : host}`, ssh ? 'This Mac couldn’t connect. Check your internet connection. Some networks also block SSH: HTTPS usually still works there.' : 'This Mac couldn’t connect. Check your internet connection, then try again.', [retry, setup.gh === 'ok' ? pushHttps : undefined]);
+      return out(`Couldn’t reach ${host === 'github.com' ? 'GitHub' : host}`, ssh ? `${upFirst(THIS_COMPUTER)} couldn’t connect. Check your internet connection. Some networks also block SSH: HTTPS usually still works there.` : `${upFirst(THIS_COMPUTER)} couldn’t connect. Check your internet connection, then try again.`, [retry, setup.gh === 'ok' ? pushHttps : undefined]);
   }
 }
 
 /** The card in one line, for a toast or the phone: "GitHub didn’t accept this Mac’s SSH key. Fix it on your Mac." */
-export const troubleLine = (t: GitTrouble): string => `${t.title}. ${t.fixes.length > 1 || t.fixes[0]?.id !== 'retry' ? 'See how to fix it in Beluga on your Mac' : 'Try again in a moment'}.`;
+export const troubleLine = (t: GitTrouble): string => `${t.title}. ${t.fixes.length > 1 || t.fixes[0]?.id !== 'retry' ? `See how to fix it in Beluga on ${YOUR_COMPUTER}` : 'Try again in a moment'}.`;

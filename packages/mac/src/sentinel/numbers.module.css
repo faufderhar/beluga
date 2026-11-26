@@ -702,13 +702,13 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
+  height: var(--control-h-small);
   padding: 0 7px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-small);
   background: none;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--control-text-small);
   color: var(--text-2);
   cursor: default;
 }

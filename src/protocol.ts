@@ -48,12 +48,16 @@ export const Usage = z.object({
 });
 export type Usage = z.infer<typeof Usage>;
 
-/** A plan window by its own name, for providers whose windows aren't Claude's 5-hour/week ("Daily", "Monthly"). */
-export const NamedUsageWindow = UsageWindow.extend({ label: z.string().min(1).max(32) });
+/**
+ * A plan window by its own name, for providers whose windows aren't Claude's 5-hour/week ("Daily",
+ * "Monthly"). `group`: the models it's for, when a provider keeps separate limits per group of
+ * models (Antigravity's "Gemini Models" and "Claude and GPT models", each with a 5-hour and a weekly one).
+ */
+export const NamedUsageWindow = UsageWindow.extend({ label: z.string().min(1).max(32), group: z.string().min(1).max(40).optional() });
 export type NamedUsageWindow = z.infer<typeof NamedUsageWindow>;
 
 /** Runtimes Beluga knows by name; others (a newer Mac's) still parse, as their id. */
-export const KNOWN_RUNTIMES = ['claude', 'codex', 'opencode', 'copilot', 'grok', 'local'] as const;
+export const KNOWN_RUNTIMES = ['claude', 'codex', 'opencode', 'copilot', 'grok', 'antigravity', 'local'] as const;
 export type AgentRuntime = (typeof KNOWN_RUNTIMES)[number] | (string & {});
 
 /**
@@ -195,6 +199,8 @@ export const ChatOrigin = z.object({
   messageId: shortStr,
   /** The source chat wants an answer. Without it, the message wants none. */
   replyWanted: z.boolean().optional(),
+  /** One of your sentinels sent it, not a chat: its card says "From Sentinel <name>"; `run` is the run that sent it. An older Mac drops it. */
+  sentinel: z.object({ id: shortStr, name: z.string().max(200), run: shortStr.optional() }).optional().catch(undefined),
 });
 export type ChatOrigin = z.infer<typeof ChatOrigin>;
 

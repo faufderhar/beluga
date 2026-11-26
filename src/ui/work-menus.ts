@@ -1,7 +1,6 @@
 import type { AppState } from '../core/store.js';
 import { describePr } from '../shared/format.js';
 import type { MenuSpec } from './menus.js';
-import { handoffPeople } from './worktree-share.js';
 
 export type WorkMenuKind =
   /** The PR button: create one with Claude, or work with the one that exists. */
@@ -11,7 +10,6 @@ export type WorkMenuKind =
   /** Start from a template (fills the box), or manage them. */
   | { readonly kind: 'templates'; readonly manage?: boolean }
   /** Pick who takes over a workspace. */
-  | { readonly kind: 'handoff'; readonly id: string }
   /** Pick a project on a friend's computer to start a worktree in. */
   | { readonly kind: 'remote_ws'; readonly peerId: string }
   /** The workspace buttons that didn't fit in the top bar. */
@@ -82,26 +80,6 @@ function templatesMenu(state: AppState, manage: boolean): MenuSpec {
   };
 }
 
-function handoffMenu(state: AppState, id: string): MenuSpec | undefined {
-  const ws = findWs(state, id);
-  if (!ws) return undefined;
-  // In your room, or friends over the network (BLG-341); one whose Beluga can't take it yet isn't offered.
-  const people = handoffPeople(state).filter((p) => !p.why);
-  return {
-    title: `Hand off ${ws.name}`,
-    intro: [
-      'Someone else takes over this work on their computer, with their own agent:',
-      '  1. Your agent writes a short handoff note (what is done, what is left).',
-      '  2. Uncommitted work is committed, and the branch is sent to them (encrypted).',
-      '  3. They accept, get a worktree with the branch and the chat, and their agent continues.',
-      'They need the same repository (same origin). You can follow along afterwards.',
-      ...(people.length ? [] : ['', 'No friends to hand it to yet. Type /invite to add one.']),
-      '',
-    ],
-    options: [...people.map((p) => ({ id: `ho:${p.peerId}`, label: `Hand off to ${p.name}`, hint: `${p.name}'s agent continues on ${p.name}'s computer${p.online ? '' : ' (offline: it waits for them)'}` })), { id: 'close', label: 'Cancel', hint: 'Esc' }],
-  };
-}
-
 function remoteWsMenu(state: AppState, peerId: string): MenuSpec | undefined {
   const peer = state.peers.find((p) => p.peerId === peerId);
   if (!peer) return undefined;
@@ -116,7 +94,7 @@ function remoteWsMenu(state: AppState, peerId: string): MenuSpec | undefined {
   };
 }
 
-/** Menus for workspace features (PR, scripts, templates, handoff, remote worktrees); null when it's not one of these. */
+/** Menus for workspace features (PR, scripts, templates, remote worktrees); null when it's not one of these. */
 export function workMenuSpec(state: AppState, menu: { readonly kind: string }): MenuSpec | undefined | null {
   const m = menu as WorkMenuKind;
   switch (m.kind) {
@@ -126,8 +104,6 @@ export function workMenuSpec(state: AppState, menu: { readonly kind: string }): 
       return scriptsMenu(state, m.projectId);
     case 'templates':
       return templatesMenu(state, Boolean(m.manage));
-    case 'handoff':
-      return handoffMenu(state, m.id);
     case 'remote_ws':
       return remoteWsMenu(state, m.peerId);
     case 'ws_more':

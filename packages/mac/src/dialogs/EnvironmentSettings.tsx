@@ -90,7 +90,7 @@ function DatabaseTest({ projectId }: { projectId: string }) {
               : result.message
         }
       >
-        <Button size="small" icon={result !== undefined && result !== 'testing' && result.ok ? 'check' : undefined} disabled={result === 'testing'} onClick={test}>
+        <Button icon={result !== undefined && result !== 'testing' && result.ok ? 'check' : undefined} disabled={result === 'testing'} onClick={test}>
           {result === 'testing' ? 'Testing…' : 'Test Connection'}
         </Button>
       </Row>

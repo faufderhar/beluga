@@ -2,13 +2,14 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { PrCheck, PrFork, PullRequest } from '../core/work-store.js';
-import { pullHeadRef } from './git.js';
+import { GIT_IN_ENGLISH, pullHeadRef } from './git.js';
 import { belugaHome } from './store.js';
 import { belugaEnv } from '../core/beluga-env.js';
 import { type GitSetup, type GitTroubleKind, classifyGitError, httpsRemoteOf } from '../shared/git-trouble.js';
 import { rememberSshRoute, sshArgsFor, withSshRoutes } from './ssh-routes.js';
 import { type GitHubRepo, PR_TARGET_KEY, ghRepoEnv, gitCommonDir, originRepo, originRepoEnv, prTargetOf, pullOfBranch, repoSlug } from './github.js';
 export { describePr } from '../shared/format.js';
+import { prTitleRuleText } from '../shared/naming.js';
 
 /**
  * What Claude does when you click PR. Edit it in Settings → Claude → Pull request
@@ -72,6 +73,8 @@ export interface PrContext {
   readonly projectPrompt?: string;
   /** What you typed for this one PR ("/pr mention the migration"). */
   readonly extra?: string;
+  /** The title rule in force (shared/naming.ts: the project's, else Settings'; BLG-1033). */
+  readonly titleRule?: string;
 }
 
 /** The full prompt Claude gets for one PR. */
@@ -79,8 +82,9 @@ export function buildPrPrompt(ctx: PrContext, template = customPrPrompt() ?? DEF
   const baseBranch = ctx.base.replace(/^origin\//, '');
   const filled = template.replaceAll('{{branch}}', ctx.branch).replaceAll('{{baseBranch}}', baseBranch).replaceAll('{{base}}', ctx.base).replaceAll('{{project}}', ctx.project);
   const project = ctx.projectPrompt?.trim() ? `\n\nProject guidelines for pull requests (from the project's beluga.json):\n${ctx.projectPrompt.trim()}` : '';
+  const title = ctx.titleRule?.trim() ? `\n\n${prTitleRuleText(ctx.titleRule)}` : '';
   const extra = ctx.extra?.trim() ? `\n\nFor this pull request, also: ${ctx.extra.trim()}` : '';
-  return `${filled}${project}${extra}`;
+  return `${filled}${project}${title}${extra}`;
 }
 
 /** Ask Claude to fix the failing checks on a PR. */
@@ -111,7 +115,7 @@ export const fixChecksPrompt = (pr: PullRequest): string =>
   `The checks on pull request #${pr.number} (${pr.url}) are failing. Use gh pr checks ${pr.number} and gh run view --log-failed to find out why, fix it, run the tests, commit and push. Then say what was wrong.`;
 
 // Never wait on a username prompt nobody can answer (the daemon has no terminal): fail and say so.
-const QUIET_ENV = { GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
+const QUIET_ENV = { ...GIT_IN_ENGLISH, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
 
 const run = (cmd: string, args: readonly string[], cwd: string, timeoutMs = 20_000, extraEnv: Readonly<Record<string, string>> = {}): Promise<string> =>
   new Promise((resolve, reject) => {

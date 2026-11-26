@@ -1,3 +1,5 @@
+import { fileManager } from './os-words.js';
+
 /** What a problem report says about itself (core/blackbox/report.ts `ReportSummary`). */
 export interface ReportSummaryLike {
   readonly version: string;
@@ -19,7 +21,7 @@ export function problemIssueUrl(repo: string, summary: ReportSummaryLike, file: 
     `Beluga ${summary.version} on ${summary.os}`,
     `Problems Beluga noticed: ${summary.problems}${summary.lastProblem ? ` (the latest: ${summary.lastProblem})` : ''}`,
     '',
-    `Drag the report here to attach it: \`${file}\` (Beluga just showed it in Finder). It has no secrets, but have a look first if you like.`,
+    `Drag the report here to attach it: \`${file}\` (Beluga just showed it in ${fileManager()}). It has no secrets, but have a look first if you like.`,
   ].join('\n');
   const title = summary.lastProblem ? `Problem: ${summary.lastProblem}` : 'Problem: ';
   return `${repo}/issues/new?${new URLSearchParams({ title: title.slice(0, 120), body }).toString()}`;

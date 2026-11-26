@@ -112,10 +112,54 @@ function useStanding(stats: StatsSnapshot, now: number) {
   }, [stats, now]);
 }
 
+/** How many titles show before "Show all". */
+const FEW_TITLES = 5;
+
+/**
+ * The titles you've earned, one line each with what earned it; press one to wear it on your pass.
+ * The few best show first (with the one you wear), the rest behind "Show all".
+ */
+function TitleList({ titles, worn, onWear }: { titles: readonly Title[]; worn: string; onWear: (id: string) => void }) {
+  const [all, setAll] = useState(false);
+  const few = titles.slice(0, FEW_TITLES);
+  const shown = all || titles.length <= FEW_TITLES + 1 ? titles : few.some((t) => t.id === worn) ? few : [...few, titles.find((t) => t.id === worn)!];
+  const hidden = titles.length - shown.length;
+  return (
+    <div className={s.titles}>
+      <div className={s.titlesHead}>
+        <span>Titles you’ve earned</span>
+        <span className={s.titlesHint}>Press one to wear it</span>
+      </div>
+      <ul className={s.titleList} aria-label="Titles you’ve earned">
+        {shown.map((t) => {
+          const on = t.id === worn;
+          return (
+            <li key={t.id}>
+              <button type="button" aria-pressed={on} className={cx(s.row, on && s.rowOn)} style={{ '--t': t.color } as React.CSSProperties} onClick={() => onWear(t.id)}>
+                <Icon name={t.icon} size={14} />
+                <span className={s.rowName}>{t.name}</span>
+                <span className={s.rowWhy}>{t.why}</span>
+                <span className={s.rowCheck} aria-hidden>
+                  {on ? <Icon name="check" size={13} /> : null}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 0 || all ? (
+        <button type="button" className={s.more} onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${titles.length}`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * The top of the Usage tab: your pass on a lanyard (grab it, swing it, flip it) with your picture,
- * name and title, and beside it the title in words, what earned it, and the other titles you've
- * earned (press one to wear it on your pass). The recap starts from here.
+ * name and title, and beside it the title in words, what earned it, and the titles you've earned
+ * as a list (press one to wear it on your pass). The recap starts from here.
  */
 export function YourCard({ state, stats, now }: { state: AppState; stats: StatsSnapshot; now: number }) {
   const [recap, setRecap] = useState(false);
@@ -152,7 +196,6 @@ export function YourCard({ state, stats, now }: { state: AppState; stats: StatsS
     // Drawn again only when what's on it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  const others = titles.filter((t) => t.id !== title.id);
   // What the picture to share shows (drawn again only when it changes).
   const shareInput = useMemo<ShareInput | undefined>(
     () =>
@@ -183,45 +226,29 @@ export function YourCard({ state, stats, now }: { state: AppState; stats: StatsS
       </div>
       <div className={s.words}>
         <span className={s.brand}>
-          <Mark size={30} delay={0.3} />
-          Beluga · Usage Pass {new Date(now).getFullYear()}
-        </span>
-        <span className={s.hi}>Hi {you.name.split(' ')[0]}, you’re a</span>
-        <h1 className={s.title}>
-          <span className={s.titleMark} style={{ '--t': title.color } as React.CSSProperties}>
-            <Icon name={title.icon} size={26} />
-          </span>
-          {title.name}
-        </h1>
-        <p className={s.why}>{title.id === 'rookie' ? 'Titles come as your stats grow: send prompts, ship pull requests, keep a streak.' : `Because: ${title.why}.`}</p>
-        {others.length ? (
-          <div className={s.earned}>
-            <span className={s.earnedLabel}>Also earned · press one to wear it</span>
-            <div className={s.chips}>
-              {others.map((t) => (
-                <button key={t.id} type="button" className={s.chip} style={{ '--t': t.color } as React.CSSProperties} title={t.why} onClick={() => setWorn(t.id)}>
-                  <Icon name={t.icon} size={13} />
-                  {t.name}
-                </button>
-              ))}
-              {title.id !== titles[0]!.id ? (
-                <button type="button" className={cx(s.chip, s.chipBack)} onClick={() => setWorn(titles[0]!.id)}>
-                  Back to {titles[0]!.name}
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        <div className={s.foot}>
-          <Button variant="primary" icon="play" onClick={() => setRecap(true)}>
-            Play Your Recap
-          </Button>
-          <Button variant="plain" icon="share" onClick={() => setSharing(true)} disabled={!faces}>
-            Share…
-          </Button>
-          <span className={s.since}>
+          <Mark size={22} delay={0.3} />
+          <span>Usage Pass {new Date(now).getFullYear()}</span>
+          <span className={s.brandAside}>
             {since} · {active.toLocaleString()} active {active === 1 ? 'day' : 'days'}
           </span>
+        </span>
+        <h1 key={title.id} className={s.title}>
+          {title.name}
+        </h1>
+        <p className={s.why}>
+          <span className={s.whyMark} style={{ '--t': title.color } as React.CSSProperties}>
+            <Icon name={title.icon} size={15} />
+          </span>
+          {title.id === 'rookie' ? 'Titles come as your stats grow: send prompts, ship pull requests, keep a streak.' : title.why}
+        </p>
+        {titles.length > 1 ? <TitleList titles={titles} worn={title.id} onWear={setWorn} /> : null}
+        <div className={s.foot}>
+          <Button size="small" variant="primary" icon="play" onClick={() => setRecap(true)}>
+            Play Your Recap
+          </Button>
+          <Button size="small" variant="plain" icon="share" onClick={() => setSharing(true)} disabled={!faces}>
+            Share…
+          </Button>
         </div>
       </div>
       {recap ? <Recap state={state} stats={stats} now={now} title={title} pass={faces ? <Suspense fallback={null}>{pass(faces, title.color, 0.5, { passThrough: true, anchor: 0.69 })}</Suspense> : undefined} onShare={() => (setRecap(false), setSharing(true))} onClose={() => setRecap(false)} /> : null}

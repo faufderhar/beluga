@@ -69,7 +69,7 @@ export function PlansView() {
         </PickMenu>
         <span className={p.grow} />
         <ActionsDropdown items={[{ label: 'Planning Style…', onSelect: () => openSheet({ kind: 'plan_style' }) }]}>
-          <IconButton icon="more" label="Plans Options" />
+          <IconButton size="small" icon="more" label="Plans Options" />
         </ActionsDropdown>
         <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })} title={`New Plan${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
           New Plan
@@ -89,7 +89,7 @@ export function PlansView() {
           detail="Say what you want built. Your agent reads the code and cuts it into milestones and tasks that run side by side, each with what proves it’s done. You talk it through; nothing reaches the board until you approve."
           action={
             <EmptyActions>
-              <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })}>
+              <Button size="small" variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })}>
                 {`Plan in ${here.name}`}
               </Button>
             </EmptyActions>

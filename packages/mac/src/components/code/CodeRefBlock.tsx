@@ -119,8 +119,8 @@ export function CodeRefView({ ref_: ref, wsId }: { ref_: CodeRef; wsId: string |
             </button>
           </Tip>
           <span className={s.grow} />
-          <IconButton icon="copy" label="Copy the code" disabled={!excerpt} onClick={() => void copyText(all).then(() => say('Copied the code'))} />
-          <IconButton icon="external" label="Open in Editor" disabled={!wsId} onClick={open} />
+          <IconButton size="small" icon="copy" label="Copy the code" disabled={!excerpt} onClick={() => void copyText(all).then(() => say('Copied the code'))} />
+          <IconButton size="small" icon="external" label="Open in Editor" disabled={!wsId} onClick={open} />
         </figcaption>
         {ref.note ? <div className={s.refNote}>{ref.note}</div> : null}
         {problem ? (

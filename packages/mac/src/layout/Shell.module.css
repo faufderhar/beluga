@@ -17,9 +17,61 @@
 :root[data-motion='reduce'] .app[data-arriving] {
   animation: none;
 }
+/*
+ * The frame (Workbench.tsx): Dockview's Gridview lays the sidebar, the center and the panel out
+ * side by side. Each region fills its cell; the dividers between them are Dockview's (styles/dock.css).
+ */
+.frame {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.grid {
+  width: 100%;
+  height: 100%;
+}
+.region {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+/*
+ * A region's edge, for the keyboard (Tab to it, the arrow keys resize, as before the frame was
+ * Dockview's): dragging is the divider's own, so this one takes no clicks.
+ */
+.edgeKeys {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  pointer-events: none;
+}
+.edgeKeys:focus-visible {
+  background: var(--accent);
+}
+.edgeLeft {
+  left: 0;
+}
+.edgeRight {
+  right: 0;
+}
+/* The center dock's one tab of its own: the conversation or the page, filling it. */
+.mainBody {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
 .main {
   flex: 1;
   min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -86,4 +138,97 @@
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--code-bg);
+}
+
+/* Liquid Glass: the window behind the sidebar and the panel is the content's own colour; they float over it. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .app {
+  background: var(--bg);
+}
+
+/*
+ * The phone frame (PhoneFrame.tsx, BLG-6): one column. The page fills the screen; the sidebar
+ * slides in over it from the left, the panel comes up over it as a full-screen sheet.
+ */
+.phoneFrame {
+  position: relative;
+  /* What the on-screen keyboard leaves (PhoneFrame's useKeyboardRoom), less the notch's inset. */
+  max-height: calc(var(--phone-vh, 100dvh) - env(safe-area-inset-top, 0px));
+  /* clip, not hidden: a field brought into view (focus, scrollIntoView) can't scroll the frame from under the toolbar. */
+  overflow: clip;
+}
+.phoneCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  overflow: clip;
+}
+.phoneScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease-out);
+}
+.phoneDrawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 41;
+  display: flex;
+  width: min(340px, 86vw);
+  transform: translateX(-105%);
+  transition: transform var(--dur) var(--ease-out);
+}
+.phoneSheet {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+  background: var(--bg);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition:
+    transform var(--dur) var(--ease-out),
+    visibility 0s linear var(--dur);
+}
+.phoneSheetBar {
+  display: flex;
+  justify-content: flex-end;
+  flex: none;
+  padding: env(safe-area-inset-top, 0) 6px 0;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.phoneSheetBody {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+/* The panel's aside sizes itself for a side region: on the sheet it is the whole sheet. */
+.phoneSheetBody > * {
+  flex: 1;
+  width: 100% !important;
+  min-width: 0;
+}
+.phoneScrim.phoneOpen {
+  opacity: 1;
+  pointer-events: auto;
+}
+.phoneDrawer.phoneOpen {
+  transform: none;
+  box-shadow: var(--shadow-pop);
+}
+.phoneSheet.phoneOpen {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur) var(--ease-out);
+}
+:global(:root[data-motion='reduce']) :is(.phoneScrim, .phoneDrawer, .phoneSheet) {
+  transition: none;
 }

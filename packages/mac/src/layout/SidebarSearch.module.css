@@ -4,10 +4,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: var(--control-h-large);
   margin: 0 8px 8px;
   padding: 0 4px 0 8px;
-  border-radius: 7px;
+  border-radius: var(--control-radius-large);
   background: var(--bg-raised);
   box-shadow: 0 0 0 0.5px var(--hairline-strong);
   color: var(--text-3);
@@ -97,4 +97,14 @@
 }
 .all {
   color: var(--text-2);
+}
+
+/* Liquid Glass: a capsule, so its ring is a real 0.5px border (WebKit breaks a 0.5px shadow up round the ends). */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .field {
+  border: 0.5px solid var(--hairline-strong);
+  box-shadow: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--hairline-strong));
+  box-shadow: var(--focus-ring);
 }

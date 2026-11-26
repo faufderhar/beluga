@@ -10,6 +10,7 @@ import type { FilesPort } from '../../ports/files.js';
 import type { MethodCalls } from '../../ports/methods.js';
 import type { ExternalToolDef, Resolved } from '../mcp-tools.js';
 import { DATA_NOTICE, chatInScope, untrusted } from './read.js';
+import { THIS_COMPUTER, YOUR_COMPUTER } from '../../../shared/assistant.js';
 
 /**
  * Files and terminals with no run in between. A file tool works as the phone's file gate does
@@ -42,7 +43,7 @@ export function fileTools(reads: ChatRead, port: FilesPort, calls: MethodCalls):
   };
   const rootOf = (name: unknown) => {
     const folder = port.folder(idOf(name));
-    if (!folder) throw new Error('That folder is not on this Mac any more.');
+    if (!folder) throw new Error(`That folder is not on ${THIS_COMPUTER} any more.`);
     return folder;
   };
   /** The grant, then the gate: a refusal says why, and comes before any card. */
@@ -51,7 +52,7 @@ export function fileTools(reads: ChatRead, port: FilesPort, calls: MethodCalls):
     if ('denial' in target || !target.inScope) return target;
     try {
       const folder = port.folder(idOf(args.where));
-      if (!folder) return { denial: 'not_found', message: 'That folder is not on this Mac any more.' };
+      if (!folder) return { denial: 'not_found', message: `That folder is not on ${THIS_COMPUTER} any more.` };
       gate(folder.root, String(args.path ?? ''));
       return target;
     } catch (err) {
@@ -65,7 +66,7 @@ export function fileTools(reads: ChatRead, port: FilesPort, calls: MethodCalls):
     const file = String(args.path);
     try {
       const folder = port.folder(idOf(args.where));
-      if (!folder) return { denial: 'not_found', message: 'That folder is not on this Mac any more.' };
+      if (!folder) return { denial: 'not_found', message: `That folder is not on ${THIS_COMPUTER} any more.` };
       const parts = cleanRel(file);
       if (!parts.length) return { denial: 'invalid_request', message: 'Name a file.' };
       gate(folder.root, parts.slice(0, -1).join('/'));
@@ -75,7 +76,7 @@ export function fileTools(reads: ChatRead, port: FilesPort, calls: MethodCalls):
         if (!(err instanceof FileGateError) || !/isn.t there/.test(err.message)) throw err;
       }
       const code = grant.level !== 'full' && writesCode('Write', { file_path: file }, folder.root);
-      return { ...target, ...(code ? { mustAsk: true, wants: `change ${path.basename(file)}, a file that can run commands on your Mac` } : {}) };
+      return { ...target, ...(code ? { mustAsk: true, wants: `change ${path.basename(file)}, a file that can run commands on ${YOUR_COMPUTER}` } : {}) };
     } catch (err) {
       return refusal(err);
     }

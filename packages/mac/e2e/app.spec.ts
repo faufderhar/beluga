@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { openGroupChat, personRow, pick } from './helpers.js';
+import { openGroupChat, personRow, pick, termFontSize, termText } from './helpers.js';
 
 /** The Mac app's web view against a real Beluga (the demo): what you click does what it says. */
 
@@ -95,7 +95,7 @@ test('⌘J shows the terminal in the right panel and runs a command in it', asyn
   await expect(term).toBeVisible();
   await term.locator('.xterm').click();
   await page.keyboard.type('echo dock-$((6*7))\n');
-  await expect(term.getByText('dock-42').last()).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => termText(term), { timeout: 15_000 }).toContain('dock-42');
   await page.keyboard.press('Meta+J');
   await expect(term).toBeHidden();
 });
@@ -106,7 +106,7 @@ test("the dock terminal takes the shell's keys: Tab completes after a click in i
   await page.keyboard.press('Meta+J');
   const term = page.getByRole('complementary', { name: 'Panel' }).getByRole('region', { name: 'Terminal' });
   await expect(term).toBeVisible();
-  await expect(term.locator('.xterm-rows')).toContainText(/\S/, { timeout: 15_000 });
+  await expect.poll(() => termText(term), { timeout: 15_000 }).toMatch(/\S/);
   await composer(page).click();
   // The padding around the text, not the text: the keyboard goes to the shell all the same.
   const box = term.locator('.xterm').locator('..');
@@ -117,14 +117,14 @@ test("the dock terminal takes the shell's keys: Tab completes after a click in i
   await page.keyboard.type('cat tab-probe-77');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
-  await expect(term.getByText('42tab-done').last()).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => termText(term), { timeout: 15_000 }).toContain('42tab-done');
   // Emacs keys, whatever the test's environment says (an EDITOR=vi there puts zsh in vi mode).
   await page.keyboard.type('bindkey -e 2>/dev/null; clear\n');
   await page.keyboard.type('cho line-$((6*7))');
   await page.keyboard.press('Meta+ArrowLeft');
   await page.keyboard.type('e');
   await page.keyboard.press('Enter');
-  await expect(term.getByText('line-42').last()).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => termText(term), { timeout: 15_000 }).toContain('line-42');
   await page.keyboard.type('rm tab-probe-7731.txt\n');
 });
 
@@ -157,7 +157,7 @@ test('opens and closes shells without them coming back', async ({ page }) => {
   await expect(shells).toHaveCount(2);
   await page.locator('.xterm').click();
   await page.keyboard.type('echo second-$((6*7))\n');
-  await expect(page.getByText('second-42')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => termText(page), { timeout: 15_000 }).toContain('second-42');
   // Closing the one shown moves to the other, and it stays closed.
   await shells.nth(1).getByRole('button', { name: /^Close/ }).click();
   await expect(shells).toHaveCount(1);
@@ -177,7 +177,7 @@ test('renames a shell, for every screen, and Escape cancels', async ({ page }) =
   const first = page.getByRole('tab', { name: /^Shell \d+/ }).first();
   await expect(first).toBeVisible();
   // It has started: its prompt is in.
-  await expect(page.locator('.xterm-rows')).toContainText(/\S/);
+  await expect.poll(() => termText(page)).toMatch(/\S/);
   await first.dblclick();
   await page.getByLabel('Terminal name').fill('build logs');
   await page.keyboard.press('Enter');
@@ -218,10 +218,10 @@ test('sets an environment variable that new shells get', async ({ page }) => {
   await page.keyboard.press('Escape');
   await openTerminalPage(page);
   await page.getByRole('button', { name: 'New shell' }).first().click();
-  await expect(page.locator('.xterm-rows')).toContainText(/\S/);
+  await expect.poll(() => termText(page)).toMatch(/\S/);
   await page.locator('.xterm').click();
   await page.keyboard.type('echo "got-$BELUGA_E2E_TOKEN"\n');
-  await expect(page.getByText('got-tok-$((6*7))-secret')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => termText(page), { timeout: 15_000 }).toContain('got-tok-$((6*7))-secret');
 });
 
 test('picks how the shell starts and how terminals look', async ({ page }) => {
@@ -239,7 +239,7 @@ test('picks how the shell starts and how terminals look', async ({ page }) => {
   await page.getByRole('tab', { name: 'Bar' }).click();
   await expect(page.getByText('16 pt')).toBeVisible();
   // The open terminal follows right away.
-  await expect(page.locator('.xterm .xterm-rows')).toHaveCSS('font-size', '16px');
+  await expect.poll(() => termFontSize(page)).toBe(16);
   // The shell settings are Beluga's (shared); they're still there after a reload.
   await page.reload();
   await expect(sidebar(page)).toBeVisible();
@@ -567,7 +567,22 @@ test('clicking a notification goes where it happened', async ({ page }) => {
   await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
 });
 
-test('effort follows Settings again, and Shift-Tab switches plan mode on and off', async ({ page }) => {
+test('each chat keeps its own effort: Max in one leaves another as it was', async ({ page }) => {
+  const chip = page.getByRole('button', { name: 'Agent, model and effort' });
+  await openWorkspace(page, 'webhook-retries');
+  await expect(chip).not.toHaveText(/Max/);
+  await openWorkspace(page);
+  await chip.click();
+  await page.getByRole('radio', { name: 'Max', exact: true }).click();
+  await expect(chip).toHaveText(/Max/);
+  await page.keyboard.press('Escape');
+  await openWorkspace(page, 'webhook-retries');
+  await expect(chip).not.toHaveText(/Max/);
+  await openWorkspace(page);
+  await expect(chip).toHaveText(/Max/);
+});
+
+test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {
   await openWorkspace(page);
   await page.getByRole('button', { name: 'Agent, model and effort' }).click();
   await page.getByRole('radio', { name: 'Max', exact: true }).click();

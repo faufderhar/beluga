@@ -10,6 +10,7 @@ import { fingerprint, pairKey, repoKey, repoLabel } from './fingerprint.js';
 import type { ProjectTeam, TeamOffer, TeamState } from './model.js';
 import { type TeamMsg, parseTeamFrame } from './protocol.js';
 import { type Member, TeamRosters } from './roster.js';
+import { COMPUTER_WORD } from '../../shared/assistant.js';
 
 /**
  * Team boards (docs/tasks-and-plans.md, "Sharing with friends — phase 3"). Friends who each have
@@ -357,7 +358,7 @@ export class TeamBoards {
     const repo = this.repos.get(projectId)?.label ?? this.projectName(projectId);
     const others = this.teamNames(projectId).filter((n) => n !== this.nameOf(peerId));
     this.onRoster(link, link.since);
-    if (!quiet) this.deps.notify?.({ kind: 'people', tag: 'joined', title: others.length ? `${this.nameOf(peerId)} is on the ${repo} team with you` : `You and ${this.nameOf(peerId)} are a team on ${repo}`, body: 'Your tasks for it stay in step from now on. Chats stay on your own Mac.', key: `team:${id}` });
+    if (!quiet) this.deps.notify?.({ kind: 'people', tag: 'joined', title: others.length ? `${this.nameOf(peerId)} is on the ${repo} team with you` : `You and ${this.nameOf(peerId)} are a team on ${repo}`, body: `Your tasks for it stay in step from now on. Chats stay on your own ${COMPUTER_WORD}.`, key: `team:${id}` });
     for (const p of this.parts) p.joined?.(link, true);
     this.publish();
   }
@@ -578,7 +579,7 @@ export class TeamBoards {
     this.publish();
     const repo = this.repos.get(projectId)?.label ?? this.projectName(projectId);
     const others = (team ?? []).filter((n) => n !== this.nameOf(from));
-    this.deps.notify?.({ kind: 'needsYou', tag: 'invited', title: others.length ? `${this.nameOf(from)} invited you to the ${repo} team` : `${this.nameOf(from)} wants to team up on ${repo}`, body: 'Your tasks for it would stay in step. Chats stay on your own Mac.', need: `team:${from}:${projectId}`, key: `team-invite:${link}` });
+    this.deps.notify?.({ kind: 'needsYou', tag: 'invited', title: others.length ? `${this.nameOf(from)} invited you to the ${repo} team` : `${this.nameOf(from)} wants to team up on ${repo}`, body: `Your tasks for it would stay in step. Chats stay on your own ${COMPUTER_WORD}.`, need: `team:${from}:${projectId}`, key: `team-invite:${link}` });
   }
 
   private onAccept(from: string, print: string, link: string, theirProject: string): void {

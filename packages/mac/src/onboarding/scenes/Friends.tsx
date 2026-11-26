@@ -2,8 +2,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { type ReactNode, useState } from 'react';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { SPRING } from '../fx.js';
-import { useBeats } from './use-beats.js';
+import { useBeatControl } from './use-beats.js';
 import s from './scenes.module.css';
+import t from './tour-scenes.module.css';
 import { upFirst, yourComputer } from '../../lib/os-words.js';
 
 /**
@@ -12,9 +13,14 @@ import { upFirst, yourComputer } from '../../lib/os-words.js';
  * steps show as it goes), the result comes back over the encrypted line, and yours carries on
  * with it. Three errands take turns: a report from a file only Ada has, an admin role only
  * Ada can grant, a screenshot only Ada's session can take.
+ *
+ * You can play it (BLG-989): pick the errand, and press Allow on Ada's card yourself. Left alone,
+ * Ada allows it after a moment.
  */
 
 interface Errand {
+  /** Its name in the picker. */
+  readonly label: string;
   /** What your Claude is doing when it needs help, and after. */
   readonly before: string;
   readonly after: string;
@@ -28,6 +34,7 @@ interface Errand {
 
 const ERRANDS: readonly Errand[] = [
   {
+    label: 'A file on Ada’s computer',
     before: 'Drafting the Q3 investor update',
     ask: 'Find the Q3 balance sheet on Ada’s computer and send me a summary',
     steps: [
@@ -39,6 +46,7 @@ const ERRANDS: readonly Errand[] = [
     after: 'Adding the numbers to the update',
   },
   {
+    label: 'Access only Ada can give',
     before: 'Setting up CI for acme/web',
     ask: 'Make me an admin on acme/web, I need to set branch rules',
     steps: [
@@ -50,6 +58,7 @@ const ERRANDS: readonly Errand[] = [
     after: 'Turning on branch protection',
   },
   {
+    label: 'A page Ada is signed in to',
     before: 'Debugging the revenue chart',
     ask: 'Screenshot the staging dashboard while you’re signed in',
     steps: [
@@ -64,7 +73,7 @@ const ERRANDS: readonly Errand[] = [
 
 // Beats: yours at work · the ask travels · it waits for Ada · allowed · her Claude's three steps ·
 // the result travels back · yours carries on.
-const BEATS = [1300, 1000, 1500, 500, 750, 750, 900, 1000, 2400] as const;
+const BEATS = [1300, 1000, 2800, 500, 750, 750, 900, 1000, 2400] as const;
 const ASKING = 1;
 const WAITING = 2;
 const ALLOWED = 3;
@@ -101,11 +110,24 @@ const Line = ({ icon, text, code, live }: { readonly icon: IconName; readonly te
 
 export function Friends() {
   const [round, setRound] = useState(0);
-  const beat = useBeats(BEATS, DONE, () => setRound((r) => r + 1));
-  const errand = ERRANDS[round % ERRANDS.length]!;
+  const { beat, go } = useBeatControl(BEATS, { rest: DONE, onLoop: () => setRound((r) => r + 1) });
+  const at = round % ERRANDS.length;
+  const errand = ERRANDS[at]!;
   const shown = beat >= WORKING ? Math.min(errand.steps.length, beat - WORKING + 1) : 0;
+  const pick = (i: number): void => {
+    setRound(i);
+    go(0);
+  };
   return (
-    <div className={s.stage}>
+    <div className={s.stage} style={{ alignContent: 'center' }}>
+      <div className={t.picks} role="radiogroup" aria-label="What your agent needs" style={{ marginBottom: 14 }}>
+        {ERRANDS.map((e, i) => (
+          <button key={e.label} type="button" role="radio" aria-checked={i === at} className={t.pick} onClick={() => pick(i)}>
+            {i === at ? <motion.span layoutId="friends-pick" className={t.pickOn} transition={SPRING} /> : null}
+            <span className={t.pickLabel}>{e.label}</span>
+          </button>
+        ))}
+      </div>
       <div className={s.friends}>
         <Window who="You" hue={40} you>
           <AnimatePresence mode="popLayout">
@@ -186,10 +208,12 @@ export function Friends() {
                 <span className={s.dim}>Your friend’s agent asks</span>
                 <span className={s.requestText}>{errand.ask}</span>
                 <div className={s.requestButtons}>
-                  <span className={s.btn}>Decline</span>
-                  <motion.span className={s.btnPrimary} animate={beat === ALLOWED ? { scale: [1, 0.9, 1] } : {}} transition={{ duration: 0.3 }}>
+                  <button type="button" className={s.btn} onClick={() => pick((at + 1) % ERRANDS.length)}>
+                    Decline
+                  </button>
+                  <motion.button type="button" className={s.btnPrimary} data-waiting={beat === WAITING ? '' : undefined} disabled={beat !== WAITING} onClick={() => go(ALLOWED)} animate={beat === ALLOWED ? { scale: [1, 0.9, 1] } : {}} transition={{ duration: 0.3 }}>
                     {beat === ALLOWED ? <Icon name="check" size={11} /> : null} Allow
-                  </motion.span>
+                  </motion.button>
                 </div>
               </motion.div>
             ) : beat >= WORKING ? (

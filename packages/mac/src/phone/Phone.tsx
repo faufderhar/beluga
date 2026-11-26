@@ -1,4 +1,3 @@
-import * as Popover from '@radix-ui/react-popover';
 import { useState } from 'react';
 import type { DeviceView, PhoneUse } from '../../../../src/companion/protocol.js';
 import { Icon } from '../components/Icon.js';
@@ -11,8 +10,7 @@ import { errorText, quietly } from '../network/use-net.js';
 import { Group, Row, Select } from '../dialogs/settings-controls.js';
 import type { KeepAwake } from '@beluga/shared/settings-schema.js';
 import { pathLabel } from '../../../../src/companion/diagnose.js';
-import { leftText, markOf, seenText } from './phone-model.js';
-import p from '../dialogs/native/person.module.css';
+import { leftText, seenText } from './phone-model.js';
 import s from './phone.module.css';
 import { computerWord, thisComputer, upFirst, yourComputer } from '../lib/os-words.js';
 
@@ -271,40 +269,6 @@ export function Pairing({ now }: { now: number }) {
         <Button onClick={() => void client.api.companion['pair.cancel']()}>Cancel</Button>
       </div>
     </div>
-  );
-}
-
-/** The popover's line about the relay, only when it isn't ready (that's the news). */
-function RelayLine() {
-  const relay = useRelay();
-  const said = relay === 'ready' ? undefined : relayText(relay);
-  return said ? <div className={s.relayLine}>{said.text}</div> : null;
-}
-
-/** The sidebar footer's phone mark (only once a phone is paired, or while pairing one). */
-export function PhoneMark() {
-  const devices = useDevices();
-  const pairing = usePairing();
-  const now = useMinute();
-  if (!devices.length && !pairing) return null;
-  const { lit, title } = markOf(devices, now);
-  return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <button type="button" className={cx(s.mark, lit && s.lit)} title={title} aria-label={`Your phone: ${title}`}>
-          <Icon name="phone" size={14} />
-          {lit ? <span className={s.markDot} aria-hidden="true" /> : null}
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content className={cx(p.card, s.card)} side="top" align="end" sideOffset={8} collisionPadding={10} aria-label="Your phone">
-          <div className={s.head}>Phone</div>
-          <DeviceList now={now} />
-          <RelayLine />
-          <Pairing now={now} />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
   );
 }
 

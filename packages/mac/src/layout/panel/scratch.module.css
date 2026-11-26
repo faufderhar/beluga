@@ -176,3 +176,12 @@
   display: flex;
   padding: 10px 10px 0 16px;
 }
+
+/* "From Your Agent" picked while it has saved nothing: what will land there, in a line. */
+.viewEmpty {
+  flex: none;
+  margin: 6px 16px 0;
+  color: var(--text-3);
+  font-size: var(--control-text);
+  line-height: 1.45;
+}

@@ -26,6 +26,20 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 /** Sign-ins and origins change rarely: asked again after this long. */
 const SLOW_TTL_MS = 5 * 60_000;
 
+/**
+ * A list another computer sends, read whatever its Beluga's version: an entry this side can't read
+ * (a newer state, a newer source) is left out, and past `max` the rest is, never the whole list —
+ * one unknown value failed the whole sync, and the computer showed as offline.
+ */
+const listOf = <T extends z.ZodTypeAny>(item: T, max: number) =>
+  z
+    .array(z.unknown())
+    .max(max * 4)
+    .transform((xs) => xs.flatMap((x): z.output<T>[] => {
+      const r = item.safeParse(x);
+      return r.success ? [r.data] : [];
+    }).slice(0, max));
+
 export const RuntimeHealth = z.object({ id: z.string().max(32), state: z.enum(['ready', 'signed_out', 'missing']), usage: Usage.optional() });
 export type RuntimeHealth = z.infer<typeof RuntimeHealth>;
 
@@ -43,32 +57,34 @@ export const MachineInfo = z.object({
   ipc: z.number().int().min(0).optional(),
   /** Its name and icon as kept on it (BLG-780): every device shows these. */
   name: z.string().min(1).max(64).optional(),
-  icon: z.enum(MACHINE_ICONS).optional(),
+  icon: z.enum(MACHINE_ICONS).optional().catch(undefined),
   cpus: z.number().int().min(1).max(4096),
   /** The 1-minute load average over the cores (1 = every core busy). */
   loadPerCore: z.number().min(0).max(1000),
   memory: z.object({ freeGB: z.number().min(0), totalGB: z.number().min(0) }),
   disk: z.object({ freeGB: z.number().min(0), totalGB: z.number().min(0) }).optional(),
   agentsRunning: z.number().int().min(0),
-  runtimes: z.array(RuntimeHealth).max(8),
-  gh: z.enum(['signed_in', 'signed_out', 'missing']),
-  mcp: z.array(z.object({ name: z.string().max(100), from: z.enum(['user', 'project', 'plugin']) })).max(64),
-  projects: z.array(z.object({ name: z.string().max(200), origin: z.string().max(500).optional() })).max(200),
+  runtimes: listOf(RuntimeHealth, 8),
+  gh: z.enum(['signed_in', 'signed_out', 'missing']).catch('missing'),
+  mcp: listOf(z.object({ name: z.string().max(100), from: z.enum(['user', 'project', 'plugin']) }), 64),
+  projects: listOf(z.object({ name: z.string().max(200), origin: z.string().max(500).optional() }), 200),
   /** The worktrees with a run going there now (BLG-779), by project and name; `channel` is its conversation there. */
-  work: z.array(z.object({ project: z.string().max(200), worktree: z.string().max(200), channel: z.string().max(300) })).max(50).optional(),
+  work: listOf(z.object({ project: z.string().max(200), worktree: z.string().max(200), channel: z.string().max(300) }), 50).optional(),
 });
 export type MachineInfo = z.infer<typeof MachineInfo>;
 
 /** The sync frame between your devices, with an app's ask for what a computer has free and its answer (additive). */
 export const MachineSync = DeviceSetSync.extend({
   /** `net`: asked of your Always On only (BLG-796; an older computer reads no `net` and would drop the frame). */
-  want: z.array(z.enum(['info', 'update', 'net'])).max(4).optional(),
-  info: MachineInfo.optional(),
+  // What a newer computer asks that this one doesn't know is left out, never the whole sync.
+  want: listOf(z.enum(['info', 'update', 'net']), 4).optional(),
+  // Each part on its own: one this side can't read is left out, never the whole sync (the roster with it).
+  info: MachineInfo.optional().catch(undefined),
   /** Update It (BLG-777): asked with how, answered with what the computer does. */
-  update: z.object({ mode: z.enum(UPDATE_MODES) }).optional(),
-  updated: UpdateAnswer.optional(),
+  update: z.object({ mode: z.enum(UPDATE_MODES) }).optional().catch(undefined),
+  updated: UpdateAnswer.optional().catch(undefined),
   /** Rename it or pick its icon from your app (BLG-780): kept on the computer itself. */
-  look: z.object({ name: z.string().trim().min(1).max(64).optional(), icon: z.enum(MACHINE_ICONS).optional() }).optional(),
+  look: z.object({ name: z.string().trim().min(1).max(64).optional(), icon: z.enum(MACHINE_ICONS).optional().catch(undefined) }).optional().catch(undefined),
   /** Your settings, each with when and where it changed (BLG-805, sync.ts reads it: a part it can't read never holds up the rest). */
   settings: z.unknown().optional(),
   /** Your Always On's friends network as it is now (BLG-796), for your app to show while it doesn't run it: friends, groups, invitations. */

@@ -1,9 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
-import { DEFAULT_LEVEL, type TelemetryLevel } from '@beluga/core/telemetry-store.js';
+import { type TelemetryLevel, askAnswer } from '@beluga/core/telemetry-store.js';
 import { isRunning } from '@beluga/ui/format.js';
 import { Icon } from '../components/Icon.js';
-import { TelemetryLevels } from '../components/TelemetryLevels.js';
+import { PrivacyNoticeLink, TelemetryLevels } from '../components/TelemetryLevels.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { TELEMETRY_FOOT, TELEMETRY_LEAD, TELEMETRY_TITLE, levelLabel } from '../lib/telemetry.js';
 import { useCalmMoment } from './SupportSheets.js';
@@ -12,8 +12,8 @@ import t from './telemetry.module.css';
 
 /**
  * The ask after an update (core/telemetry-store.ts): once, at a calm moment, never while one of
- * your agents is running. Share keeps the level picked (Limited unless you pick another), Later asks
- * again in a few days or a few merges, No thanks is final. Closing it is Later.
+ * your agents is running. Nothing is picked for you: Share waits for a level and shares at it, Later
+ * asks again in a few days or a few merges, No thanks is final. Closing it is Later (nothing is sent).
  */
 export function TelemetrySheets() {
   const api = useApi();
@@ -30,10 +30,11 @@ export function TelemetrySheets() {
 }
 
 function AskSheet({ onAnswer }: { readonly onAnswer: (answer: 'share' | 'later' | 'never', level: TelemetryLevel) => void }) {
-  const [level, setLevel] = useState<TelemetryLevel>(DEFAULT_LEVEL);
+  const [level, setLevel] = useState<TelemetryLevel>();
+  const main = askAnswer(level);
   return (
     <>
-      <Dialog.Root open onOpenChange={(v) => (v ? undefined : onAnswer('later', level))}>
+      <Dialog.Root open onOpenChange={(v) => (v ? undefined : onAnswer('later', 'off'))}>
         <Dialog.Portal>
           <Dialog.Overlay className={s.overlay} />
           <Dialog.Content
@@ -41,8 +42,8 @@ function AskSheet({ onAnswer }: { readonly onAnswer: (answer: 'share' | 'later' 
             data-support="telemetry"
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => {
-              // Share gets the focus, so Return does it (not the close button).
-              const main = (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[data-main]');
+              // The first level gets the focus (Share waits for a pick), so Return never shares for you.
+              const main = (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[role="radiogroup"] input');
               if (!main) return;
               e.preventDefault();
               main.focus();
@@ -57,19 +58,21 @@ function AskSheet({ onAnswer }: { readonly onAnswer: (answer: 'share' | 'later' 
               <Dialog.Title className={s.title}>{TELEMETRY_TITLE}</Dialog.Title>
               <p className={s.lead}>{TELEMETRY_LEAD}</p>
               <TelemetryLevels value={level} onChange={setLevel} name="telemetry-ask" />
-              <button type="button" className={s.main} data-main onClick={() => onAnswer(level === 'off' ? 'never' : 'share', level)}>
-                <span className={s.mainLabel}>{level === 'off' ? 'Keep It Off' : `Share (${levelLabel(level)})`}</span>
+              <button type="button" className={s.main} data-main disabled={!main} onClick={() => main && onAnswer(main.answer, main.level)}>
+                <span className={s.mainLabel}>{!main ? 'Share' : main.answer === 'never' ? 'Keep It Off' : `Share (${levelLabel(main.level)})`}</span>
               </button>
               <div className={s.foot}>
-                <button type="button" className={s.quietButton} onClick={() => onAnswer('later', level)}>
+                <button type="button" className={s.quietButton} onClick={() => onAnswer('later', 'off')}>
                   Later
                 </button>
                 <span className={s.dot} aria-hidden="true" />
-                <button type="button" className={s.quietButton} onClick={() => onAnswer('never', level)}>
+                <button type="button" className={s.quietButton} onClick={() => onAnswer('never', 'off')}>
                   No thanks
                 </button>
               </div>
-              <p className={t.small}>{TELEMETRY_FOOT}</p>
+              <p className={t.small}>
+                {TELEMETRY_FOOT} <PrivacyNoticeLink />
+              </p>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

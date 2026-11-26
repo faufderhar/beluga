@@ -44,7 +44,8 @@ export type MenuKind =
   | { readonly kind: 'project'; readonly id: string }
   | { readonly kind: 'archived'; readonly id: string }
   | { readonly kind: 'agents'; readonly projectId: string }
-  | { readonly kind: 'ws_share'; readonly id: string }
+  /** `takeOver`: open on "Take it over" (what Hand off used to be, BLG-967). */
+  | { readonly kind: 'ws_share'; readonly id: string; readonly takeOver?: boolean }
   | { readonly kind: 'shared'; readonly owner: string; readonly id: string }
   | { readonly kind: 'clear'; readonly channel: string; readonly host: boolean }
   | { readonly kind: 'invite_person'; readonly peerId: string }
@@ -111,6 +112,15 @@ export function archivedMenu(state: AppState, id: string): MenuSpec | undefined 
       { id: 'close', label: 'Close', hint: 'Esc' },
     ],
   };
+}
+
+/**
+ * The archive menu's option for archiving a worktree, copying its env changes back first when asked
+ * (and the removed keys too with `removals`). Only `confirmMenu(…, 'archive', …)` has these options.
+ */
+export function archiveOptionId(withEnv: boolean, removals: boolean): string {
+  if (!withEnv) return 'confirm-archive';
+  return removals ? 'confirm-archive-env-all' : 'confirm-archive-env';
 }
 
 /** "Are you sure?" for archive and delete, explaining exactly what happens. */

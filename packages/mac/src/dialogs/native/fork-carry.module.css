@@ -1,0 +1,92 @@
+/* What Forks Bring: quiet rows to tick, a summary, the files that would go (pastel, no glow). */
+.stack {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+.row {
+  padding: 8px 11px;
+}
+.row + .row {
+  border-top: 0.5px solid var(--hairline);
+}
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.name code {
+  color: var(--text);
+}
+.large {
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.empty {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+}
+.summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.toggle {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.files {
+  max-height: 180px;
+  margin: 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  list-style: none;
+  font-size: 0.88rem;
+}
+.files li {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+.files li code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files li span {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.stays {
+  color: var(--text-3);
+}

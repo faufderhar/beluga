@@ -83,7 +83,7 @@ export function ActionsView() {
                 <Icon name="chevronDown" size={11} />
               </button>
             </PickMenu>
-            <Segmented<Page> label="Show" value={page} onChange={(p) => openList(projectId, p === 'workflows' ? 'workflows' : undefined)} options={PAGES} />
+            <Segmented<Page> size="small" label="Show" value={page} onChange={(p) => openList(projectId, p === 'workflows' ? 'workflows' : undefined)} options={PAGES} />
             {page === 'runs' && known.length + (workflow ? 1 : 0) > 1 ? (
               <PickMenu<string>
                 label="Workflow"
@@ -106,7 +106,7 @@ export function ActionsView() {
                 Live
               </span>
             ) : null}
-            <IconButton icon="refresh" label={loading || flows.loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx((loading || flows.loading) && s.spinning)} onClick={() => (refresh(), flows.refresh())} disabled={!repo} />
+            <IconButton size="small" icon="refresh" label={loading || flows.loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx((loading || flows.loading) && s.spinning)} onClick={() => (refresh(), flows.refresh())} disabled={!repo} />
             {repo ? (
               <Tip label={`${repo.url}/actions`}>
                 <Button size="small" icon="external" onClick={() => openOnGitHub(`${repo.url}/actions`)}>
@@ -118,7 +118,7 @@ export function ActionsView() {
         </div>
         <div className={t.body}>
           {error && !list ? (
-            <Empty icon="alert" title="Couldn’t read the runs" detail={error} action={<Button onClick={refresh}>Try Again</Button>} />
+            <Empty icon="alert" title="Couldn’t read the runs" detail={error} action={<Button size="small" onClick={refresh}>Try Again</Button>} />
           ) : !list ? (
             <Empty icon="pulse" title="Asking GitHub…" detail={`For ${here.name}’s workflow runs`} />
           ) : list.kind === 'none' ? (
@@ -130,14 +130,14 @@ export function ActionsView() {
               detail={`Beluga reads ${repoSlug(list.repo)}’s Actions with GitHub’s command-line tool, signed in as you. Set it up once, then check again.`}
               action={
                 <EmptyActions>
-                  <Button variant="primary" onClick={() => setConnect(true)}>
+                  <Button size="small" variant="primary" onClick={() => setConnect(true)}>
                     Connect GitHub…
                   </Button>
                 </EmptyActions>
               }
             />
           ) : list.kind === 'error' ? (
-            <Empty icon="alert" title="Couldn’t read the runs" detail={list.message} action={<Button onClick={refresh}>Try Again</Button>} />
+            <Empty icon="alert" title="Couldn’t read the runs" detail={list.message} action={<Button size="small" onClick={refresh}>Try Again</Button>} />
           ) : page === 'workflows' ? (
             <Workflows projectId={projectId} flows={flows} runs={runs} />
           ) : !runs.length ? (
@@ -176,7 +176,7 @@ export function ActionsView() {
 /** Each workflow as a card: its name and file, how its last run went, and its graph (or its YAML). */
 function Workflows({ projectId, flows, runs }: { projectId: string; flows: ReturnType<typeof useWorkflows>; runs: readonly GhRun[] }) {
   const late = useLateArrival(projectId, flows.data !== undefined);
-  if (flows.error && !flows.data) return <Empty icon="alert" title="Couldn’t read the workflows" detail={flows.error} action={<Button onClick={flows.refresh}>Try Again</Button>} />;
+  if (flows.error && !flows.data) return <Empty icon="alert" title="Couldn’t read the workflows" detail={flows.error} action={<Button size="small" onClick={flows.refresh}>Try Again</Button>} />;
   if (!flows.data) return <Empty icon="graph" title="Reading the workflows…" detail="From the project’s folder, and GitHub" />;
   const list = flows.data.workflows;
   if (!list.length) return <Empty icon="graph" title="No workflows yet" detail="Workflows live in .github/workflows. Ask your agent to set one up, then push it." />;
@@ -209,7 +209,7 @@ function WorkflowCard({ projectId, flow, last }: { projectId: string; flow: GhWo
             </button>
           </Tip>
         ) : null}
-        <Segmented<'graph' | 'yaml'>
+        <Segmented<'graph' | 'yaml'> size="small"
           label="Show as"
           iconOnly
           value={yamlShown ? 'yaml' : 'graph'}
@@ -219,7 +219,7 @@ function WorkflowCard({ projectId, flow, last }: { projectId: string; flow: GhWo
             { value: 'yaml', label: 'YAML', icon: 'file' },
           ]}
         />
-        {flow.url ? <IconButton icon="external" label="Open on GitHub" onClick={() => openOnGitHub(flow.url)} /> : null}
+        {flow.url ? <IconButton size="small" icon="external" label="Open on GitHub" onClick={() => openOnGitHub(flow.url)} /> : null}
       </header>
       {flow.file === undefined ? (
         <p className={s.graphNote}>GitHub didn’t give Beluga this file.</p>

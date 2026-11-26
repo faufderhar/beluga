@@ -12,12 +12,14 @@ import { type ReactNode, memo, useEffect, useRef, useState } from 'react';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { workspaceSignal } from './attention-model.js';
-import { DotMark, LaterMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
+import { DotMark, LaterMark, ScheduledMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
+import { chatSchedules } from '@beluga/core/sentinel/model.js';
+import { scheduleMark } from '../chat/schedule-model.js';
 import { inSections, isPrStep, toolbarActions } from './toolbar-actions.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { chatLinkItems } from '../lib/chat-links.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
-import { Row } from './sidebar-parts.js';
+import { ExtrasName, Row, type RowExtras } from './sidebar-parts.js';
 import type { RowColor } from '../lib/row-colors.js';
 import { triageItems } from './row-triage-actions.js';
 import { copyLinkItems } from './worktree-link.js';
@@ -104,13 +106,14 @@ export interface WorkspaceFold {
  * A chat or worktree in the sidebar. What it waits on sits at the row's right edge: a hand
  * when it needs you (the row faintly tinted), a count and a bold name when Claude finished or
  * someone wrote while you were elsewhere, Claude's pulse while it works; otherwise its git state.
+ * `extras`: what a list of conversations (the categories, Unread) adds to it; it stays this row.
  */
-export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFamily }: { ws: Workspace; indent: number; fold?: WorkspaceFold; inFamily?: boolean }) {
+export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFamily, extras }: { ws: Workspace; indent: number; fold?: WorkspaceFold; inFamily?: boolean; extras?: RowExtras }) {
   const actions = useActions();
   const { client } = useBeluga();
   const row = useWorkspaceRowActions(ws);
   // Only what the row shows: another conversation streaming doesn't draw it again (KLD-48).
-  const { selected, st, signal, where, archiving, gap } = useApp(
+  const { selected, st, signal, where, archiving, gap, scheduled } = useApp(
     (state) => ({
       selected: state.view.kind === 'workspace' && state.view.id === ws.id,
       st: stateOf(state, ws, 0),
@@ -121,6 +124,8 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFam
       archiving: state.archiving[ws.id],
       // Commits its open PR doesn't have yet (BLG-840): a chip, since merging now would leave them out.
       gap: ws.kind === 'worktree' && !ws.archived ? notOnPr(state.prs[ws.id], ws) : undefined,
+      // Woken by a sentinel on a schedule (BLG-401): how many, and whether all are off (or ran their one time).
+      scheduled: state.selfId ? scheduleMark(chatSchedules(state.sentinel, `${state.selfId}/ws:${ws.id}`)) : undefined,
     }),
     sameDeep,
   );
@@ -139,7 +144,8 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFam
         indent={indent}
         selected={selected}
         className={s.pendingRow}
-        aria-label={ws.name}
+        {...extras?.data}
+        aria-label={extras?.label ?? ws.name}
         aria-busy
         icon={<Icon name={icon} size={14} />}
         label={ws.name}
@@ -168,8 +174,9 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFam
         data-signal-row={signal.level}
         data-kind={ws.kind}
         data-chat-row={ws.kind === 'main' ? undefined : `ws:${ws.id}`}
-        // Named for itself alone (so it's found by name whatever it waits on); the tooltip says the rest.
-        aria-label={ws.name}
+        {...extras?.data}
+        // Named for itself alone (so it's found by name whatever it waits on); the tooltip says the rest. In a list of conversations, with what waits.
+        aria-label={extras?.label ?? ws.name}
         aria-expanded={fold ? fold.open : undefined}
         icon={
           fold ? (
@@ -199,13 +206,15 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFam
         }}
         label={row.label(
           <>
-            <span className={cx(ws.external && s.external, nameClass(signal))}>{ws.name}</span>
+            <ExtrasName name={ws.name} extras={extras} className={cx(ws.external && s.external, nameClass(signal))} />
             {where ? <span className={o.where}>{where.folder}</span> : null}
           </>,
         )}
-        detail={archiving ? `${ws.name}: ${ARCHIVING[archiving]}` : `${ws.name}: ${signal.tip || st.label}${fold ? ` · ${fold.summary}` : ''}${where ? `\n${where.path}` : ''}`}
+        detail={`${extras ? `${extras.where} › ` : ''}${archiving ? `${ws.name}: ${ARCHIVING[archiving]}` : `${ws.name}: ${signal.tip || st.label}${fold ? ` · ${fold.summary}` : ''}${where ? `\n${where.path}` : ''}`}`}
         onClick={(event) => {
-          if (!row.pick(event)) actions.run({ type: 'open_ws', id: ws.id });
+          if (row.pick(event)) return;
+          if (extras) extras.open();
+          else actions.run({ type: 'open_ws', id: ws.id });
         }}
         trailing={
           archiving ? (
@@ -233,10 +242,12 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold, inFam
                   {gap.count}
                 </span>
               ) : null}
+              {extras?.trailing}
               {family ? (
                 <FamilyEnd row={family} now={now} />
               ) : (
                 <>
+                  {scheduled ? <ScheduledMark count={scheduled.count} paused={scheduled.paused} /> : null}
                   <SignalMark signal={signal} fallback={gap ? null : quiet} working={ws.kind === 'worktree' ? 'worktree' : 'claude'} />
                   {mark}
                 </>

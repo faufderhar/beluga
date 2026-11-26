@@ -7,6 +7,8 @@ import { DEFAULT_ROOTS, WorkspaceStore } from '../src/workspaces/store.js';
 it('a fresh workspace store discovers only projects in the temporary test home', async () => {
   const home = os.homedir();
   expect(path.basename(path.dirname(home))).toMatch(/^beluga-test-/);
+  // Inside the run's own temp folder (scripts/test-temp-root.mjs), removed when the run ends.
+  expect(path.basename(path.dirname(path.dirname(home)))).toMatch(/^beluga-run-\d+-/);
   expect(process.env.GIT_CONFIG_GLOBAL).toBe(path.join(home, '.gitconfig'));
   expect(process.env.XDG_CONFIG_HOME).toBe(path.join(home, '.config'));
   expect(DEFAULT_ROOTS.every((root) => path.dirname(root) === home)).toBe(true);

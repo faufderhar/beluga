@@ -80,6 +80,22 @@ export function useClock(on: boolean): number {
 }
 
 /**
+ * Now, for a task card: every second while it shows elapsed time (`on`), else to the minute, for
+ * its "Updated 2 h ago" (a card never says "just now" for lack of a clock).
+ */
+export function useCardClock(on: boolean): number {
+  const fast = useClock(on);
+  const [slow, setSlow] = useState(Date.now);
+  useEffect(() => {
+    if (on) return;
+    setSlow(Date.now());
+    const t = setInterval(() => setSlow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [on]);
+  return on ? fast : slow;
+}
+
+/**
  * The plan's own conversation, loaded: after a restart it's only on disk until something asks for
  * it (workspaces.load). False until that answered for this channel; true for one that isn't a workspace's.
  */

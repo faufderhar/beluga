@@ -1,6 +1,7 @@
 import type { AgentRef, ProviderUsage } from '../../protocol.js';
 import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
 import type { DialogueEnvelope, Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
+import { YOUR_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Tasks between Claudes in the shared state (the Mac app draws them): what you sent and what
@@ -233,8 +234,8 @@ export const oneLine = (text: string, max = 120): string => {
 export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary' | 'secret' | 'via'>>): string => {
   const who = `${t.peerName}${t.by === 'agent' ? "'s agent" : ''}${t.via ? ` (via ${oneLine(t.via)})` : ''}`;
   if (t.kind === 'file' && t.secret) return `${who} wants ${t.secret.label}`;
-  if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
-  if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;
+  if (t.kind === 'run' && t.command) return `${who} wants to run on ${YOUR_COMPUTER}: ${oneLine(t.command)}`;
+  if (t.kind === 'file' && t.path) return `${who} wants a file from ${YOUR_COMPUTER}: ${oneLine(t.path)}`;
   return `${who} wants to: ${requestGist(t)}`;
 };
 

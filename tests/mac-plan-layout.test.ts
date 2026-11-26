@@ -7,6 +7,7 @@ import {
   CHAT_MIN,
   DEFAULT_PLAN_LAYOUT,
   FOLDED,
+  GATE,
   MILESTONE,
   PLAN_GAPS,
   TASK_CARD,
@@ -51,6 +52,13 @@ describe('the plan graph’s geometry', () => {
     // A longer criterion wraps (two lines at most), a narrower gate wraps sooner.
     expect(gateHeight(['x'.repeat(200)], 580)).toBe(gateHeight(['a', 'b'], 580) - 5);
     expect(gateHeight(['x'.repeat(70)], 300)).toBeGreaterThan(gateHeight(['x'.repeat(70)], 600));
+    // Guessed: a Chinese, Japanese or Korean character or a capital takes more room than a small letter.
+    expect(gateHeight(['x'.repeat(60)], 580)).toBe(gateHeight(['a'], 580));
+    for (const wide of ['通'.repeat(60), 'の'.repeat(60), '한'.repeat(60), 'W'.repeat(80)]) expect(gateHeight([wide], 580)).toBe(gateHeight(['x'.repeat(200)], 580));
+    // Measured: whether it fits on one line is the screen's call, a pixel to spare.
+    const room = 580 - 2 * GATE.padX - GATE.bullet;
+    expect(gateHeight(['fits'], 580, () => room - 1)).toBe(gateHeight(['a'], 580));
+    expect(gateHeight(['wraps'], 580, () => room)).toBe(gateHeight(['x'.repeat(200)], 580));
     // Stretched to its row's tallest: the gate stays at the foot.
     const tall = milestoneFrame(inner, ['One', 'Two'], false, f.height + 100);
     expect(tall.height).toBe(f.height + 100);
@@ -68,7 +76,9 @@ describe('the plan graph’s geometry', () => {
     expect(milestoneFrame({ width: 100, height: 400 }, [], true).width).toBe(FOLDED.minWidth);
     expect(milestoneFrame({ width: 400, height: 400 }, [], true).width).toBe(400);
     // Wide enough for its title beside its counts (a long one ends in an ellipsis past FOLDED.maxWidth).
-    expect(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, 'Test-mode foundations').width).toBe(Math.round(FOLDED.chrome + 21 * 7.4));
+    expect(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, 'Test-mode foundations', () => 120).width).toBe(FOLDED.chrome + 120);
+    // A Chinese title of as many characters takes more room than a Latin one.
+    expect(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, '测试模式基础').width).toBeGreaterThan(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, 'abcdef').width);
     expect(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, 'x'.repeat(80)).width).toBe(FOLDED.maxWidth);
   });
 

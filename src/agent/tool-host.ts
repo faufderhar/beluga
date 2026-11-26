@@ -39,6 +39,8 @@ export interface MountedRun {
   readonly servers: Record<string, StdioServerConfig>;
   /** The same suites straight over HTTP (what `beluga mcp-serve` relays to), by suite name. */
   readonly http: Record<string, HttpServerConfig>;
+  /** Every tool mounted, by its MCP name (`mcp__beluga__list_peers`): what a runtime may take for Beluga's own. */
+  readonly tools: ReadonlySet<string>;
   /** Where its hook calls go (POST with the token), when it was mounted with one. */
   readonly hookUrl?: string;
   close(): void;
@@ -74,7 +76,8 @@ export class ToolHost {
       Object.keys(suites).map((suite) => [suite, { type: 'stdio' as const, command: this.serve.command, args: [...this.serve.args, 'mcp-serve', suite], env: { BELUGA_TOOLS_URL: url, BELUGA_TOOLS_TOKEN: token } }]),
     );
     const http = Object.fromEntries(Object.keys(suites).map((suite) => [suite, { url: `${url}/mcp/${suite}`, headers: { Authorization: `Bearer ${token}` } }]));
-    return { token, servers, http, ...(hook ? { hookUrl: `${url}/hook` } : {}), close: () => void this.runs.delete(token) };
+    const tools = new Set(Object.values(suites).flatMap((suite) => suite.tools.map((t) => toolName(suite.name, t.name))));
+    return { token, servers, http, tools, ...(hook ? { hookUrl: `${url}/hook` } : {}), close: () => void this.runs.delete(token) };
   }
 
   async close(): Promise<void> {

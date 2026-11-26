@@ -15,3 +15,4 @@ export { overlayCursor } from './render.js';
 export { DEFAULT_PALETTE, buildColorTable } from './palette.js';
 export { defaultShell, childEnv } from './pty.js';
 export { listShells, scriptShell } from './shells.js';
+export { installedMonoFonts, watchFontDirs } from './fonts.js';

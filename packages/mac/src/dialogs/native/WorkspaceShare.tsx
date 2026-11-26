@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import type { WsRole } from '@beluga/protocol.js';
+import { type ShareLevel, grantOfLevel, levelOf } from '@beluga/shared/share-levels.js';
 import { inviteChoice } from '@beluga/ui/invite-menus.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
-import { shareRowDetail, worktreeShareRows, type WorktreeShareRow } from '@beluga/ui/worktree-share.js';
+import { handoffPeople, shareRowDetail, worktreeShareRows, type WorktreeShareRow } from '@beluga/ui/worktree-share.js';
 import { cannotTake } from '@beluga/net/mesh/features.js';
 import { presenceOf } from '@beluga/core/friend-share-people.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Button } from '../../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { openNet } from '../../network/net-sheets.js';
+import { openSheet } from '../../lib/sheets.js';
 import { Select } from '../settings-controls.js';
 import type { NativeMenuProps } from './index.js';
 import { Choice, Section, Sheet, Tag } from './parts.js';
-import { ACCESS, type Access, SharePicker } from './SharePicker.js';
+import { type Access, SharePicker, type TakeOver, accessOptions } from './SharePicker.js';
 import s from './sharing.module.css';
 import { thisComputer } from '../../lib/os-words.js';
 
@@ -20,6 +22,8 @@ import { thisComputer } from '../../lib/os-words.js';
  * Share a workspace with just this one worktree's people (BLG-340): pick a friend and what they can
  * do, Share (BLG-623); friends get it over the Beluga network with nobody in a room. Listed under it:
  * who has it (friends, and anyone from your room), each with their level, changed or removed in place.
+ * A worktree can also be taken over (BLG-967, what Hand off was): their agent continues it on their
+ * computer. Any share can come with a handoff note your agent writes.
  */
 export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>) {
   const api = useApi();
@@ -38,10 +42,13 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
   const gives = project?.root ? 'its conversation, files and Scratch' : 'its conversation and Scratch';
   const rows = worktreeShareRows({ peers, self, members, network, projectShares, projects }, ws.id);
   const said = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'warn'));
+  // A worktree with a branch can be forked to a friend's computer (BLG-1019); a chat can't.
+  const forks = ws.kind === 'worktree' && Boolean(ws.branch) && Boolean(project?.root);
   const set = (row: WorktreeShareRow, access: Access): void => {
     const where = { peerId: row.peerId, workspaceId: ws.id, ...(project ? { projectId: project.id } : {}) };
-    if (row.via === 'room') said(access === 'none' ? api.sharing.remove(ws.id, row.peerId) : api.sharing.invite(ws.id, row.peerId, access));
-    else said(access === 'none' ? api.sharing.unshareFriend(where) : api.sharing.shareWithFriend({ ...where, role: access }));
+    const grant = access === 'none' ? undefined : grantOfLevel(access);
+    if (row.via === 'room') said(!grant ? api.sharing.remove(ws.id, row.peerId) : api.sharing.invite(ws.id, row.peerId, grant.role));
+    else said(!grant ? api.sharing.unshareFriend(where) : api.sharing.shareWithFriend({ ...where, role: grant.role, fork: grant.fork }));
   };
   const shared = rows.filter((r) => r.access !== 'none');
   // Only friends are picked here; someone in your room who isn't one is invited from their name, or by link.
@@ -51,10 +58,29 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
     const why = r.via === 'network' ? cannotTake(friend.name, friend.beluga, 'share.project', friend.online) : undefined;
     return [{ peerId: r.peerId, name: r.name, ...(why ? { why } : {}) }];
   });
-  const add = (peerId: string, role: WsRole): void => {
+  const add = (peerId: string, level: ShareLevel, note: boolean): void => {
     const row = rows.find((r) => r.peerId === peerId);
-    if (row) set(row, role);
+    if (!row) return;
+    set(row, level);
+    if (note) said(api.remote.handoffNote(ws.id, peerId));
   };
+  // Only a worktree with a branch can go to someone else's computer.
+  const takeOver: TakeOver | undefined =
+    ws.kind === 'worktree' && ws.branch
+      ? {
+          candidates: handoffPeople({ peers, self, network }).map((p) => ({
+            peerId: p.peerId,
+            name: p.name,
+            detail: p.via === 'room' ? 'In your room' : p.online ? 'Friend' : 'Friend · offline: it waits for them',
+            ...(p.why ? { why: p.why } : {}),
+          })),
+          check: (peerId) => api.remote.canHandOff(ws.id, peerId),
+          onTakeOver: (peerId) => {
+            said(api.remote.handoff(ws.id, peerId));
+            close();
+          },
+        }
+      : undefined;
   const none = !network.enabled
     ? 'Turn on the Beluga network in Settings to share with your friends.'
     : network.friends.length
@@ -65,7 +91,7 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
   return (
     <Sheet
       title={`Share “${ws.name}”`}
-      subtitle={`Only this ${what}: people you add see ${gives}, and can ask your agent here. Friends get it over the Beluga network, so nobody needs to be in your room.`}
+      subtitle={`Only this ${what}: people you add see ${gives}, and can ask your agent here${takeOver ? ', or take it over on their computer' : ''}. Friends get it over the Beluga network, so nobody needs to be in your room.`}
       icon="share"
       close={close}
       footer={
@@ -86,7 +112,7 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
       }
     >
       <Section title="Share with">
-        <SharePicker candidates={candidates} onShare={(peerId, role) => add(peerId, role)} none={none} />
+        <SharePicker candidates={candidates} onShare={add} none={none} forks={forks} canNote {...(takeOver ? { takeOver } : {})} startTakingOver={Boolean(menu.takeOver)} />
       </Section>
       <Section title="People with access">
         <div className={s.list} role="list" aria-label="People with access">
@@ -113,13 +139,25 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
                   </span>
                   <span className={s.itemDetail}>{shareRowDetail(row, inRoom, what)}</span>
                 </div>
-                <Select<Access> label={`Access for ${row.name}`} value={row.access} options={ACCESS} onChange={(a) => set(row, a)} />
+                <Select<Access> label={`Access for ${row.name}`} value={row.access === 'none' ? 'none' : levelOf(row.access, row.fork)} options={accessOptions(forks && row.via === 'network')} onChange={(a) => set(row, a)} />
               </div>
             );
           })}
           {shared.length ? null : <div className={s.empty}>Only you so far.</div>}
         </div>
       </Section>
+      {ws.kind === 'worktree' && ws.branch ? (
+        <Section
+          title="When someone forks it"
+          action={
+            <Button size="small" variant="quiet" onClick={() => (close(), openSheet({ kind: 'fork_carry', wsId: ws.id }))}>
+              What Forks Bring…
+            </Button>
+          }
+        >
+          <p className={s.hint}>Only people who can fork it see Fork. Their fork gets its commits, changes, conversation and Scratch. Files git ignores, like .context/, stay here unless you pick them. Secrets go only if you tick each one, and only to people who can fork with secrets.</p>
+        </Section>
+      ) : null}
       <p className={s.hint}>Your agent runs on your computer. Risky steps still ask you, unless you fully trust the person asking.</p>
     </Sheet>
   );

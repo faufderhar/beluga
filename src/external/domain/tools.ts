@@ -166,6 +166,7 @@ export const WORK_TOOLS = [
   'worktree_run_setup',
   'project_set_script',
   'chat_set_model',
+  'chat_set_effort',
   'chat_set_agent',
   'worktree_excerpt',
   'worktree_open_code',
@@ -226,6 +227,7 @@ export const WORK_TOOLS = [
   'issue_fix',
   'issue_to_task',
   'issue_comment',
+  'git_push_main',
 ] as const;
 
 /** Files and terminals with no run in between, and adding or removing projects. */
@@ -288,6 +290,7 @@ export const MORE_STATE_TOOLS = [
   'plan_set_parallel',
   'plan_set_tests_at',
   'plan_set_work_agent',
+  'plan_set_role_agent',
   'plan_tidy_up',
   'plan_pass',
   'plan_recheck',
@@ -662,6 +665,7 @@ export const TOOL_ACCESS: ToolAccess<ExternalTool> = {
   worktree_run_setup: 'file_outside_or_shell',
   project_set_script: 'writes_code',
   chat_set_model: 'state_write',
+  chat_set_effort: 'state_write',
   chat_set_agent: 'state_write',
   worktree_excerpt: 'read',
   worktree_open_code: 'read',
@@ -730,6 +734,7 @@ export const TOOL_ACCESS: ToolAccess<ExternalTool> = {
   issue_fix: 'destructive',
   issue_to_task: 'state_write',
   issue_comment: 'destructive',
+  git_push_main: 'destructive',
   file_list: 'read',
   file_read: 'read',
   file_find: 'read',
@@ -780,6 +785,7 @@ export const TOOL_ACCESS: ToolAccess<ExternalTool> = {
   plan_set_parallel: 'state_write',
   plan_set_tests_at: 'state_write',
   plan_set_work_agent: 'state_write',
+  plan_set_role_agent: 'state_write',
   plan_tidy_up: 'state_write',
   plan_pass: 'destructive',
   plan_recheck: 'launch_or_send',

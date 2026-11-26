@@ -102,7 +102,7 @@ export function CleanupCard({ items, state, onDone }: { items: readonly Cleanup[
             {folders === 1 ? 'One folder' : `${folders} folders`} you can safely put away. Branches, conversations and uncommitted work are kept.
           </p>
         </div>
-        <Button variant="primary" icon="archive" disabled={busy} onClick={() => ask(items)}>
+        <Button size="small" variant="primary" icon="archive" disabled={busy} onClick={() => ask(items)}>
           {busy ? 'Cleaning Up…' : 'Clean Up…'}
         </Button>
       </div>

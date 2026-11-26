@@ -1,5 +1,5 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
-import { type Autonomy, type Combining, type MilestoneAgent, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, type TaskWatch, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
+import { type Autonomy, type Combining, type MilestoneAgent, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, type TaskWatch, autonomyOf, milestoneDeps, openMilestones, shownBody, startsByItself } from './model.js';
 import { type RunInfo, type TaskPulse, type WaitingMessage, messageState, pulseOf, pulseWords } from './watchdog.js';
 
 /**
@@ -144,7 +144,11 @@ export const NOBODY_LIVE: Live = { busy: () => false, asking: () => false };
 
 function taskState(board: BoardState, issue: Issue | undefined, live: Live): { readonly state: TaskState; readonly worktree?: string; readonly step?: string } {
   if (!issue) return { state: 'missing' };
-  const worktree = issue.worktrees.at(-1);
+  const own = issue.worktrees.at(-1);
+  // Its own worktree, else one carrying its work (Claude moved it along from there before the plan
+  // linked it): without it, a task its agent is busy on read as stopped without finishing.
+  const worktree = own && !issue.worktreeGone ? own : (issue.carriedBy ?? own);
+  const gone = worktree === own && Boolean(issue.worktreeGone);
   switch (issue.status) {
     case 'done':
       return { state: 'done', ...(worktree ? { worktree } : {}) };
@@ -155,7 +159,7 @@ function taskState(board: BoardState, issue: Issue | undefined, live: Live): { r
     case 'in_plan':
       return { state: 'planned', ...(worktree ? { worktree } : {}) };
     case 'in_progress': {
-      if (!worktree || issue.worktreeGone) return { state: 'idle', ...(worktree ? { worktree } : {}) };
+      if (!worktree || gone) return { state: 'idle', ...(worktree ? { worktree } : {}) };
       const channel = `ws:${worktree}`;
       if (live.asking(channel)) return { state: 'asking', worktree };
       if (live.busy(channel)) {
@@ -388,12 +392,12 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   if (merging?.merging) return { kind: 'merging', milestone: merging, text: mergingText(merging.merging, merging.milestone.title, plan.branch) };
   // Yours to pass only once there's something to go on: Claude's check came back (or there's
   // nothing to check). While the head Claude checks, on every mode, the plan waits on Claude.
-  // On Autopilot only once its merge failed: Autopilot won't pass it again, so Pass Again is yours.
-  const yoursToPass = v.open.find((m) => m.state === 'gate' && (m.run.check || !m.milestone.criteria.length) && (m.run.mergeFailed || !(m.autonomy === 'autopilot' && m.milestone.criteria.length)));
+  // On Autopilot only once its merge failed (Autopilot won't pass it again, so Pass Again is yours), or while it waits for your Start.
+  const yoursToPass = v.open.find((m) => m.state === 'gate' && (m.run.check || !m.milestone.criteria.length) && (m.run.mergeFailed || plan.held || !(m.autonomy === 'autopilot' && m.milestone.criteria.length)));
   if (yoursToPass) return { kind: 'pass', milestone: yoursToPass };
   const autonomyOfTask = new Map(v.open.map((m) => [m.milestone.id, m.autonomy]));
-  // Tasks for you, or (step by step) every task, wait for your click.
-  const yours = v.ready.filter((t) => !t.queued && (t.forYou || autonomyOfTask.get(t.milestoneId) === 'step'));
+  // Tasks for you, or (step by step, or switched and waiting for your Start) every task, wait for your click.
+  const yours = v.ready.filter((t) => !t.queued && (t.forYou || !startsByItself(plan, autonomyOfTask.get(t.milestoneId) ?? plan.autonomy)));
   if (yours.length && v.active.length < plan.maxParallel) return { kind: 'start', tasks: yours };
   const checking = v.open.find((m) => m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check));
   if (checking) return { kind: 'checking', milestone: checking };
@@ -414,7 +418,7 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
 export function startable(view: PlanView, skip: ReadonlySet<string> = new Set(), starting = 0): readonly TaskView[] {
   const { plan } = view;
   if (plan.paused || plan.status !== 'active' || plan.draft) return [];
-  const auto = new Set(view.open.filter((m) => m.state === 'running' && m.autonomy !== 'step').map((m) => m.milestone.id));
+  const auto = new Set(view.open.filter((m) => m.state === 'running' && startsByItself(plan, m.autonomy)).map((m) => m.milestone.id));
   const room = Math.max(0, plan.maxParallel - view.active.length - starting);
   return view.ready.filter((t) => auto.has(t.milestoneId) && !t.forYou && !t.queued && !(t.issue && skip.has(t.issue.id))).slice(0, room);
 }

@@ -84,10 +84,10 @@ export function PhoneStep() {
           <span className={s.eyebrowSoft}>· Android only for now</span>
         </Rise>
         <h2 className={s.title}>
-          <Words text="Your agent in your pocket." delay={0.05} />
+          <Words text="Follow your agents from your phone." delay={0.05} />
         </h2>
         <Rise delay={0.3} className={s.body}>
-          The Beluga app on your phone shows what your agent is doing and lets you answer, ask and chat from anywhere. It reads, it never edits. It’s on Android for now; iPhone comes later.
+          The Beluga app for Android shows what your agents are doing. Answer their questions, approve requests and chat from anywhere. It can read your code but never change it. An iPhone app is planned.
         </Rise>
         {devices.length ? (
           <Rise delay={0.4} className={s.accessStatus}>

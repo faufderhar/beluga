@@ -89,13 +89,13 @@ describe('Back and Forward between this Mac and a computer', () => {
   it('goes back and forth between this Mac’s page and the same worktree id on a computer', () => {
     const alive = (): boolean => true;
     let h = visit(EMPTY_HISTORY, { view: ws('w1'), panels });
-    h = visit(h, { view: onMachine(AWS, ws('w1')), panels: { ...panels, topTab: 'files' } });
+    h = visit(h, { view: onMachine(AWS, ws('w1')), panels: { ...panels, shown: ['files'] } });
     expect(h.back).toHaveLength(1);
     const back = goBack(h, alive);
     expect(back.to?.view).toEqual(ws('w1'));
     const forward = goForward(back.history, alive);
     expect(forward.to?.view).toEqual(onMachine(AWS, ws('w1')));
-    expect(forward.to?.panels.topTab).toBe('files');
+    expect(forward.to?.panels.shown).toEqual(['files']);
   });
 });
 

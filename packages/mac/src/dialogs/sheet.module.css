@@ -35,6 +35,22 @@
     transform: translate(-50%, -6px) scale(0.985);
   }
 }
+/*
+ * A sheet opened from Settings (a project from Settings › Environment, BLG-970) goes above it
+ * (settings.module.css: 44/45, or 86/87 over the welcome), still under pop-ups (90).
+ */
+:global(body:has([data-settings-window])) .overlay {
+  z-index: 48;
+}
+:global(body:has([data-settings-window])) .sheet {
+  z-index: 49;
+}
+:global(body:has([data-settings-window][data-over-welcome])) .overlay {
+  z-index: 88;
+}
+:global(body:has([data-settings-window][data-over-welcome])) .sheet {
+  z-index: 89;
+}
 .head {
   display: flex;
   align-items: center;
@@ -50,9 +66,9 @@
 .close {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 11px;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: 50%;
   color: var(--text-2);
 }
 .close:hover {

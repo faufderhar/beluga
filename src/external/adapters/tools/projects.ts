@@ -1,4 +1,5 @@
 import type { MethodRow, Scope } from './method-tool.js';
+import { THIS_COMPUTER } from '../../../shared/assistant.js';
 
 /** Adding, showing and removing projects. A folder that is not a project yet has nothing for a grant to check, so these ask below full. */
 
@@ -7,7 +8,7 @@ const none: Scope = { on: 'none' };
 
 export const PROJECT_ROWS: readonly MethodRow[] = [
   { name: 'project_init_git', method: 'projects.initGit', params: ['path'], scope: none, description: 'Start a git repository in a folder.' },
-  { name: 'project_add', method: 'projects.add', params: ['path'], scope: none, description: 'Add a git repository on this Mac as a project.' },
+  { name: 'project_add', method: 'projects.add', params: ['path'], scope: none, description: `Add a git repository on ${THIS_COMPUTER} as a project.` },
   { name: 'project_add_folder', method: 'projects.addFolder', params: ['path'], scope: none, description: 'Add a folder of repositories: each one in it becomes a project.' },
   { name: 'project_create', method: 'projects.create', params: ['name', 'parent'], scope: none, description: 'Start a new project: a folder, git and a first commit.' },
   { name: 'project_set_icon', method: 'projects.setIcon', params: ['project', 'image'], scope: project, description: 'Set a project\'s icon from an image file, or go back to the default.' },

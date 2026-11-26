@@ -1,48 +1,40 @@
 /*
  * The right panel (Changes, Files, Terminal, Info), the terminal drawer under the center, and the
- * focus view. The panel's chrome continues the toolbar (same height, same background); its
- * lists sit on the sunken background like a sidebar; code, diffs and previews on the page white.
+ * focus view. The panel is a dock (Dockview): its groups' tabs and dividers are styled in
+ * styles/dock.css from Beluga's own colours; what's inside a tab is styled here. The top row's
+ * tabs continue the toolbar (same height, same background); lists sit on the sunken background
+ * like a sidebar; code, diffs and previews on the page white.
  */
 
 /* ---- the panel */
 
 /*
- * Its width changes in one step, never animated: an animated width laid the whole conversation,
- * the toolbar and every terminal out again on each frame of the slide, which froze it. What
- * slides is the inside, moved (a transform, off the main thread).
+ * Its width changes in one step, never animated (the frame gives it its room at once): an animated
+ * width laid the whole conversation, the toolbar and every terminal out again on each frame of the
+ * slide, which froze it. What slides is the inside, moved (a transform, off the main thread).
  */
 .panel {
   position: relative;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
   /* The room it takes, as the page beside it, so opening shows no gray gap before the panel arrives. */
   background: var(--bg);
 }
-/* Closing: its room is already given back, so it slides away over the conversation. */
-.leaving {
-  overflow: visible;
-  z-index: 50;
-}
-/* Fixed to the panel's width and pinned right, so it slides instead of re-wrapping as the panel opens and closes. */
 .inner {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   display: flex;
   flex-direction: column;
   border-left: 0.5px solid var(--hairline);
   background: var(--bg-sunken);
-  transform: translateX(0);
-  transition: transform var(--dur) var(--ease-out);
+  animation: slideIn var(--dur) var(--ease-out);
 }
-.innerOut {
-  transform: translateX(100%);
-}
-/* While it slides, its own compositing layer; not after (a layer of its own blurs text in WebKit). */
-.sliding {
-  will-change: transform;
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
 }
 /* The tab's content, drawn once the slide is over, fades in instead of popping. */
 .settled .body {
@@ -53,148 +45,68 @@
     opacity: 0;
   }
 }
-.head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: var(--titlebar-h);
-  padding: 0 12px;
-  border-bottom: 0.5px solid var(--hairline);
-  background: var(--bg);
-}
-/* ---- the two panes (top: what Claude made; bottom: what runs) */
-.pane {
-  flex: 1 1 0;
+.dockRoot {
+  position: relative;
+  flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
-.paneClosed {
-  flex: none;
+.dockview {
+  width: 100%;
+  height: 100%;
 }
-.paneHead {
-  flex: none;
+/* The center's dock (the chat and what you put beside it) is the page, not a sunken panel. */
+.centerDock {
   display: flex;
+  min-width: 0;
+}
+
+/* ---- a tab in a group's strip (the strip itself: styles/dock.css) */
+
+.tabIn {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 8px 0 12px;
-  border-top: 0.5px solid var(--hairline);
-  background: var(--bg);
-  container-type: inline-size;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  /* The segment's own padding, by its strip's size (styles/dock.css). */
+  padding: 0 var(--tab-pad, 9px);
+  white-space: nowrap;
 }
-.pane:not(.paneClosed) > .paneHead {
-  border-bottom: 0.5px solid var(--hairline);
+.tabIn > svg {
+  flex: none;
+}
+.tabName {
+  min-width: 0;
+  overflow: hidden;
+}
+.tabName > span {
+  display: block;
+  min-width: 0;
+  padding-left: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tabIn > .count,
+.tabIn > .tabDot {
+  margin-left: 5px;
+}
+/* A strip too narrow for every name (RightPanel.tsx fitTabs): the tabs you're not on show their
+   icon only, then all of them. The name stays, out of sight, for VoiceOver; the tooltip says it. */
+:global(.dv-groupview[data-compact='others']) :global(.dv-tab:not(.dv-active-tab)) .tabName,
+:global(.dv-groupview[data-compact='all']) .tabName {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .paneToggle {
   flex: none;
+  margin: 0 4px;
 }
 
-/*
- * The bottom pane under the top one is a dock of its own (Terminal, Background): a darker
- * background, a firm edge with a soft shadow over what's above, plain underlined tabs instead of
- * the top's segmented ones. Folded, it's a slim bar (terminal mark, the tab names, a chevron).
- */
-.dock {
-  position: relative;
-  z-index: 1;
-  background: var(--bg-sidebar-solid);
-  box-shadow: 0 -1px 0 var(--hairline), 0 -6px 14px -10px rgba(0, 0, 0, 0.35);
-}
-/* On light the dark theme's shadow read as a grey smear: a firm line and a whisper of shade. */
-:global(:root[data-theme='light']) .dock {
-  box-shadow: 0 -1px 0 var(--hairline), 0 -4px 10px -8px rgba(0, 0, 0, 0.12);
-}
-.dockHead {
-  gap: 4px;
-  height: 32px;
-  padding: 0 6px 0 10px;
-  border-top: 0;
-  background: var(--bg-sidebar-solid);
-}
-.dockClosed > .dockHead {
-  height: 28px;
-  cursor: default;
-}
-.dockClosed > .dockHead:hover {
-  background: color-mix(in srgb, var(--bg-sidebar-solid) 92%, var(--text) 8%);
-}
-.dockMark {
-  flex: none;
-  color: var(--text-3);
-}
-.tabs.dockTabs {
-  flex: 0 1 auto;
-  width: auto;
-  min-width: 0;
-  gap: 2px;
-  padding: 0;
-  border-radius: 0;
-  background: none;
-}
-.dockTabs .tab {
-  flex: none;
-  height: 22px;
-  padding: 0 7px;
-  border-radius: 4px;
-  font-size: 0.86rem;
-  color: var(--text-3);
-}
-.dockTabs .tab:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.dockTabs .tabName > span {
-  padding-left: 0;
-}
-/* The tab you're on: underlined (the top pane's tabs are raised pills), so the two never blend. */
-.dockTabs .tabOn,
-.dockTabs .tabOn:hover {
-  background: none;
-  box-shadow: inset 0 -2px 0 var(--text-2);
-  border-radius: 0;
-  color: var(--text);
-}
-.dockClosed .dockTabs .tabOn {
-  box-shadow: none;
-  color: var(--text-2);
-}
-.dock .paneToggle {
-  margin-left: auto;
-}
-/* A tab dragged over a strip: where it lands. */
-.tabs {
-  position: relative;
-}
-.dropBefore {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.dropEnd {
-  flex: none;
-  width: 2px;
-  margin-left: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-.tab[draggable='true'] {
-  -webkit-user-drag: element;
-}
-
-/* Narrow: the four names stay whole; the icons go first, and each tab takes the room its name needs. */
-.head {
-  container-type: inline-size;
-}
-@container (max-width: 420px) {
-  .tabs .tab > svg {
-    display: none;
-  }
-  .tabs .tab {
-    flex: 1 1 auto;
-  }
-  .tabs .tabName > span {
-    padding-left: 0;
-  }
-}
 /* A tab's second view (Changes · History), switched just under the tabs. */
 .views {
   flex: none;
@@ -205,72 +117,6 @@
   height: 20px;
   padding: 0 9px;
   font-size: 0.86rem;
-}
-.tabs {
-  display: flex;
-  gap: 1px;
-  width: 100%;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--bg-hover);
-}
-.tab {
-  flex: 1 1 0;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 24px;
-  padding: 0 6px;
-  border-radius: 5px;
-  color: var(--text-2);
-  font-size: 0.92rem;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast), flex-grow var(--dur) var(--ease-out);
-}
-.tab > svg {
-  flex: none;
-}
-/* The name opens and closes sideways (a grid column from nothing to its width). */
-.tabName {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  overflow: hidden;
-  transition: grid-template-columns var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
-}
-.tabName > span {
-  min-width: 0;
-  padding-left: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tab > .count,
-.tab > .tabDot {
-  margin-left: 5px;
-}
-/* Narrow: only the tab you're on shows its name, and takes the room it needs. */
-.tabsFolded .tab:not(.tabOn) .tabName {
-  grid-template-columns: minmax(0, 0fr);
-  opacity: 0;
-}
-.tabsFolded .tab:not(.tabOn) > .count,
-.tabsFolded .tab:not(.tabOn) > .tabDot {
-  margin-left: 4px;
-}
-.tabsFolded .tabOn {
-  /* Never narrower than its icon and whole name, however many tabs share the strip. */
-  flex: 2.4 0 auto;
-}
-.tab:hover {
-  color: var(--text);
-}
-.tabOn,
-.tabOn:hover {
-  background: var(--bg-raised);
-  color: var(--text);
-  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .count {
   flex: none;
@@ -309,10 +155,15 @@
   background: var(--accent);
 }
 .body {
-  flex: 1;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--bg-sunken);
+}
+.body[hidden] {
+  display: none;
 }
 .loading {
   flex: 1;
@@ -366,13 +217,6 @@
 .handle:focus-visible {
   background: var(--accent);
 }
-/* The panel's own border is the line; the handle only lights up. */
-.edge {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-}
 :global(:root[data-resizing='x']),
 :global(:root[data-resizing='x'] *) {
   cursor: col-resize !important;
@@ -394,9 +238,70 @@
 }
 .top {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* Files: the tree and the file, over the line that says where they are on disk. */
+.filesBox {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pathBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 4px 0 12px;
+  border-top: 0.5px solid var(--hairline);
+  color: var(--text-3);
+}
+/* Right to left, so a long path loses its start, not its end; the path itself (bdi) reads left to right. */
+.pathText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+/* What you picked, with what belongs under it (a diff and its Commit / PR row). */
+.second {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/*
+ * With room for both (use-split.ts: a tab beside the chat, a wide panel), the preview is beside
+ * the list instead of under it, with a line between them to drag.
+ */
+.stackSide {
+  flex-direction: row;
+}
+.stackSide > .top {
+  min-width: 180px;
+}
+.stackSide > .handleX {
+  background: var(--hairline);
+}
+.stackSide > .handleX:hover,
+.stackSide > .handleX.handleActive,
+.stackSide > .handleX:focus-visible {
+  background: var(--accent);
+}
+.stackSide > .preview,
+.stackSide > .second {
+  min-width: 0;
 }
 .list {
   flex: 1;
@@ -734,7 +639,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 34px;
+  height: 38px;
   padding: 0 6px 0 8px;
   border-bottom: 0.5px solid var(--hairline);
   background: var(--bg);
@@ -744,27 +649,42 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* Quiet tabs; the open one is a raised chip with a hairline edge (no fill on the others). */
 .termTab {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 6px;
-  color: var(--text-2);
+  height: 26px;
+  padding: 0 10px;
+  border: 0.5px solid transparent;
+  border-radius: 7px;
+  color: var(--text-3);
   font-size: 0.9rem;
   font-weight: 500;
   white-space: nowrap;
+  cursor: default;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
-.termTab:hover,
-.termTabOn {
+.termTab > :first-child {
+  transform: scale(0.85);
+}
+.termTab:hover {
   background: var(--bg-hover);
+  color: var(--text-2);
+}
+.termTabOn,
+.termTabOn:hover {
+  border-color: var(--hairline-strong);
+  background: var(--bg-raised);
   color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .termAdd {
   flex: none;
@@ -775,52 +695,6 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-/* ---- the drawer under the center */
-
-.drawer {
-  position: relative;
-  flex: none;
-  min-height: 120px;
-  display: flex;
-  flex-direction: column;
-  border-top: 0.5px solid var(--hairline-strong);
-  background: var(--term-bg, var(--bg));
-  /* A dock under the conversation, as the panel's is: an edge you can see. */
-  box-shadow: 0 -6px 14px -10px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-  animation: drawerIn var(--dur) var(--ease-out);
-}
-.drawerClosing {
-  animation: drawerOut var(--dur) var(--ease-out) forwards;
-}
-@keyframes drawerIn {
-  from {
-    height: 0;
-    min-height: 0;
-  }
-}
-@keyframes drawerOut {
-  to {
-    height: 0;
-    min-height: 0;
-  }
-}
-/* A 5 px strip along the drawer's top edge (it can't reach above: the drawer clips). */
-.drawerEdge {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: transparent;
-}
-.drawerEdge:hover,
-.drawerEdge.handleActive,
-.drawerEdge:focus-visible {
-  background: transparent;
-  box-shadow: inset 0 1px 0 var(--accent), inset 0 2px 0 var(--accent);
 }
 
 /* ---- the focus view (a diff, a file or the terminal across the center) */
@@ -902,4 +776,15 @@
 }
 .rowOn .ago {
   color: inherit;
+}
+
+/* Liquid Glass: the panel is the same glass as the sidebar, on the right. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .panel {
+  height: auto;
+  margin: var(--glass-inset) var(--glass-inset) var(--glass-inset) 0;
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-ring), var(--glass-drop);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .inner {
+  border-left: 0;
 }

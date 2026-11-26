@@ -17,8 +17,10 @@ import s from './chat-drag.module.css';
  * drop never sees these drags. Same slop and Esc.
  *
  * The rows and boxes say what they are: `data-chat-row` on a chat's row (its channel), and
- * `data-chat-box` on a message box that takes chips (the key of its draft). Anything without them
- * (the room, a DM, a group) refuses, and so does the chat you picked up.
+ * `data-chat-box` on a message box that takes chips (the key of its draft). A friend's or a
+ * channel's row takes a drop without being one to pick up (`data-drop-row`, its conversation), and
+ * its message box is a `data-chat-box` too: the chip goes to them as words, nothing is shared.
+ * Anything without them (the room) refuses, and so does the chat you picked up.
  *
  * What's carried is the row itself, at its own width, lifted and swinging as a board's card does
  * (Lifted.tsx). Over a chat that takes it, the chat and its box light up as for files from Finder.
@@ -194,11 +196,12 @@ export function useChatDrag(): ReactNode {
   );
 }
 
-/** Where a drop at (x, y) goes: another chat's row, or the message box of the chat under the pointer. */
+/** Where a drop at (x, y) goes: another chat's row (or a friend's, a channel's), or the message box of the chat under the pointer. */
 function targetAt(x: number, y: number, from: string): DropTarget | undefined {
   const under = document.elementFromPoint(x, y);
-  const row = under?.closest<HTMLElement>('[data-chat-row]');
-  if (row) return row.dataset.chatRow === from ? undefined : { key: row.dataset.chatRow!, el: row, row: true };
+  const row = under?.closest<HTMLElement>('[data-chat-row], [data-drop-row]');
+  const key = row?.dataset.chatRow ?? row?.dataset.dropRow;
+  if (row && key) return key === from ? undefined : { key, el: row, row: true };
   const box = under?.closest('main, [role="complementary"]')?.querySelector<HTMLElement>('[data-chat-box]');
   return box && box.dataset.chatBox !== from ? { key: box.dataset.chatBox!, el: box, row: false } : undefined;
 }

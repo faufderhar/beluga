@@ -127,6 +127,17 @@
 .main:active {
   transform: scale(0.99);
 }
+/* Waits for a pick (the usage statistics ask): faded, and no hover or press. */
+.main:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.main:disabled:hover {
+  background: #1f2328;
+}
+.main:disabled:active {
+  transform: none;
+}
 .mainLabel {
   display: flex;
   flex: 1;

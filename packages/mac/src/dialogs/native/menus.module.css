@@ -352,10 +352,10 @@ button.checkLink:hover {
   display: grid;
   place-items: center;
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: var(--control-h);
+  height: var(--control-h);
   margin-top: 3px;
-  border-radius: 11px;
+  border-radius: 50%;
   color: var(--text-3);
 }
 .remove:hover {

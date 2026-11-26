@@ -59,7 +59,7 @@ export function PullsView() {
           </PickMenu>
         </div>
         <div className={cx(t.barGroup, t.barActions)}>
-          <IconButton icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} disabled={!repo} />
+          <IconButton size="small" icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} disabled={!repo} />
           {repo ? (
             <Tip label={`${repo.url}/pulls`}>
               <Button size="small" icon="external" onClick={() => onGitHub(`${repo.url}/pulls`)}>
@@ -71,7 +71,7 @@ export function PullsView() {
       </div>
       <div className={t.body}>
         {error && !list ? (
-          <Empty icon="alert" title="Couldn’t read the pull requests" detail={error} action={<Button onClick={refresh}>Try Again</Button>} />
+          <Empty icon="alert" title="Couldn’t read the pull requests" detail={error} action={<Button size="small" onClick={refresh}>Try Again</Button>} />
         ) : !list ? (
           <Empty icon="pr" title="Asking GitHub…" detail={`For ${here.name}’s pull requests`} />
         ) : list.kind === 'none' ? (
@@ -83,14 +83,14 @@ export function PullsView() {
             detail={`Beluga reads ${repoSlug(list.repo)}’s pull requests with GitHub’s command-line tool, signed in as you. Set it up once, then check again.`}
             action={
               <EmptyActions>
-                <Button variant="primary" onClick={() => setConnect(true)}>
+                <Button size="small" variant="primary" onClick={() => setConnect(true)}>
                   Connect GitHub…
                 </Button>
               </EmptyActions>
             }
           />
         ) : list.kind === 'error' ? (
-          <Empty icon="alert" title="Couldn’t read the pull requests" detail={list.message} action={<Button onClick={refresh}>Try Again</Button>} />
+          <Empty icon="alert" title="Couldn’t read the pull requests" detail={list.message} action={<Button size="small" onClick={refresh}>Try Again</Button>} />
         ) : !list.pulls.length ? (
           <Empty icon="pr" title="No open pull requests" detail={`Nothing waiting for review in ${repoSlug(list.repo)}.`} />
         ) : (

@@ -112,7 +112,7 @@ export function EditTools({ viewer, wsId, selfId, compact = false }: { viewer: V
   if (!session && !editable) return null;
 
   const formatLabel = !formatter ? 'Format with Prettier' : formatter.available ? `Format with Prettier${formatter.version ? ` ${formatter.version}` : ''}` : (formatter.reason ?? 'Prettier isn’t available');
-  const formatBtn = <IconButton icon="wand" label={formatLabel} aria-disabled={!formatter?.available || Boolean(session?.busy)} className={cx(!formatter?.available && r.toolOff)} onClick={() => void format()} />;
+  const formatBtn = <IconButton size="small" icon="wand" label={formatLabel} aria-disabled={!formatter?.available || Boolean(session?.busy)} className={cx(!formatter?.available && r.toolOff)} onClick={() => void format()} />;
 
   return (
     <>

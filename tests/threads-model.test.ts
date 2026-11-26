@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SUMMARY_CAP, type ThreadNode, capSummary, childrenOf, deriveThreadState, isDescendant, stopOrder, subtree, threadBatchLine, threadBatchPrompt, threadLimitProblem } from '../src/core/threads/model.js';
+import { SUMMARY_CAP, type ThreadNode, capSummary, childrenOf, deriveThreadState, isDescendant, stopOrder, subtree, threadsWorkingUnder, threadBatchLine, threadBatchPrompt, threadLimitProblem } from '../src/core/threads/model.js';
 import { DEFAULT_PREFS, prefsFrom } from '../src/core/store.js';
 import { Settings } from '../src/shared/settings-schema.js';
 import { THREAD_LIMITS_DEFAULT, type ThreadRecord } from '../src/shared/threads.js';
@@ -69,6 +69,24 @@ describe('the tree', () => {
     expect(isDescendant(loop, 'ws:root', 'x')).toBe(false);
     expect(subtree(loop, 'ws:x').map((n) => n.id).sort()).toEqual(['x', 'y']);
     expect(stopOrder(loop, 'ws:x').map((n) => n.id).sort()).toEqual(['x', 'y']);
+  });
+});
+
+describe('threadsWorkingUnder', () => {
+  const nodes: ThreadNode[] = [node('a', 'ws:root'), node('a1', 'ws:a', 2), node('a1x', 'ws:a1', 3), node('b', 'assistant:mac'), node('other', 'ws:elsewhere')];
+
+  it('marks every chat above a working thread, up to the top', () => {
+    expect([...threadsWorkingUnder(nodes, new Set(['ws:a1x']))].sort()).toEqual(['ws:a', 'ws:a1', 'ws:root']);
+    expect([...threadsWorkingUnder(nodes, new Set(['ws:b']))]).toEqual(['assistant:mac']);
+  });
+
+  it('marks nothing when no thread works', () => {
+    expect(threadsWorkingUnder(nodes, new Set(['ws:root', 'ws:nobody'])).size).toBe(0);
+  });
+
+  it('ends on a damaged file that holds a cycle', () => {
+    const loop = [node('x', 'ws:y'), node('y', 'ws:x')];
+    expect([...threadsWorkingUnder(loop, new Set(['ws:x']))].sort()).toEqual(['ws:x', 'ws:y']);
   });
 });
 

@@ -10,14 +10,14 @@ export function useRichFence(lang: string | undefined, code: string): RichFence 
 }
 
 /** A tree, JSON or terminal block; null for the kinds each place draws its own way (math, mermaid). */
-export function RichBlock({ fence, code, lang, onQuote }: { fence: RichFence; code: string; lang?: string | undefined; onQuote?: ((fence: string) => void) | undefined }) {
+export function RichBlock({ fence, code, lang, onQuote, onRun }: { fence: RichFence; code: string; lang?: string | undefined; onQuote?: ((fence: string) => void) | undefined; onRun?: ((command: string) => void) | undefined }) {
   switch (fence.kind) {
     case 'tree':
       return <FileTree tree={fence.tree} code={code} onQuote={onQuote} />;
     case 'json':
       return <JsonTree doc={fence.doc} code={code} onQuote={onQuote} />;
     case 'terminal':
-      return <Terminal code={code} lang={lang} onQuote={onQuote} />;
+      return <Terminal code={code} lang={lang} onQuote={onQuote} onRun={onRun} />;
     default:
       return null;
   }

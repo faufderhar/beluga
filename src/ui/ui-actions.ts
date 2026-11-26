@@ -198,9 +198,6 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
           void w.open(ws.id, 'terminal');
           patchUi({ termKey: setupId(ws.id), terminalScroll: 0 });
           return;
-        case 'handoff':
-          patchUi({ menu: { menu: { kind: 'handoff', id: ws.id }, selected: 0 } });
-          return;
       }
     }
   }

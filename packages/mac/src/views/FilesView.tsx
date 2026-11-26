@@ -62,7 +62,7 @@ export function Viewer({ viewer }: { viewer: ViewerState }) {
         {viewer.by ? <span className={s.following}>following {viewer.by}</span> : null}
         <span className={s.flex} />
         {markdown ? (
-          <Segmented
+          <Segmented size="small"
             label="Show as"
             value={mode}
             onChange={setMode}
@@ -72,8 +72,8 @@ export function Viewer({ viewer }: { viewer: ViewerState }) {
             ]}
           />
         ) : null}
-        <IconButton icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} />
-        <IconButton icon="x" label="Close" onClick={() => void api.files.closeViewer()} />
+        <IconButton size="small" icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} />
+        <IconButton size="small" icon="x" label="Close" onClick={() => void api.files.closeViewer()} />
       </div>
       <div ref={body} className={cx(s.viewerBody, 'selectable')} tabIndex={0} {...{ [SCROLL_ROOT]: '' }}>
         <Suspense fallback={<div className={s.loading}>Opening…</div>}>
@@ -242,7 +242,7 @@ export function FilesView() {
               </Fragment>
             ))
           ) : browser.loading ? null : (
-            <Empty icon="folder" title={browser.at ? 'This folder is empty' : 'Nothing shared yet'} detail={browser.at ? undefined : 'When friends (or people in your room) share folders with you, they show up here.'} action={browser.at ? undefined : <Button onClick={() => ui.openMenu({ kind: 'share_folder', launchDir: home, mine: myShares })}>Share a folder…</Button>} />
+            <Empty icon="folder" title={browser.at ? 'This folder is empty' : 'Nothing shared yet'} detail={browser.at ? undefined : 'When friends (or people in your room) share folders with you, they show up here.'} action={browser.at ? undefined : <Button size="small" onClick={() => ui.openMenu({ kind: 'share_folder', launchDir: home, mine: myShares })}>Share a folder…</Button>} />
           )}
         </div>
         )}

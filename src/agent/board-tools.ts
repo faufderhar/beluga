@@ -12,11 +12,13 @@ import type { BoardTools } from './types.js';
 
 export const BOARD_TOOL_NAMES = ['task_define', 'task_get', 'task_list', 'task_create', 'task_start', 'board_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`);
 
-const key = z.string().min(2).max(40).optional().describe('The task’s key, like BOB-12. Leave out for the task this worktree is doing');
+const key = z.string().min(2).max(40).optional().describe('The task’s key, like BOB-12. Leave out for this conversation’s own task (including one task_define just opened); give it for any other, like one task_create made');
 const STATUS = z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']);
 const PRIORITY = z.enum(['urgent', 'high', 'medium', 'low', 'none']);
 const SECTION = z.enum(['goal', 'context', 'acceptance', 'decisions', 'questions', 'handoff']);
 const ESTIMATE = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(8)]).describe('Points: 1 an hour or so, 2 half a day, 3 a day, 5 a few days, 8 a week (split it)');
+/** Reads only: Claude Code may run it beside other reads, instead of queued behind the calls before it (BLG-1029). */
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const items = (max: number) => z.array(z.string().min(1).max(400)).max(max);
 
 async function guarded(fn: () => string | Promise<string>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
@@ -66,12 +68,13 @@ export function createBoardToolDefs(board: BoardTools) {
           }),
         ),
     ),
-    tool('task_get', 'A task in full: status, priority, who it’s for, its parent, sub-tasks, blockers, pull request, its brief and recent activity.', { key }, (a) => guarded(() => board.get(a.key))),
+    tool('task_get', 'A task in full: status, priority, who it’s for, its parent, sub-tasks, blockers, pull request, its brief and recent activity.', { key }, (a) => guarded(() => board.get(a.key)), { annotations: READ_ONLY }),
     tool(
       'task_list',
       'Tasks, one per line (key · status · priority · title, and the repo when its board covers several). scope: open (default: every unfinished task), mine (yours and your Claude’s), all (recently finished too). Without project: this task’s board and this repo’s tasks.',
       { scope: z.enum(['open', 'mine', 'all']).optional(), project: z.string().max(80).optional().describe('A board’s or a repo’s name (or a board’s key prefix, like BOB)'), query: z.string().max(200).optional().describe('Words in the title, key, labels or brief') },
       (a) => guarded(() => board.list({ ...(a.scope ? { scope: a.scope } : {}), ...(a.project ? { project: a.project } : {}), ...(a.query ? { query: a.query } : {}) })),
+      { annotations: READ_ONLY },
     ),
     tool(
       'task_create',
@@ -132,7 +135,7 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_update',
-      'Change a task: its title, status, priority, estimate, labels (the full list), the repo it runs in (project), or who it’s for (me: the user; nobody). A task is for a person, never a Claude. Mark a task done or canceled only when the user asked or said its work shipped (its sub-tasks still open go Done with it). in_review is refused while an acceptance criterion is neither ticked nor explained.',
+      'Change a task: its title, status, priority, estimate, labels (the full list), the repo it runs in (project), or who it’s for (me: the user; nobody). A task is for a person, never a Claude. Mark a task done or canceled only when the user asked or said its work shipped (its sub-tasks still open go Done with it). Before in_review, settle its acceptance criteria with one task_brief_edit (section acceptance): tick each one that is true ("- [x]"), give each other one its reason on its line ("- [ ] … — not done: why" or "— deferred: why"); in_review is refused while one is neither.',
       { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: LABELS(12), assign: z.enum(['me', 'nobody']).optional(), project: z.string().max(80).optional().describe('The repo it runs in from now on (a project’s name): it stays on its board') },
       (a) =>
         guarded(() =>

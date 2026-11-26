@@ -54,16 +54,48 @@ function TokenFigures({ usage, hideSpeed }: { readonly usage: UsageView; readonl
   );
 }
 
+/** "3.4 h", "25 min". */
+const hours = (ms: number): string => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1)} h` : `${Math.max(1, Math.round(ms / 60_000))} min`);
+
+/** "12 runs · 3.4 h". */
+const weekWords = (week: NonNullable<UsageView['week']>): string => `${week.runs} ${week.runs === 1 ? 'run' : 'runs'} · ${hours(week.agentMs)}`;
+
+/** An ACP agent's week on your Mac (1.60): two lines and its last 7 days, today stronger. */
+function WeekFigures({ week }: { readonly week: NonNullable<UsageView['week']> }) {
+  if (!week.runs) return <T v="caption">No runs in the last 7 days.</T>;
+  const top = Math.max(...week.days, 1);
+  const more = [week.tokens ? `${shortTokens(week.tokens)} tokens` : '', week.cost ? `$${week.cost.toFixed(2)}` : ''].filter(Boolean).join(' · ');
+  return (
+    <View style={{ gap: 6 }}>
+      <T v="callout" c={color.text} numberOfLines={1}>
+        Last 7 days: {weekWords(week)}
+      </T>
+      {more ? (
+        <T v="caption" numberOfLines={1}>
+          {more}
+        </T>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 24 }} accessibilityLabel="Agent time on each of the last 7 days">
+        {week.days.map((ms, i) => (
+          <View key={i} style={{ flex: 1, height: `${Math.max(6, (ms / top) * 100)}%`, borderRadius: 2, backgroundColor: ink.mint, opacity: i === week.days.length - 1 ? 0.9 : 0.4 }} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function UsageBars({ usage }: { readonly usage: UsageView }) {
   if (usage.signedIn === false) return <T v="caption">Not signed in on your Mac.</T>;
-  if (usage.note && !usage.windows.length && !usage.tokens) return <T v="caption">{usage.note}</T>;
-  if (!usage.windows.length)
+  if (!usage.windows.length) {
+    if (usage.week) return <WeekFigures week={usage.week} />;
+    if (usage.note && !usage.tokens) return <T v="caption">{usage.note}</T>;
     return (
       <View style={{ gap: 8 }}>
         <TokenFigures usage={usage} hideSpeed={Boolean(usage.note) && usage.tokensPerSec === undefined} />
         {usage.note ? <T v="caption">{usage.note}</T> : null}
       </View>
     );
+  }
   return (
     <View style={{ gap: 12 }}>
       {usage.windows.map((w) => (
@@ -82,6 +114,11 @@ export function UsageBars({ usage }: { readonly usage: UsageView }) {
           <Bar pct={w.pct} />
         </View>
       ))}
+      {usage.week?.runs ? (
+        <T v="caption" numberOfLines={1}>
+          Last 7 days: {weekWords(usage.week)}
+        </T>
+      ) : null}
     </View>
   );
 }

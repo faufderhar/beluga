@@ -11,7 +11,7 @@ const HINT = 'This chat becomes a worktree from the latest origin; your agent go
 export function ContinueButton({ wsId, className, variant = 'primary' }: { wsId: string; className?: string; variant?: 'primary' | 'plain' }) {
   return (
     <Tip label={HINT}>
-      <Button variant={variant} icon="branch" className={className} onClick={() => openSheet({ kind: 'continue_worktree', wsId })}>
+      <Button size="small" variant={variant} icon="branch" className={className} onClick={() => openSheet({ kind: 'continue_worktree', wsId })}>
         Continue in New Worktree…
       </Button>
     </Tip>

@@ -67,10 +67,10 @@ export function useAgents(): { rows: AgentRow[]; checking: boolean; checked: boo
   return { rows, checking, checked, check, act };
 }
 
-/** An agent's install command (Codex's, OpenCode's npm one), a tap to copy. */
-export function CopyCommand({ className, runtime = 'codex' }: { readonly className?: string; readonly runtime?: string }) {
+/** An agent's install command (Codex's, OpenCode's npm one, or `command`: an ACP agent's), a tap to copy. */
+export function CopyCommand({ className, runtime = 'codex', command: given }: { readonly className?: string; readonly runtime?: string; readonly command?: string }) {
   const [copied, setCopied] = useState(false);
-  const command = INSTALLS[runtime]?.command;
+  const command = given ?? INSTALLS[runtime]?.command;
   if (!command) return null;
   return (
     <button
@@ -123,7 +123,7 @@ export function AgentsStep() {
         <Words text="Which agent is yours?" />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        Beluga runs the coding agents you already use. Yours starts every new conversation and answers friends; any conversation can pick another.
+        Beluga works with the coding agents you already have. The one you pick here starts new conversations and answers your friends’ requests. Any conversation can switch to another.
       </Rise>
       <Glass radius={16} width="100%" className={s.rows}>
         <div role="radiogroup" aria-label="Your agent">
@@ -160,7 +160,7 @@ export function AgentsStep() {
         </div>
       </Glass>
       <Rise delay={0.5} className={s.agentsBar}>
-        <span>{!asked ? 'Looking for your agents…' : anyReady ? 'Change it any time in Settings › Agent.' : 'None of your agents is ready yet. Sign in to one now, or go on and set one up later in Settings › Agent.'}</span>
+        <span>{!asked ? 'Looking for your agents…' : `${anyReady ? 'Change it any time in Settings › Agent.' : 'None of your agents is ready yet. Sign in to one now, or go on and set one up later in Settings › Agent.'} More agents, Antigravity, Cursor, Gemini CLI and others, are added there under ACP agents.`}</span>
         <button type="button" className={s.agentsCheck} disabled={checking} onClick={() => void check()}>
           <Icon name="refresh" size={12} />
           {checking ? 'Checking…' : 'Check Again'}

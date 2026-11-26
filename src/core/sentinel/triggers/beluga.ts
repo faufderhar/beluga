@@ -87,6 +87,13 @@ const madeBy = (st: DomainState, channel: string | undefined): TriggerEvent['fro
   return owner?.runId ? { sentinelId: owner.sentinel.id, runId: owner.runId } : undefined;
 };
 
+/** The sentinel run whose prompt started this turn (its card's origin says so), if one did. */
+const wokenBy = (st: DomainState, owner: string, requestId: string): TriggerEvent['from'] => {
+  const card = st.log.find((l) => l.type === 'agent' && l.requestId === requestId && l.owner === owner);
+  const woke = card?.type === 'agent' ? card.origin?.sentinel : undefined;
+  return woke?.run ? { sentinelId: woke.id, runId: woke.run } : undefined;
+};
+
 /** One action, in Beluga's words: the event it is for this trigger (none: not this, or not news). Updates the memory. */
 export function belugaEvent(t: BelugaTrigger, a: Action, st: DomainState, mem: Memory, selfId: string): TriggerEvent | undefined {
   const inProject = (projectId: string | undefined): boolean => !t.projectId || projectId === t.projectId;
@@ -150,7 +157,8 @@ export function belugaEvent(t: BelugaTrigger, a: Action, st: DomainState, mem: M
       if (t.what !== 'claude-finished' || a.event !== 'done' || a.owner !== selfId || !a.channel?.startsWith('ws:')) return undefined;
       const place = workspaceOf(st, a.channel.slice(3));
       if (!place || place.ws.kind !== 'worktree' || !inProject(place.project.id)) return undefined;
-      const from = madeBy(st, a.channel);
+      // A turn one of your sentinels woke (Wake one of your chats) comes from that sentinel's run: the chain guard stops a loop.
+      const from = wokenBy(st, a.owner, a.requestId) ?? madeBy(st, a.channel);
       return { summary: clip(`Beluga: ${agentName(a.agent)} finished in ${place.ws.name}`, 130), payload: { event: 'claude-finished', project: place.project.name, worktree: place.ws.name, branch: place.ws.branch, answer: clip(a.text, 2000) }, ...(from ? { from } : {}) };
     }
     case 'gw_task': {

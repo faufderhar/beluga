@@ -9,13 +9,14 @@
 import type { AgentRef } from '../../protocol.js';
 import type { LabelDef } from './labels.js';
 import { agentLabel } from '../../shared/agent-label.js';
+import { knownOr } from '../../shared/known-or.js';
 
 export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled'] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
 export type StatusTone = 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error';
 
-export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string; readonly tone: StatusTone; readonly open: boolean }>> = {
+export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string; readonly tone: StatusTone; readonly open: boolean }>> = knownOr({
   backlog: { label: 'Backlog', tone: 'muted', open: true },
   todo: { label: 'Ready', tone: 'neutral', open: true },
   in_progress: { label: 'In Progress', tone: 'claude', open: true },
@@ -24,7 +25,7 @@ export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string;
   in_plan: { label: 'Merged into Plan', tone: 'info', open: true },
   done: { label: 'Done', tone: 'ok', open: false },
   canceled: { label: 'Canceled', tone: 'muted', open: false },
-};
+}, (v) => ({ label: v, tone: 'muted', open: true }));
 
 export const isOpen = (status: IssueStatus): boolean => STATUS_INFO[status].open;
 
@@ -38,26 +39,26 @@ export const isFinished = (status: IssueStatus): boolean => status === 'in_revie
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low', 'none'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-export const PRIORITY_INFO: Readonly<Record<Priority, { readonly label: string; readonly rank: number }>> = {
+export const PRIORITY_INFO: Readonly<Record<Priority, { readonly label: string; readonly rank: number }>> = knownOr({
   urgent: { label: 'Urgent', rank: 0 },
   high: { label: 'High', rank: 1 },
   medium: { label: 'Medium', rank: 2 },
   low: { label: 'Low', rank: 3 },
   none: { label: 'No priority', rank: 4 },
-};
+}, (v) => ({ label: v, rank: 4 }));
 
 /** The brief's sections, in order: what later agents (and people) rely on. */
 export const BRIEF_SECTIONS = ['goal', 'context', 'acceptance', 'decisions', 'questions', 'handoff'] as const;
 export type BriefSection = (typeof BRIEF_SECTIONS)[number];
 
-export const SECTION_INFO: Readonly<Record<BriefSection, { readonly label: string; readonly hint: string }>> = {
+export const SECTION_INFO: Readonly<Record<BriefSection, { readonly label: string; readonly hint: string }>> = knownOr({
   goal: { label: 'Goal', hint: 'What this task is for, in a sentence or two' },
   context: { label: 'Context', hint: 'What someone new needs to know: where the code is, how it works today' },
   acceptance: { label: 'Acceptance criteria', hint: 'A checklist: done means all of these are true' },
   decisions: { label: 'Decisions', hint: 'What was decided and why, newest last' },
   questions: { label: 'Open questions', hint: 'What is still unclear' },
   handoff: { label: 'Notes for the next agent', hint: 'Where things stand, and what to do next' },
-};
+}, (v) => ({ label: v, hint: '' }));
 
 export const ESTIMATES = [1, 2, 3, 5, 8] as const;
 
@@ -305,9 +306,9 @@ export function taskForGitHub(board: Pick<BoardState, 'issues'>, projectId: stri
 export const SYNC_PROVIDERS = ['linear'] as const;
 export type SyncProvider = (typeof SYNC_PROVIDERS)[number];
 
-export const PROVIDER_INFO: Readonly<Record<SyncProvider, { readonly label: string }>> = {
+export const PROVIDER_INFO: Readonly<Record<SyncProvider, { readonly label: string }>> = knownOr({
   linear: { label: 'Linear' },
-};
+}, (v) => ({ label: v }));
 
 /** The fields sync keeps in step, each as a short fingerprint (see sync/fields.ts). */
 export type SyncedPrints = Readonly<Record<string, string>>;

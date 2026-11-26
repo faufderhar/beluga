@@ -290,6 +290,7 @@ const STEP_FIELDS: Readonly<Record<StepKind, string>> = {
   pr: 'draft?',
   merge: 'require: { checks: true, approval }, method: squash | merge',
   message: 'to: dm:<peerId> | group:<id>, text (@name tags someone)',
+  chat: 'to: one of your own chats as its ref (<owner>/ws:<id>), text (the prompt its agent gets)',
   friend: 'peerId, prompt, project?',
   trigger: 'sentinelId',
   measure: 'from: previous | source | claude, source? (a view source), metrics: [{ name, label?, pick? (a JSON path or column), unit? (count | currency:USD | percent | ms | bytes | plain), better? (up | down | none), kind? (number | series: a whole array, with x and y columns | rows | output: the step’s raw output or the picked part) }]',

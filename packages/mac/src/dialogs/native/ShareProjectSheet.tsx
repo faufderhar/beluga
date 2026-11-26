@@ -1,4 +1,4 @@
-import type { WsRole } from '@beluga/protocol.js';
+import { grantOfLevel, levelOf } from '@beluga/shared/share-levels.js';
 import { cannotTake } from '@beluga/net/mesh/features.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { Avatar, Button } from '../../components/ui.js';
@@ -6,7 +6,7 @@ import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { presenceOf } from '@beluga/core/friend-share-people.js';
 import { Select } from '../settings-controls.js';
 import { Section, Sheet, Tag } from './parts.js';
-import { ACCESS, type Access, SharePicker } from './SharePicker.js';
+import { type Access, SharePicker, accessOptions } from './SharePicker.js';
 import s from './sharing.module.css';
 import { thisComputer } from '../../lib/os-words.js';
 
@@ -32,8 +32,11 @@ export function ShareProjectSheet({ projectId, close }: { readonly projectId: st
       return { peerId: f.peerId, name: f.name, ...(why ? { why } : {}) };
     });
   const none = !network.enabled ? 'Turn on the Beluga network in Settings to share with your friends.' : network.friends.length ? 'All your friends have it.' : 'No friends yet. Add a friend first, then share with them here.';
+  // A project with a folder can be forked a worktree at a time (BLG-1019); one of plain chats can't.
+  const forks = Boolean(project.root);
   const set = (peerId: string, access: Access): void => {
-    const done = access === 'none' ? api.sharing.unshareFriend({ peerId, projectId }) : api.sharing.shareWithFriend({ peerId, projectId, role: access });
+    const grant = access === 'none' ? undefined : grantOfLevel(access);
+    const done = !grant ? api.sharing.unshareFriend({ peerId, projectId }) : api.sharing.shareWithFriend({ peerId, projectId, role: grant.role, fork: grant.fork });
     void done.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'warn'));
   };
   const worktrees = project.workspaces.filter((w) => !w.archived && !w.external && w.kind !== 'main').length;
@@ -53,18 +56,19 @@ export function ShareProjectSheet({ projectId, close }: { readonly projectId: st
       }
     >
       <Section title="Share with">
-        <SharePicker candidates={candidates} onShare={set} none={none} />
+        <SharePicker candidates={candidates} onShare={set} none={none} forks={forks} />
       </Section>
       <Section title="Friends with access">
         <div className={s.list} role="list" aria-label="Friends with access">
           {friends.map((f) => {
-            const access: Access = grants?.[f.peerId]?.role ?? 'none';
+            const grant = grants?.[f.peerId];
+            const access: Access = grant ? levelOf(grant.role, grant.fork) : 'none';
             // Worktrees removed since don't count: only the ones they can still open.
             const only = grants?.[f.peerId]?.only?.filter((id) => project.workspaces.some((w) => w.id === id && !w.archived));
             const presence = presenceOf({ network, peers }, f.peerId);
             // Only some worktrees: said so, so it never reads as the whole project.
             const where = only ? (only.length === 1 ? 'in that worktree only' : 'in those worktrees only') : 'in all its worktrees, new ones too';
-            const detail = access === 'contribute' ? `Talks to your agent ${where}` : `Follows along ${where}, read-only`;
+            const detail = access === 'view' ? `Follows along ${where}, read-only` : access === 'contribute' ? `Talks to your agent ${where}` : `Talks to your agent and can fork ${where}${access === 'secrets' ? ', with the secrets you ticked' : ''}`;
             return (
               <div key={f.peerId} role="listitem" className={s.item}>
                 <Avatar name={f.name} id={f.peerId} size={24} />
@@ -74,7 +78,7 @@ export function ShareProjectSheet({ projectId, close }: { readonly projectId: st
                   </span>
                   <span className={s.itemDetail}>{detail}</span>
                 </div>
-                <Select<Access> label={`Access for ${f.name}`} value={access} options={ACCESS} onChange={(a) => set(f.peerId, a)} />
+                <Select<Access> label={`Access for ${f.name}`} value={access} options={accessOptions(forks)} onChange={(a) => set(f.peerId, a)} />
               </div>
             );
           })}

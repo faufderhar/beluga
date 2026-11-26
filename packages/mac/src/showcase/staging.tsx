@@ -27,25 +27,29 @@ export interface Staging {
 const LEFT: Pose = { rx: 14, ry: 13, rz: -1, x: 55 };
 const RIGHT: Pose = { rx: 14, ry: -13, rz: 1, x: -55 };
 
-/** Parallel and Agents are tilted already, so they aren't here. */
+/** Parallel is tilted already, so it isn't here. */
 export const STAGING: Record<string, Staging> = {
   tables: { pose: { rx: 12, ry: -14, rz: 1.2 } },
   // The camera turns to whoever is doing something (Friends' beats): your Mac while yours works and
   // asks, Ada's while she allows it and her agent works, yours again when the result comes back.
   friends: {
     shots: {
-      period: 10_100,
+      period: 11_400,
       at: [
         [0, LEFT],
         [1300, LEFT],
         [2200, RIGHT],
-        [6700, RIGHT],
-        [7600, LEFT],
-        [10_100, LEFT],
+        [8000, RIGHT],
+        [8900, LEFT],
+        [11_400, LEFT],
       ],
     },
   },
-  sentinel: { pose: { rx: 14, ry: -14, rz: 1 } },
+  // Your chat on the left, Scratch filling up on the right: turned toward Scratch.
+  scratch: { pose: { rx: 12, ry: -13, rz: 1 } },
+  // The Share sheet opens at the top right.
+  together: { pose: { rx: 12, ry: -12, rz: 1 } },
+  sentinel: { pose: { rx: 12, ry: 12, rz: -1 } },
   // Your app and phone on the left, your computers on the right: turned toward the computers, where the work goes.
   machines: { pose: { rx: 14, ry: -14, rz: 1 } },
   earnings: { pose: { rx: 14, ry: 16, rz: -1 } },

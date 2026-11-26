@@ -1,7 +1,7 @@
 import { expect, test, type Page } from './fixtures.js';
 import { openWork } from './helpers.js';
 
-/** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
+/** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Advanced Planning. */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const main = (page: Page) => page.locator('main');
@@ -505,16 +505,16 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText('Data model and migration');
 });
 
-test('the composer: Plan with Tasks makes the conversation a plan once you send', async ({ page }) => {
+test('the composer: Advanced Planning makes the conversation a plan once you send', async ({ page }) => {
   await page.goto('/');
   // The demo's chat in bob-api (unfold the project when it's folded).
   const chat = sidebar(page).getByRole('button', { name: 'How do deploys work?' });
   if (!(await chat.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await chat.click();
   await page.getByRole('button', { name: /^Mode: / }).click();
-  await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
-  await expect(page.getByRole('button', { name: 'Mode: Plan with Tasks' })).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: 'nothing reaches the board until you approve' })).toBeVisible();
+  await page.getByRole('menuitem', { name: /Advanced Planning/ }).click();
+  await expect(page.getByRole('button', { name: 'Mode: Advanced Planning' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'milestones and tasks that run side by side' })).toBeVisible();
   // Nothing sent, nothing made: still an ordinary chat in the sidebar, and every mode a click away.
   await expect(chat).toBeVisible();
   await page.getByRole('button', { name: /^Mode: / }).click();
@@ -528,7 +528,7 @@ test('the composer: Plan with Tasks makes the conversation a plan once you send'
   await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
   // Sent: now it's the plan's own conversation (the chip opens the plan, or throws the draft away).
   await page.getByRole('button', { name: /^Mode: / }).click();
-  await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
+  await page.getByRole('menuitem', { name: /Advanced Planning/ }).click();
   await box.fill('Export orders to accounting');
   await box.press('Enter');
   await page.getByRole('button', { name: /^Mode: / }).click();

@@ -11,5 +11,7 @@ export const TELEMETRY_HANDLERS = {
   'telemetry.choose': (s, level, via) => telemetryOf(s).choose(level, via),
   'telemetry.answer': (s, answer, level) => telemetryOf(s).answer(answer, level),
   'telemetry.exclude': (s, root, excluded) => telemetryOf(s).exclude(root, excluded),
+  'telemetry.installId': (s) => telemetryOf(s).installId(),
+  'telemetry.resetId': (s) => telemetryOf(s).resetId(),
   'telemetry.mark': (s, name, detail) => telemetryOf(s).mark(name, detail),
 } satisfies TelemetryHandlers;

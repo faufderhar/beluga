@@ -18,8 +18,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the Invite sheet copies a link, lists it, and revokes it', async ({ page }) => {
-  // The sidebar's Invite adds a friend; the room's own links are in its details (the people count).
-  await sidebar(page).getByRole('button', { name: /room: room details$/ }).click();
+  // Friends' + adds a friend; the room's own links are in your card at the sidebar's foot, under your status.
+  await sidebar(page).getByRole('button', { name: /^Your status/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Your status' }).getByRole('region', { name: 'Room' })).toContainText('Your room');
   await page.getByRole('button', { name: 'Invite People…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Invite People' });
   await expect(sheet).toBeVisible();

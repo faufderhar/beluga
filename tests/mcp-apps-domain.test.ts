@@ -1,7 +1,7 @@
 import { mayHaveApps } from '../src/shared/mcp-apps.js';
 import { describe, expect, it } from 'vitest';
 import { appCsp } from '../src/mcp-apps/domain/csp.js';
-import { boundStructured, STRUCTURED_MAX } from '../src/mcp-apps/domain/result.js';
+import { boundResultMeta, boundStructured, STRUCTURED_MAX } from '../src/mcp-apps/domain/result.js';
 import { splitMcpToolName } from '../src/mcp-apps/domain/tool-name.js';
 import { resourceUiOf, toolUiOf } from '../src/mcp-apps/domain/ui-meta.js';
 
@@ -106,6 +106,30 @@ describe('boundStructured', () => {
     expect(boundStructured(undefined)).toBeUndefined();
     expect(boundStructured({ content: 'x' })).toBeUndefined();
     expect(boundStructured({ structuredContent: { big: 'x'.repeat(STRUCTURED_MAX) } })).toBeUndefined();
+  });
+});
+
+describe('boundResultMeta', () => {
+  it('keeps the result’s own _meta, the view-only data a server sends beside its content', () => {
+    const meta = { 'sh.ratel/binding': { view: 'replay', tool: 'get_session' }, 'sh.ratel/view': { kind: 'session_chat' } };
+    expect(boundResultMeta({ content: 'x', structuredContent: { ok: true }, _meta: meta })).toEqual(meta);
+  });
+
+  it('is undefined when there is none, it is not an object, it is empty or it is too big', () => {
+    expect(boundResultMeta(undefined)).toBeUndefined();
+    expect(boundResultMeta('text')).toBeUndefined();
+    expect(boundResultMeta({ content: 'x' })).toBeUndefined();
+    expect(boundResultMeta({ _meta: null })).toBeUndefined();
+    expect(boundResultMeta({ _meta: ['a'] })).toBeUndefined();
+    expect(boundResultMeta({ _meta: 'a' })).toBeUndefined();
+    expect(boundResultMeta({ _meta: {} })).toBeUndefined();
+    expect(boundResultMeta({ _meta: { big: 'x'.repeat(STRUCTURED_MAX) } })).toBeUndefined();
+  });
+
+  it('is bounded apart from structuredContent: a big _meta leaves the structured content kept', () => {
+    const r = { structuredContent: { ok: true }, _meta: { big: 'x'.repeat(STRUCTURED_MAX) } };
+    expect(boundStructured(r)).toEqual({ ok: true });
+    expect(boundResultMeta(r)).toBeUndefined();
   });
 });
 

@@ -1,4 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import { nativeDropdown } from '../../lib/native-menu.js';
+import { FitContent } from '../../components/SpecMenu.js';
 import { type ReactNode, useState } from 'react';
 import type { Guest } from '@beluga/core/collab-store.js';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
@@ -269,13 +271,19 @@ export function GuestCard({ peer, guest, close, confirm }: CardProps & { guest: 
           {guest.room ? <Tag tone="accent">Everything</Tag> : guest.projects.map((id) => <Tag key={id}>{name(id)}</Tag>)}
           {!guest.room && more.length ? (
             <Dropdown.Root modal={false}>
-              <Dropdown.Trigger asChild>
+              <Dropdown.Trigger
+                asChild
+                {...nativeDropdown(() => [
+                  ...more.map((x) => ({ label: x.name, onSelect: () => void api.invites.change(peer.peerId, { addProject: x.id }) })),
+                  { label: 'Everything', hint: 'the room chat and what you share', separate: true, onSelect: () => void api.invites.change(peer.peerId, { room: true }) },
+                ])}
+              >
                 <button type="button" className={p.addChip} aria-label="Add to a project">
                   <Icon name="plus" size={10} /> Add
                 </button>
               </Dropdown.Trigger>
               <Dropdown.Portal>
-                <Dropdown.Content className={m.menu} align="start" sideOffset={4}>
+                <FitContent className={m.menu} align="start">
                   {more.map((x) => (
                     <Dropdown.Item key={x.id} className={m.item} onSelect={() => void api.invites.change(peer.peerId, { addProject: x.id })}>
                       <span className={m.label}>{x.name}</span>
@@ -286,7 +294,7 @@ export function GuestCard({ peer, guest, close, confirm }: CardProps & { guest: 
                     <span className={m.label}>Everything</span>
                     <span className={m.hint}>the room chat and what you share</span>
                   </Dropdown.Item>
-                </Dropdown.Content>
+                </FitContent>
               </Dropdown.Portal>
             </Dropdown.Root>
           ) : null}

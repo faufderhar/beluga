@@ -282,6 +282,12 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     gitIn(auth.path, 'push', '-q', 'origin', 'HEAD');
     const tests = await mgr.createWorktree(api.id, 'webhook-retries');
     writeTree(tests.path, { 'src/webhooks.ts': '// retry with backoff\nexport const MAX_RETRIES = 5;\n' });
+    // Working files git ignores (BLG-1017): benchmark docs and a key a script reads, for What Forks Bring to offer.
+    writeTree(tests.path, {
+      ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`bench-data/docs/case-${i + 1}.md`, `# Case ${i + 1}\n\nA webhook that arrives ${i + 2} times.\n`])),
+      'bench-data/typesafe.env': 'TYPESAFE_KEY=demo-not-a-real-key\n',
+    });
+    writeFileSync(path.join(api.root, '.git', 'info', 'exclude'), 'bench-data/\n', { flag: 'a' });
     // The demo plan's two tasks in progress, each in its own worktree (the sidebar shows the plan instead).
     const checkoutAuth = await mgr.createWorktree(api.id, 'checkout-auth');
     writeTree(checkoutAuth.path, { 'src/auth.ts': "export function requireUser(req: { session?: string }) {\n  if (!req.session) throw new Error('unauthorized');\n}\n" });
@@ -320,7 +326,8 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     });
     const react = path.resolve(import.meta.dirname, '../packages/mac/node_modules');
     if (existsSync(path.join(react, 'react-dom'))) {
-      symlinkSync(react, path.join(hero.path, 'node_modules'));
+      // A junction on Windows (a plain symlink there needs rights most accounts don't have); elsewhere the type is ignored.
+      symlinkSync(react, path.join(hero.path, 'node_modules'), 'junction');
       // Installed packages aren't a change: the Changes tab leaves them out, as a project's .gitignore would.
       writeFileSync(path.join(landingDir, '.git', 'info', 'exclude'), 'node_modules\n', { flag: 'a' });
     }

@@ -2,6 +2,7 @@ import { FIRST_CHAT, assistantChatOf, assistantChatTitle } from '../../shared/as
 import { type ChatRef, formatChatRef, parseChatRef } from '../../shared/chat-ref.js';
 import { FIRST_SENTINEL_CHAT, sentinelChatOf, sentinelChatTitle } from '../sentinel/model.js';
 import { type DomainState, type View, busyChannels } from '../store.js';
+import { chatsWithThreadsWorking } from '../threads/model.js';
 
 /**
  * What a chat's address (shared/chat-ref.ts) is now. It reads the records, not what the sidebar
@@ -35,8 +36,11 @@ export function resolveChat(state: DomainState, ref: ChatRef): ResolvedChat {
   const found = ownership === 'shared' ? sharedChat(state, ref) : ownChat(state, ref.channel);
   if (!found) return { ref, kind: kindOf(ref.channel), state: ownership === 'own' && ref.channel.startsWith(WS) && !state.projectsLoaded ? 'loading' : 'removed', ownership };
   const { archived, channel, ...chat } = found;
-  return { ref, ...chat, state: archived ? 'archived' : busyChannels(state.log).has(channel ?? ref.channel) ? 'working' : 'idle', ownership };
+  return { ref, ...chat, state: archived ? 'archived' : isWorking(state, channel ?? ref.channel) ? 'working' : 'idle', ownership };
 }
+
+/** Its own turn runs, or a thread under it works. */
+const isWorking = (state: DomainState, channel: string): boolean => busyChannels(state.log).has(channel) || chatsWithThreadsWorking(state).has(channel);
 
 /**
  * chats.resolve: the same for a ref as text. Answers nothing for a malformed ref, so its chip

@@ -18,6 +18,10 @@ interface Block {
   readonly content?: unknown;
   readonly is_error?: boolean;
   readonly thinking?: unknown;
+  /** A tool_use: the runtime's own name for the tool, when `name` is Claude Code's for it (Codex). */
+  readonly native?: string;
+  /** A tool_result: the command's exit code, when the runtime gives it apart from the output (Codex). */
+  readonly exit_code?: number | null;
 }
 
 /** The parts of an SDK message the recorder reads. */
@@ -36,6 +40,9 @@ export interface StepRecorderOptions {
   readonly emit: (record: StepRecord) => void;
   readonly now?: () => number;
 }
+
+/** What a step that never finished says came back (its run stopped, or failed, first). */
+export const STOPPED_OUTPUT = 'Stopped before it finished';
 
 const blocksOf = (content: unknown): Block[] => (Array.isArray(content) ? (content as Block[]).filter((b) => b && typeof b === 'object') : []);
 
@@ -84,7 +91,7 @@ export class StepRecorder {
     const now = this.now();
     for (const rec of [...this.open.values()]) {
       this.open.delete(rec.id);
-      this.opts.emit({ ...rec, status: failed ? 'error' : 'done', endedAt: now, durationMs: now - rec.startedAt, ...(failed ? { isError: true, output: rec.output ?? 'Stopped before it finished' } : {}) });
+      this.opts.emit({ ...rec, status: failed ? 'error' : 'done', endedAt: now, durationMs: now - rec.startedAt, ...(failed ? { isError: true, output: rec.output ?? STOPPED_OUTPUT } : {}) });
     }
   }
 
@@ -125,6 +132,7 @@ export class StepRecorder {
       input,
       ...(truncated ? { truncated: true } : {}),
       ...(parent ? { parent } : {}),
+      ...(block.native ? { native: block.native } : {}),
     });
   }
 
@@ -141,6 +149,7 @@ export class StepRecorder {
       durationMs: now - rec.startedAt,
       output: out.text,
       ...(error ? { isError: true } : {}),
+      ...(typeof block.exit_code === 'number' ? { exitCode: block.exit_code } : {}),
       ...(out.truncated || rec.truncated ? { truncated: true } : {}),
     });
   }

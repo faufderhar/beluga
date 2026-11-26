@@ -12,6 +12,7 @@ import { type NotePhrase, Scribe, type Words, demoPhrases, scribeModels } from '
 import { type ScribeStatus, bestModel, pickScribe } from '@beluga/shared/scribe-plan.js';
 import type { LanguageCount } from '@beluga/shared/call-language.js';
 import type { VoiceModelId } from '@beluga/shared/voice-models.js';
+import { cameraSettings, microphoneSettings, screenShareHint } from '../lib/os-words.js';
 
 /**
  * Your side of a call, made in this window (BLG-706). The daemon says who's in the call
@@ -313,7 +314,7 @@ export class CallEngine {
       this.reconcile();
     } catch (err) {
       const name = err instanceof Error ? err.name : '';
-      if (name !== 'NotAllowedError' && name !== 'AbortError') this.patch({ problem: 'Couldn’t share your screen. Check Screen Recording in System Settings › Privacy & Security.' });
+      if (name !== 'NotAllowedError' && name !== 'AbortError') this.patch({ problem: `Couldn’t share your screen.${screenShareHint()}` });
     }
   }
 
@@ -503,7 +504,7 @@ export class CallEngine {
       this.reconcile();
     } catch {
       this.cam = undefined;
-      this.patch({ problem: 'Beluga can’t use your camera. Allow it in System Settings › Privacy & Security › Camera.' });
+      this.patch({ problem: `Beluga can’t use your camera. Allow it in ${cameraSettings()}.` });
     }
   }
 
@@ -573,7 +574,7 @@ export class CallEngine {
       })
       .catch(() => {
         this.micAsked = undefined;
-        this.patch({ problem: 'Beluga can’t hear your microphone. Allow it in System Settings › Privacy & Security › Microphone.' });
+        this.patch({ problem: `Beluga can’t hear your microphone. Allow it in ${microphoneSettings()}.` });
         return undefined;
       });
     return this.micAsked;

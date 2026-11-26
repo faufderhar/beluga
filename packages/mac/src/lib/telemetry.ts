@@ -1,4 +1,5 @@
-import type { TelemetryLevel } from '@beluga/core/telemetry-store.js';
+import { PRIVACY_NOTICE_URL, type TelemetryLevel } from '@beluga/core/telemetry-store.js';
+import { openExternal } from './system.js';
 
 /**
  * Usage statistics in words: the same three choices everywhere (the end of the onboarding, the ask
@@ -13,6 +14,11 @@ export const TELEMETRY_LEAD =
 
 export const TELEMETRY_FOOT = 'It’s all open source, so you can see exactly what’s sent. Change it any time in Settings.';
 
+export const PRIVACY_LABEL = 'Privacy notice';
+
+/** Opens docs/privacy.md (who gets the data, why, for how long, your rights) in the browser. */
+export const openPrivacyNotice = (): void => void openExternal(PRIVACY_NOTICE_URL);
+
 export interface LevelChoice {
   readonly level: TelemetryLevel;
   readonly label: string;
@@ -21,8 +27,8 @@ export interface LevelChoice {
 
 export const LEVELS: readonly LevelChoice[] = [
   { level: 'off', label: 'Off', detail: 'Nothing is sent.' },
-  { level: 'limited', label: 'Limited', detail: 'Only the very essential data.' },
-  { level: 'on', label: 'On', detail: 'How you use Beluga and its statistics, sent anonymously.' },
+  { level: 'limited', label: 'Essential', detail: 'Only the very essential data.' },
+  { level: 'on', label: 'On', detail: 'Your agents’ sessions too, masked. Linked to a random id, not your name or email.' },
 ];
 
 export const levelLabel = (level: TelemetryLevel | undefined): string => LEVELS.find((l) => l.level === level)?.label ?? 'Not chosen';

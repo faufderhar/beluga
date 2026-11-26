@@ -129,6 +129,8 @@ describe('setup and run scripts', () => {
     // It comes from the repository, so the first time it asks; "always" remembers this command.
     await waitFor(() => kay.state().approvals.length === 1, 4000);
     expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
+    // Asked about that worktree: its notification opens its chat, not Your Mac.
+    expect(kay.state().approvals[0]?.channel).toBe(`ws:${ws!.id}`);
     kay.session.answerApproval('always');
     // A new worktree and a login shell can take a while on a busy CI runner: generous waits. Flaky on
     // CI's Linux runner only (its shell stopped with no output): if it hangs again, say how it ended.
@@ -163,6 +165,7 @@ describe('setup and run scripts', () => {
     // Your Claude is on, so it offers to fix it; yes sends it the failure, in that worktree.
     await waitFor(() => kay.state().approvals.length === 1, 4000);
     expect(kay.state().approvals[0]?.title).toBe("The setup didn't work in broken. Do you want me to fix it?");
+    expect(kay.state().approvals[0]?.channel).toBe(`ws:${ws!.id}`);
     kay.session.answerApproval('yes');
     await waitFor(() => kay.runs.some((r) => r.prompt.includes('`exit 3` stopped with exit code 3')), 4000);
     kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
@@ -230,6 +233,7 @@ describe('setup and run scripts', () => {
     // It came from reading the repository, so it asks before running by itself.
     await waitFor(() => kay.state().approvals.length >= 1, 4000);
     expect(kay.state().approvals[0]?.title).toBe("Claude worked out app's setup for new worktrees");
+    expect([`ws:${one!.id}`, `ws:${two!.id}`]).toContain(kay.state().approvals[0]?.channel);
     kay.session.answerApproval('always');
     // Flaky on CI's runners only (BLG-268 PR): if it hangs again, say how far each worktree got.
     await waitFor(() => kay.state().setup[one!.id]?.status === 'done' && kay.state().setup[two!.id]?.status === 'done', 20_000).catch((err: unknown) => {
@@ -464,8 +468,46 @@ describe('models, usage, space and search', () => {
     expect(kay.workspaces.find(ws!.id)?.model).toBe('opus');
     kay.bench.setEffort(`ws:${ws!.id}`, 'low');
     expect(kay.workspaces.find(ws!.id)?.effort).toBe('low');
-    kay.bench.setEffort(`ws:${ws!.id}`, undefined);
-    expect(kay.workspaces.find(ws!.id)?.effort).toBeUndefined();
+    kay.bench.setEffort(`ws:${ws!.id}`, 'auto');
+    expect(kay.workspaces.find(ws!.id)?.effort).toBeNull();
+  });
+
+  it('keeps each conversation’s own effort: another chat’s pick never changes it', async () => {
+    hub = await startHub({ keys });
+    const kay = await solo(repo());
+    const project = projectOf(kay.workspaces).id;
+    const a = (await kay.session.workspaces!.newWorktree(project, 'a'))!;
+    const b = (await kay.session.workspaces!.newWorktree(project, 'b'))!;
+    kay.bench.setEffort(`ws:${a.id}`, 'max');
+    kay.bench.setEffort(`ws:${b.id}`, 'low');
+    // The default for new conversations moves; the two chats keep theirs.
+    kay.bench.setEffort(undefined, 'high');
+    expect(kay.state().prefs.effort).toBe('high');
+    kay.session.askOwnClaude('hard', `ws:${a.id}`);
+    await waitFor(() => kay.runs.length === 1, 4000);
+    kay.session.askOwnClaude('quick', `ws:${b.id}`);
+    await waitFor(() => kay.runs.length === 2, 4000);
+    expect(kay.runs.map((r) => r.effort)).toEqual(['max', 'low']);
+    // Auto in one chat is Auto there, whatever the default says.
+    kay.bench.setEffort(`ws:${b.id}`, 'auto');
+    expect(kay.workspaces.find(b.id)?.effort).toBeNull();
+    kay.session.askOwnClaude('again', `ws:${b.id}`);
+    await waitFor(() => kay.runs.length === 3, 4000);
+    expect(kay.runs[2]?.effort).toBeUndefined();
+  });
+
+  it('starts a new conversation on the default model and effort, and keeps them when the default moves', async () => {
+    hub = await startHub({ keys });
+    const kay = await solo(repo());
+    kay.bench.setModel(undefined, 'opus');
+    kay.bench.setEffort(undefined, 'xhigh');
+    const ws = (await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'kept'))!;
+    expect(kay.workspaces.find(ws.id)).toMatchObject({ model: 'opus', effort: 'xhigh' });
+    kay.bench.setModel(undefined, 'haiku');
+    kay.bench.setEffort(undefined, 'auto');
+    kay.session.askOwnClaude('hi', `ws:${ws.id}`);
+    await waitFor(() => kay.runs.length === 1, 4000);
+    expect(kay.runs[0]).toMatchObject({ model: 'opus', effort: 'xhigh' });
   });
 
   it('adds up tokens and cost per workspace and measures its folder', async () => {

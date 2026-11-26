@@ -110,9 +110,9 @@ test('a draft plan’s Approve ▾: approve it, worked by Codex; then Start ▾'
   await byCodex.click();
   await expect(page.getByRole('button', { name: 'Approve Plan' })).toHaveCount(0, { timeout: 20_000 });
 
-  // Its agent is Codex now (⋯ › Agent for Its Work), and Start's ▾ has it checked.
-  await page.getByRole('button', { name: 'Plan Options' }).click();
-  await page.getByRole('menuitem', { name: 'Agent for Its Work' }).hover();
+  // Its builder is Codex now (the header's Agents, BLG-982), and Start's ▾ has it checked.
+  await page.getByRole('button', { name: /^Agents: / }).click();
+  await page.getByRole('menuitem', { name: /^Builder: Codex/ }).hover();
   await expect(menu(page).getByRole('menuitem', { name: 'Codex', exact: true })).toHaveAttribute('data-checked', 'true');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');

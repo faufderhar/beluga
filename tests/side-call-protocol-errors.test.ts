@@ -3,6 +3,7 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { codexComplete } from '../src/agent/runtime/codex/complete.js';
 import { copilotComplete } from '../src/agent/runtime/copilot/complete.js';
+import { agyComplete } from '../src/agent/runtime/antigravity/complete.js';
 import type { Turn, TurnStatus } from '../src/agent/runtime/codex/protocol.js';
 import { CodexRpc } from '../src/agent/runtime/codex/rpc.js';
 import type { PromptResponse, SessionUpdate, StopReason } from '../src/agent/runtime/opencode/acp.js';
@@ -11,8 +12,8 @@ import type { OpenCodeConnection } from '../src/agent/runtime/opencode/connectio
 import type { Complete, CompletionRequest } from '../src/agent/runtime/types.js';
 import { sideCalls } from '../src/agent/side-calls.js';
 
-type Runtime = 'codex' | 'opencode' | 'copilot';
-const completeWith = { codex: codexComplete, opencode: openCodeComplete, copilot: copilotComplete };
+type Runtime = 'codex' | 'opencode' | 'copilot' | 'antigravity';
+const completeWith = { codex: codexComplete, opencode: openCodeComplete, copilot: copilotComplete, antigravity: agyComplete };
 const request: CompletionRequest = { cwd: process.cwd(), system: 'Name it.', prompt: 'Fix login redirect.', model: 'gpt-test' };
 const providerError = 'Failed to authenticate. OAuth session expired.';
 
@@ -94,7 +95,7 @@ function finish(runtime: Runtime, id: number, peer: Peer, failed = false): void 
   } else peer.stopped(id, failed ? 'refusal' : 'end_turn');
 }
 
-for (const runtime of ['codex', 'opencode', 'copilot'] as const) {
+for (const runtime of ['codex', 'opencode', 'copilot', 'antigravity'] as const) {
   describe(`${runtime} side-call protocol outcomes`, () => {
     it('accepts a successful answer about authentication errors', async () => {
       const fake = wire(runtime, (id, peer) => {
@@ -207,7 +208,7 @@ describe('runtime-specific terminal outcomes', () => {
     await expect(fake.complete(request)).rejects.toMatchObject({ kind: 'failed' });
   });
 
-  for (const runtime of ['opencode', 'copilot'] as const) {
+  for (const runtime of ['opencode', 'copilot', 'antigravity'] as const) {
     it.each([
       ['cancelled', 'failed'],
       ['max_turn_requests', 'max_turns'],

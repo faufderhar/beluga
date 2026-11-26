@@ -188,7 +188,7 @@ export function Recap({ state, stats, now, title, pass, onShare, onClose }: { st
             </button>
           ))}
         </div>
-        <IconButton icon="x" label="Close the recap" onClick={onClose} />
+        <IconButton size="small" icon="x" label="Close the recap" onClick={onClose} />
       </div>
       <div className={cx(s.stage, last && Boolean(pass) && s.stageWithPass)} onClick={onClick} onPointerDown={() => setHeld(true)} onPointerUp={() => setHeld(false)} onPointerLeave={() => setHeld(false)}>
         <AnimatePresence mode="wait" initial={false}>
@@ -205,15 +205,15 @@ export function Recap({ state, stats, now, title, pass, onShare, onClose }: { st
       <AnimatePresence>
         {last ? (
           <motion.div key="end" className={s.end} initial={{ opacity: 0, y: still ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, delay: still ? 0 : 0.9, ease: EASE }}>
-            <Button variant="plain" icon="refresh" onClick={() => go(0)}>
+            <Button size="small" variant="plain" icon="refresh" onClick={() => go(0)}>
               Play Again
             </Button>
             {onShare ? (
-              <Button variant="plain" icon="share" onClick={onShare}>
+              <Button size="small" variant="plain" icon="share" onClick={onShare}>
                 Share…
               </Button>
             ) : null}
-            <Button variant="primary" onClick={onClose}>
+            <Button size="small" variant="primary" onClick={onClose}>
               Back to Your Stats
             </Button>
           </motion.div>

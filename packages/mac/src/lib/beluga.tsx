@@ -8,6 +8,7 @@ import { SAVING_DRAW_MS, powerSaving } from './power.js';
 import type { SettingsPane } from './settings-search.js';
 import { WINDOW_UI_KEYS, scopedKey, splitUiPatch } from '../machines/pane-model.js';
 import { type Snapshot, readSnapshot } from './stable.js';
+import { loadGroupFolds } from './group-folds.js';
 
 /**
  * This window's own UI state. It uses the shared shape (UiState) for everything the
@@ -120,8 +121,17 @@ interface Beluga {
 
 const Ctx = createContext<Beluga | null>(null);
 
+function windowUi(): UiStore {
+  const ui = new UiStore();
+  const folded = loadGroupFolds();
+  if (folded.length) ui.patch({ collapsed: [...ui.get().collapsed, ...folded] });
+  return ui;
+}
+
 export function BelugaProvider({ client, children }: { client: SocketClient; children: ReactNode }) {
-  const ui = useRef(new UiStore()).current;
+  const made = useRef<UiStore | undefined>(undefined);
+  // The window's own state starts with the groups that were folded last time (lib/group-folds.ts).
+  const ui = (made.current ??= windowUi());
   const value = useMemo(() => ({ client, ui, home: client }), [client, ui]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

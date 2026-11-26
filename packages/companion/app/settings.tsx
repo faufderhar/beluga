@@ -3,7 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { ArrowDownToLine, AtSign, Bell, Cable, RefreshCw, Search, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Download, Hand, HardDrive, Info, LogOut, Mic, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
+import { AppState, Linking, Platform, ScrollView, Switch, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header, Screen, useScrolled } from '../components/Screen';
@@ -27,6 +27,7 @@ import { UpdateSheet } from '../components/Update';
 import { appUpdate } from '../modules/app-update';
 import { appVersion, autoOn, checkForUpdate, checkOn, setAuto, setCheck, updatesAvailable, useUpdate } from '../lib/update';
 import { VOICE_MODELS } from '../../../src/shared/voice-models';
+import { PRIVACY_NOTICE_URL } from '../../../src/shared/privacy';
 
 /**
  * The phone's own settings. On top: your Mac, notifications on or off, Storage, sign out. Everything else
@@ -314,12 +315,15 @@ export default function Settings() {
                   onChange={chooseShare}
                   options={[
                     { key: 'off', label: 'Off' },
-                    { key: 'limited', label: 'Limited' },
+                    { key: 'limited', label: 'Essential' },
                     { key: 'on', label: 'On' },
                   ]}
                 />
                 <T v="caption" c={color.text3} style={{ paddingHorizontal: 6 }}>
-                  {share === 'off' ? 'Nothing is sent.' : share === 'limited' ? 'Only the very essential data.' : 'How you use Beluga and its statistics, sent anonymously.'} Beluga is free and open source: this is how it gets better for you.
+                  {share === 'off' ? 'Nothing is sent.' : share === 'limited' ? 'Only the very essential data.' : 'Your agents’ sessions too, masked. Linked to a random id, not your name or email.'} Beluga is free and open source: this is how it gets better for you.{' '}
+                  <T v="caption" c={color.info} onPress={() => void Linking.openURL(PRIVACY_NOTICE_URL)} accessibilityRole="link">
+                    Privacy notice
+                  </T>
                 </T>
               </View>
             ) : null}

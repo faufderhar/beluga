@@ -5,7 +5,7 @@ import type { Actions } from './actions.js';
 import { useApp } from './beluga.js';
 import { EMPTY_HISTORY, type NavHistory, type PanelSnapshot, canGoBack, canGoForward, goBack, goForward, prune, replaceCurrent, updateCurrent, visit } from './nav-history.js';
 import { pageAlive, restorePatch } from './nav-pages.js';
-import { currentTab, panelChosenOpen } from './panel.js';
+import { panelChosenOpen, recentTabs } from './panel.js';
 import { getPrefs, setPrefs, subscribePrefs } from './prefs.js';
 import { paneOf, sameView } from '../machines/pane-model.js';
 import { machineClientOf } from '../machines/pane-clients.js';
@@ -54,15 +54,13 @@ function panelStateOf(state: AppState): AppState {
 function snapshotOf(local: AppState): PanelSnapshot {
   const state = panelStateOf(local);
   const prefs = getPrefs();
-  const topTab = currentTab(state, prefs, 'top');
-  const bottomTab = currentTab(state, prefs, 'bottom');
+  const shown = recentTabs(state.view, prefs);
   return {
     sidebar: prefs.sidebar,
     inspector: panelChosenOpen(prefs),
     bottomOpen: prefs.bottomOpen,
     drawer: prefs.drawer,
-    ...(topTab ? { topTab } : {}),
-    ...(bottomTab ? { bottomTab } : {}),
+    ...(shown.length ? { shown } : {}),
   };
 }
 

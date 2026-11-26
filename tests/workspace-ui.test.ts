@@ -3,7 +3,7 @@ import { SubAgentTracker } from '../src/agent/runtime/claude/subagents.js';
 import { channelOf, type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';
-import { agentsMenu, confirmMenu, projectMenu } from '../src/ui/menus.js';
+import { agentsMenu, archiveOptionId, confirmMenu, projectMenu } from '../src/ui/menus.js';
 import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -295,6 +295,18 @@ describe('confirm dialogs', () => {
     expect(confirmMenu(s, 'delete', 'w1')!.options.map((o) => o.id)).toEqual(['confirm-delete-env', 'confirm-delete-env-all', 'confirm-delete', 'close']);
     expect(confirmMenu(base(), 'archive', 'main')!.options.map((o) => o.id)).toEqual(['confirm-archive', 'close']);
     expect(confirmMenu(base(), 'archive', 'nope')).toBeUndefined();
+  });
+
+  it("Delete's Archive Instead picks options only the archive menu has", () => {
+    const s = reduce(base(), { type: 'env_changes', id: 'w1', changes: [{ file: '.env', added: ['NEW'], changed: [], removed: ['OLD'], binary: false }] });
+    const archive = confirmMenu(s, 'archive', 'w1')!.options.map((o) => o.id);
+    const del = confirmMenu(s, 'delete', 'w1')!.options.map((o) => o.id);
+    for (const [withEnv, removals] of [[false, false], [true, false], [true, true]] as const) {
+      const id = archiveOptionId(withEnv, removals);
+      expect(archive).toContain(id);
+      // Why the delete dialog has to pick from the archive menu: picking there does nothing.
+      expect(del).not.toContain(id);
+    }
   });
 });
 

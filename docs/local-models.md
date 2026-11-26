@@ -1,7 +1,7 @@
 # Local and bring-your-own models
 
 Beluga can run your agent on your own models instead of Anthropic's: Ollama on this Mac first, or
-any Anthropic-compatible address (LiteLLM, a company proxy). It's still Claude Code doing the work,
+any Anthropic- or OpenAI-compatible address (LiteLLM, a company proxy, a gateway). It's still Claude Code doing the work,
 with the same tools, room features, approvals and safety rules; only the model behind it changes.
 How good the answers are depends on that model, and the picker says so.
 
@@ -32,6 +32,22 @@ goes into chat, reports or anything the room sees. The picker shows only an endp
 
 An endpoint that doesn't answer stays in the picker, greyed, saying so. Beluga looks again every
 30 seconds, and at once with **Check Again**.
+
+## An OpenAI-format address
+
+Some gateways and providers only have OpenAI's `/v1/chat/completions`, not Anthropic's
+`/v1/messages` (or their `/v1/messages` is broken). Set the endpoint's **Format** to **OpenAI**.
+Its address is the one OpenAI's SDK would take, usually ending in `/v1`
+(`https://gateway.example.com/v1`); a bare address gets `/v1` added. Its models are read from
+`…/models`.
+
+Claude Code still does the work: Beluga runs a small translator on this computer
+(`src/agent/runtime/openai-bridge.ts`, on `127.0.0.1`), points the run's `ANTHROPIC_BASE_URL` at
+it, and turns each request into `/chat/completions` and each answer back: text, images, tool calls
+and tool results, thinking (`reasoning_content`), streaming, stop reasons and token counts. The
+endpoint's key stays in the daemon; Claude Code only gets the translator's own token, new each time
+Beluga starts, and the translator answers nothing without it. Anthropic-only features (prompt
+caching marks, web search and other server tools) don't go along.
 
 ## How it works
 

@@ -105,7 +105,7 @@ function Crumbs({ item, back }: { item: Sentinel; back: () => void }) {
   const project = useApp((st) => st.projects.find((p) => p.id === item.projectId));
   return (
     <nav className={t.crumbs} aria-label="Where this sentinel is">
-      <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
+      <IconButton size="small" icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
       <button type="button" className={t.crumb} onClick={() => a.openList()}>
         Sentinel
       </button>
@@ -172,7 +172,7 @@ function Header({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) =
           </Button>
         )}
         <ActionsDropdown items={more}>
-          <IconButton icon="more" label={`More for ${item.name}`} />
+          <IconButton size="small" icon="more" label={`More for ${item.name}`} />
         </ActionsDropdown>
       </div>
     </header>

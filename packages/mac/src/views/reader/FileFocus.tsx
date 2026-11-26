@@ -180,7 +180,7 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
         </nav>
         <span className={r.flex} />
         {markdown && isText && !editing ? (
-          <Segmented
+          <Segmented size="small"
             label="Show as"
             value={mode}
             onChange={setMode}
@@ -191,13 +191,13 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
           />
         ) : null}
         {component && !editing ? <PreviewToggle previewing={previewing} onChange={setPreviewing} /> : null}
-        {showsCode && !drawing ? <IconButton icon="wrap" label={prefs.readerWrap ? 'Don’t wrap long lines' : 'Wrap long lines'} active={prefs.readerWrap} onClick={() => setPrefs({ readerWrap: !prefs.readerWrap })} /> : null}
+        {showsCode && !drawing ? <IconButton size="small" icon="wrap" label={prefs.readerWrap ? 'Don’t wrap long lines' : 'Wrap long lines'} active={prefs.readerWrap} onClick={() => setPrefs({ readerWrap: !prefs.readerWrap })} /> : null}
         <EditTools viewer={viewer} wsId={wsId} selfId={selfId} />
         <span className={r.tools}>
-          {isText ? <IconButton icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy the text'} onClick={() => copy(viewer.content)} /> : null}
-          {local ? <IconButton icon="external" label="Open in Editor" onClick={() => void openWithDefaultApp(client, local)} /> : null}
-          {local ? <IconButton icon="folder" label={revealFile} onClick={() => void revealInFinder(client, local)} /> : null}
-          {!local ? <IconButton icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} /> : null}
+          {isText ? <IconButton size="small" icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy the text'} onClick={() => copy(viewer.content)} /> : null}
+          {local ? <IconButton size="small" icon="external" label="Open in Editor" onClick={() => void openWithDefaultApp(client, local)} /> : null}
+          {local ? <IconButton size="small" icon="folder" label={revealFile} onClick={() => void revealInFinder(client, local)} /> : null}
+          {!local ? <IconButton size="small" icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} /> : null}
         </span>
       </header>
       <div className={r.body}>

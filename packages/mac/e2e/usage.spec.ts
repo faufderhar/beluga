@@ -53,11 +53,12 @@ test('a card per provider, and the chip that makes one your default', async ({ p
   await openUsage(page);
   const claude = page.getByRole('region', { name: 'Claude usage' });
   const codex = page.getByRole('region', { name: 'Codex usage' });
-  const local = page.getByRole('region', { name: 'Local usage' });
-  // Quota windows where the plan has them, tokens and speed where not.
+  const antigravity = page.getByRole('region', { name: 'Antigravity usage' });
+  // Quota windows where the plan has them, by group of models where the plan keeps a limit per group.
   await expect(codex.getByRole('meter', { name: /Weekly: 24% used/ })).toBeVisible();
-  await expect(local.getByText('tok/s')).toBeVisible();
-  await expect(local.getByRole('meter')).toHaveCount(0);
+  await expect(antigravity.getByRole('meter', { name: 'Gemini Models 5-hour: 25% used' })).toBeVisible();
+  // A card only for an agent ready here: the demo's local model has no endpoint, so no card (tokens and speed: tests/usage-providers.test.ts).
+  await expect(page.getByRole('region', { name: 'Local usage' })).toHaveCount(0);
   await expect(claude.getByText('Default')).toBeVisible();
   await page.getByRole('main').screenshot({ path: '../../.beluga/scratch/01-usage-provider-cards.png' }).catch(() => undefined);
   await codex.getByRole('button', { name: 'Make Codex your default agent' }).click();
@@ -191,22 +192,26 @@ test('sessions: how much of each 5-hour session and each week you used', async (
   await expect(sessions.getByText(/of each session used/)).toBeVisible();
 });
 
-test('your card: a title earned from your stats, and the others to wear', async ({ page }) => {
+test('your card: a title earned from your stats, and the others to wear from a list', async ({ page }) => {
   await openUsage(page);
   // The whole window: no panel beside Usage.
   await expect(page.locator('aside[aria-label="Panel"]')).toHaveAttribute('aria-hidden', 'true');
   const card = page.getByRole('region', { name: 'Your card' });
   const title = card.getByRole('heading', { level: 1 });
   await expect(title).toBeVisible();
-  await expect(card.getByText(/^Because: /)).toBeVisible();
+  // What earned it, and the titles you've earned as a list (the one you wear marked).
+  const list = card.getByRole('list', { name: 'Titles you’ve earned' });
+  await expect(list.getByRole('button', { pressed: true })).toHaveCount(1);
   // The 3D pass hangs on its lanyard.
   await expect(card.locator('canvas')).toBeVisible();
   // Wear another title, and go back.
   const first = await title.textContent();
-  const chip = card.getByRole('button', { name: 'Code God' });
+  if (await card.getByRole('button', { name: /^Show all \d+$/ }).count()) await card.getByRole('button', { name: /^Show all \d+$/ }).click();
+  const chip = list.getByRole('button', { name: /^Code God/ });
   await chip.click();
   await expect(title).toHaveText('Code God');
-  await card.getByRole('button', { name: `Back to ${first}` }).click();
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  await list.getByRole('button', { name: new RegExp(`^${first}`) }).click();
   await expect(title).toHaveText(first!);
 });
 

@@ -9,7 +9,7 @@ import { chatMention, parseChatRef } from '../shared/chat-ref.js';
 import { MAX_ELSEWHERE_SUGGESTIONS, MAX_TASK_SUGGESTIONS, type TaskMention, matchTasks, titleRank } from '../shared/task-refs.js';
 
 /** What a suggestion is (the list shows its icon). */
-export type SuggestionKind = 'command' | 'skill' | 'claude' | 'person' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'chat' | 'option';
+export type SuggestionKind = 'command' | 'skill' | 'claude' | 'person' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'chat' | 'option' | 'key';
 
 export interface Suggestion {
   /** What the list shows. */
@@ -63,6 +63,8 @@ export interface SuggestContext {
    * right under it ("@claude:<owner>") with its own words, instead of where friends' agents go.
    */
   readonly claudeHere?: { readonly hint: string; readonly owner?: { readonly name: string; readonly hint: string } };
+  /** Keys kept for this chat (BLG-965): first after "@", as `$NAME` (the agent reads it from its environment). */
+  readonly keys?: readonly string[];
 }
 
 /** How a friend is written in a message: "@mia" ("@Mia Chen" → "@MiaChen", "@Zoë" stays). */
@@ -274,12 +276,25 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   const paths = pathMentions(typed, ctx)
     .filter((o) => !seen.has(o.label.toLowerCase()))
     .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
-  return [...named, ...tasks, ...chatMentions(typed, before, ctx), ...paths, ...elsewhere];
+  return [...keyMentions(typed, before, ctx), ...named, ...tasks, ...chatMentions(typed, before, ctx.chats), ...paths, ...elsewhere];
 }
 
-/** The chats a typed "@…" may mean, best first (as tasks: a word of the title, nothing for a lone @). */
-function chatMentions(typed: string, before: string, ctx: SuggestContext): Suggestion[] {
-  return (ctx.chats ?? [])
+/** This chat's keys a typed "@…" may mean (a lone @ lists them all, "@open" finds OPENAI_API_KEY): first, as you're likely to want one. */
+function keyMentions(typed: string, before: string, ctx: SuggestContext): Suggestion[] {
+  const want = typed.toLowerCase().replace(/^\$/, '');
+  return (ctx.keys ?? [])
+    .filter((k) => !want || k.toLowerCase().split('_').some((w) => w.startsWith(want)) || k.toLowerCase().startsWith(want))
+    .slice(0, MAX_KEY_SUGGESTIONS)
+    .map((k) => ({ label: `$${k}`, hint: 'a key kept for this chat: its name goes, never the key', value: `${before}$${k} `, enter: 'complete' as const, kind: 'key' as const }));
+}
+const MAX_KEY_SUGGESTIONS = 4;
+
+/**
+ * The chats a typed "@…" may mean, best first (as tasks: a word of the title, nothing for a lone @).
+ * Also a friends' conversation's box (network/chat-model.ts).
+ */
+export function chatMentions(typed: string, before: string, chats: SuggestContext['chats']): Suggestion[] {
+  return (chats ?? [])
     .flatMap((c) => {
       const rank = titleRank(typed, c.title);
       const ref = parseChatRef(c.ref);

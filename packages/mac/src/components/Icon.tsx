@@ -12,6 +12,8 @@ const PATHS = {
   chat: 'M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11h.5A1.5 1.5 0 0 1 3 9.5z',
   folder: 'M2.5 4.5A1 1 0 0 1 3.5 3.5h3l1.5 1.5h4.5a1 1 0 0 1 1 1V11.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z',
   file: 'M4 2.5h5l3 3v8H4z M9 2.5v3h3',
+  /** A file of text (a long paste kept as one). */
+  fileText: 'M4 2.5h5l3 3v8H4z M9 2.5v3h3 M6 8.5h4 M6 10.5h4',
   diff: 'M5 3v6 M2 6h6 M8.5 12.5h5.5 M11 2.5l-2 11',
   terminal: 'M2.5 3.5h11v9h-11z M4.5 6.5l2 1.5-2 1.5 M8 10h3',
   plus: 'M8 3.5v9 M3.5 8h9',
@@ -56,6 +58,7 @@ const PATHS = {
   clip: 'M10.5 5.5l-4.3 4.3a1.4 1.4 0 0 0 2 2l4.8-4.8a2.8 2.8 0 0 0-4-4L4.2 7.8a4.2 4.2 0 0 0 6 6l4-4',
   clock: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M8 5v3l2 1.5',
   lock: 'M4.5 7.5h7v6h-7z M6 7.5V5.5a2 2 0 0 1 4 0v2',
+  key: 'M5.5 13.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M7.6 8.4l5.4-5.4 M11 5l1.75 1.75 M9.25 6.75l1.25 1.25',
   globe: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M2.5 8h11 M8 2.5c-2 2.2-2 8.8 0 11 M8 2.5c2 2.2 2 8.8 0 11',
   grid: 'M3 3h4v4H3z M9 3h4v4H9z M3 9h4v4H3z M9 9h4v4H9z',
   gauge: 'M2.5 11a5.5 5.5 0 1 1 11 0 M8 11l2.5-3.5',
@@ -170,6 +173,26 @@ const PATHS = {
 export type IconName = keyof typeof PATHS | AgentMark;
 
 const isMark = (name: IconName): name is AgentMark => name in AGENT_MARKS;
+
+/** An icon's outline, for drawing it outside the page (a native menu's row: lib/native-menu.ts). */
+export interface IconShape {
+  readonly d: string;
+  /** The side of its square grid: 16, or an agent mark's own. */
+  readonly grid: number;
+  /** A filled mark (its own colour when it has one); otherwise a 1.5 stroke. */
+  readonly filled: boolean;
+  readonly color?: string;
+  readonly evenOdd?: boolean;
+}
+
+export function iconShape(name: IconName): IconShape {
+  if (isMark(name)) {
+    const mark = AGENT_MARKS[name];
+    const grid = Number(AGENT_MARK_VIEWBOX.split(' ')[2]) || 24;
+    return { d: mark.d, grid, filled: true, ...(mark.color ? { color: mark.color } : {}), ...(mark.evenOdd ? { evenOdd: true } : {}) };
+  }
+  return { d: PATHS[name], grid: 16, filled: false };
+}
 
 export function Icon({ name, size = 16, ...rest }: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {
   if (isMark(name)) {

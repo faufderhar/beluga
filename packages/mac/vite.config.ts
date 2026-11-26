@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { type Plugin, defineConfig } from 'vite';
+import { touchReveal } from './touch-reveal.js';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 
@@ -74,6 +75,8 @@ function pdfjsAssets(): Plugin {
 
 export default defineConfig({
   plugins: [react(), daemonEndpoint(), pdfjsAssets()],
+  // What a pointer reveals on hover, always shown on a touch screen (a phone's browser: BLG-6).
+  css: { postcss: { plugins: [touchReveal()] } },
   resolve: { alias: { '@beluga': path.join(repo, 'src') } },
   clearScreen: false,
   // Loaded only when the first graph or chart shows (components/graph, components/views/Chart):

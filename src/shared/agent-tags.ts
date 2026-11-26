@@ -1,6 +1,7 @@
 import type { AgentRef } from '../protocol.js';
 import { agentName } from './agent-label.js';
 import { type AgentMark, agentMark } from './agent-marks.js';
+import { THIS_COMPUTER } from './assistant.js';
 
 /** protocol.ts's defaultAgentOf, repeated so the phone bundles this file without the daemon's protocol. */
 // agent-wording: claude (the Claude runtime's own name)
@@ -61,7 +62,7 @@ export function roomAgentTags(peers: readonly TagPeer[], selfId: string, mine: r
     .map((r) => {
       const agent = self?.agents?.find((a) => a.runtime === r.id) ?? { runtime: r.id, label: r.label };
       const isDefault = yourDefault.runtime === r.id;
-      return { tag: `@${r.id}`, peerId: selfId, agent, mark: agentMark(agent), hint: `your ${agentName(agent)}, on this Mac${isDefault ? ' (your default)' : ''}` };
+      return { tag: `@${r.id}`, peerId: selfId, agent, mark: agentMark(agent), hint: `your ${agentName(agent)}, on ${THIS_COMPUTER}${isDefault ? ' (your default)' : ''}` };
     });
   const theirs: AgentTag[] = peers
     .filter((p) => p.peerId !== selfId && p.agent && handle(p.name))

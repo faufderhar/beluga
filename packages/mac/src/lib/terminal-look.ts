@@ -9,7 +9,10 @@ export { SCROLLBACK_CHOICES } from './terminal-import-model.js';
 
 /** How the terminal looks: fonts to offer, and the xterm options for your choices. */
 
-/** Monospace fonts worth offering; only the installed ones are listed (SF Mono and Menlo always are on a Mac). */
+/**
+ * Monospace fonts worth offering when the daemon hasn't listed what's installed (it reads the
+ * font folders: a web view can't list local fonts); only the installed ones show (SF Mono and Menlo always do on a Mac).
+ */
 export const TERMINAL_FONTS: readonly string[] = ['Menlo', 'Monaco', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'IBM Plex Mono', 'Source Code Pro', 'Hack', 'Iosevka', 'Berkeley Mono', 'Geist Mono', 'Courier New'];
 
 /** The system's monospace (SF Mono on a Mac, where web views only reach it as ui-monospace; Cascadia Mono or Consolas on Windows; DejaVu Sans Mono on Linux). */
@@ -46,12 +49,16 @@ export function hasFont(family: string): boolean {
   return found;
 }
 
-/** The fonts to offer: installed ones, plus the one you picked even if it's gone (so the menu shows it). */
-export function fontChoices(picked: string): Array<{ value: string; label: string }> {
+/**
+ * The fonts to offer: the monospace ones the daemon found installed (any of them, Nerd Fonts
+ * too, #547), or the ones above when it hasn't said (an older daemon); only those this window
+ * can draw, plus the one you picked even if it's gone (so the menu shows it).
+ */
+export function fontChoices(picked: string, installed: readonly string[] = [], has: (family: string) => boolean = hasFont): Array<{ value: string; label: string }> {
   const mac = keyPlatform() === 'mac';
   // Menlo is always on a Mac; elsewhere only what's really installed.
-  const fonts = TERMINAL_FONTS.filter((f) => (mac && f === 'Menlo') || hasFont(f));
-  const extra = picked && !fonts.includes(picked) ? [{ value: picked, label: hasFont(picked) ? picked : `${picked} (not installed)` }] : [];
+  const fonts = (installed.length ? installed : TERMINAL_FONTS).filter((f) => (mac && f === 'Menlo') || has(f));
+  const extra = picked && !fonts.includes(picked) ? [{ value: picked, label: has(picked) ? picked : `${picked} (not installed)` }] : [];
   return [{ value: '', label: mac ? 'SF Mono (system)' : 'System monospace' }, ...fonts.map((f) => ({ value: f, label: f })), ...extra];
 }
 

@@ -1,0 +1,63 @@
+/*
+ * A phone's browser (BLG-6: Beluga on a server, opened from a phone). Below lib/phone-layout.ts's
+ * width the frame is one column (layout/PhoneFrame.tsx); here, everything you tap is at least
+ * 44px, as iOS and Android ask, and a field never makes the page zoom in. The app's own window is
+ * never this narrow, so none of this reaches the desktop. What a pointer reveals on hover is shown
+ * on a touch screen by the build (touch-reveal.ts).
+ */
+@media (max-width: 700px) {
+  :root {
+    --control-h-large: 44px !important;
+    --control-h: 44px !important;
+    --control-h-small: 44px !important;
+    --titlebar-h: 56px !important;
+  }
+
+  html {
+    /* No grey flash over a tapped row (each control shows its own pressed state). */
+    -webkit-tap-highlight-color: transparent;
+    /* The notch and the home bar: the frame stays clear of them. */
+    padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  }
+  body {
+    /* A swipe at the edge scrolls the list, never the page (pull-to-refresh would reload Beluga). */
+    overscroll-behavior: none;
+  }
+
+  /* Everything you tap: at least a fingertip high (and wide, when it's only an icon). */
+  :is(button, [role='button'], [role='tab'], [role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='combobox'], [role='switch'], [role='checkbox'], [role='radio'], summary, select):not([hidden], [aria-hidden='true'], .xterm *) {
+    min-height: 44px;
+  }
+  :is(button, [role='button'], [role='tab'], [role='combobox'], [role='checkbox'], [role='radio']):not([hidden], [aria-hidden='true'], .xterm *) {
+    min-width: 44px;
+  }
+  /* A link in a line of text stays in the line; a link that stands alone is a target. */
+  a[href]:not(p a, li a, td a, :is(.selectable, [class*='markdown'], [class*='prose']) a) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  /* 16px or more: iOS zooms the page into a smaller field when you tap it. */
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  textarea:not(.xterm-helper-textarea),
+  select,
+  [contenteditable='true'] {
+    font-size: max(16px, 1em) !important;
+    min-height: 44px;
+  }
+
+  /* Dockview's tabs (the panel's Changes, Files, Info; the terminal's): a fingertip high. */
+  .dv-tabs-and-actions-container {
+    height: 44px !important;
+  }
+  .dv-tab {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  /* Nothing to drag apart on a phone: the dividers take no touches. */
+  .dv-sash {
+    pointer-events: none;
+  }
+}

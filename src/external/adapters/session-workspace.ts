@@ -1,4 +1,5 @@
 import { assistantOf } from '../../core/assistant/registry.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 import { boardOf } from '../../core/board/registry.js';
 import { startPrompt } from '../../core/board/work.js';
 import { plansOf } from '../../core/plans/registry.js';
@@ -44,7 +45,7 @@ export function sessionWorkspace(session: Session): WorkspacePort {
       if (!result) return undefined;
       return result.ok ? { merged: true } : { merged: false, reason: result.reason, files: result.files };
     },
-    mac: () => (assistantOf(session) ?? missing('Your Mac')).tools(),
+    mac: () => (assistantOf(session) ?? missing(ASSISTANT_TITLE)).tools(),
     phone: () => companionOf(session)?.control.toolsFor()?.tools,
     phoneOff: () => (companionOf(session)?.control.useLevel() ?? 'off') === 'off',
     phoneUse: () => companionOf(session)?.control.useLevel() ?? 'off',

@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
 import { BRANCH_PREFIX_RE, EFFORTS, type LowPower } from '@beluga/shared/settings-schema.js';
+import { PR_TITLE_RULE_MAX } from '@beluga/shared/naming.js';
 import { FETCH_EVERY_CHOICES, FETCH_EVERY_DEFAULT, fetchEveryWords } from '@beluga/shared/background-fetch.js';
 import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { EFFORT_INFO, agentEntries, modelInfo, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
@@ -29,11 +30,13 @@ import { UsageLimitSettings } from './UsageLimitSettings.js';
 import { ParallelSettings } from './ParallelSettings.js';
 import { AgentThreadsSettings, ThreadLimitsSettings } from './AgentThreadsSettings.js';
 import { ChatLimitSettings } from './ChatLimitSettings.js';
+import { AutopilotWaitSettings } from './AutopilotWaitSettings.js';
 import { ArchiveSettledRow } from './ArchiveSettledRow.js';
 import { McpSettings } from './McpSettings.js';
 import { ExternalAgentsSettings } from './ExternalAgentsSettings.js';
 import { LaunchFlagsSettings } from './LaunchFlagsSettings.js';
 import { LocalModelsSettings } from './LocalModelsSettings.js';
+import { AcpAgentsSettings } from './AcpAgentsSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { VoiceSettings } from './VoiceSettings.js';
@@ -56,11 +59,12 @@ import { MachinesSettings } from './MachinesSettings.js';
 import { AccessSettings } from '../gateway/AccessSettings.js';
 import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
 import { TelemetrySettingsGroup } from './TelemetrySettings.js';
+import { TracesSettings } from './TracesSettings.js';
 import { GITHUB_URL } from '../lib/support.js';
 import { openExternal } from '../lib/system.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
 import { keyPlatform } from '../lib/shortcuts-model.js';
-import { cmdReturn, returnName, revealLabel, yourComputer } from '../lib/os-words.js';
+import { cmdReturn, returnName, revealLabel, thisComputer, yourComputer } from '../lib/os-words.js';
 
 /** Your profile picture: friends and people in your groups get it once and keep it (net/mesh/avatars.ts). */
 function PictureRow() {
@@ -263,6 +267,17 @@ function Appearance() {
             ))}
           </div>
         </Row>
+        <Row label="Style" detail={prefs.look === 'macos' ? 'Round buttons and floating glass panes, as macOS 26 draws its apps.' : 'Softly rounded buttons, with the sidebar and panel the window’s full height.'}>
+          <Select
+            label="Style"
+            value={prefs.look}
+            onChange={(v) => setPrefs({ look: v })}
+            options={[
+              { value: 'beluga', label: 'Beluga' },
+              { value: 'macos', label: 'macOS' },
+            ]}
+          />
+        </Row>
       </Group>
       <ThemeGroups />
       <Group title="Low Power">
@@ -409,7 +424,7 @@ function OpenModelsGroup() {
           </Row>
         ))
       ) : (
-        <Row label="None" detail="No agent on this Mac is ready with a model yet.">
+        <Row label="None" detail={`No agent on ${thisComputer()} is ready with a model yet.`}>
           {null}
         </Row>
       )}
@@ -456,12 +471,14 @@ function AgentPane() {
         </Row>
       </Group>
       <OpenModelsGroup />
+      <AutopilotWaitSettings />
       <AgentsGroup mine={runtime} />
       <LaunchFlagsSettings />
       <McpSettings />
       <div id={LOCAL_MODELS_ID}>
         <LocalModelsSettings />
       </div>
+      <AcpAgentsSettings />
       <Group title="In the chat">
         <Row label="Sub-agents">
           <Select
@@ -540,7 +557,7 @@ function BranchPrefixRow() {
     if (ok && value !== saved) void api.session.setPrefs({ branchPrefix: value });
   };
   return (
-    <Row label="Branch prefix" detail={ok ? `New worktrees get branches like ${value}fix-login. Leave it empty for no prefix.` : 'Use letters, digits and . _ - / only.'}>
+    <Row label="Branch prefix" detail={ok ? `New worktrees get branches like ${value}fix-login. Leave it empty for no prefix. A project can have its own in Project Settings.` : 'Use letters, digits and . _ - / only.'}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -548,6 +565,30 @@ function BranchPrefixRow() {
         }}
       >
         <input aria-label="Branch prefix" className={s.text} value={value} placeholder="none" spellCheck={false} onChange={(e) => setValue(e.target.value.trim())} onBlur={save} />
+      </form>
+    </Row>
+  );
+}
+
+/** How your agent titles pull requests, in your words (BLG-1033): saved when you leave the field; empty: no rule. */
+function PrTitleRow() {
+  const api = useApi();
+  const saved = useApp((st) => st.prefs.prTitleRule) ?? '';
+  const [value, setValue] = useState(saved);
+  useEffect(() => setValue(saved), [saved]);
+  const save = (): void => {
+    const next = value.trim().slice(0, PR_TITLE_RULE_MAX);
+    if (next !== saved) void api.session.setPrefs({ prTitleRule: next || null });
+  };
+  return (
+    <Row label="Pull request titles" detail="A rule your agent follows when it titles a pull request, for example “Conventional commits: feat(scope): summary”. A project can have its own in Project Settings.">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <input aria-label="Pull request titles" className={s.text} value={value} maxLength={PR_TITLE_RULE_MAX} placeholder="No rule" spellCheck={false} onChange={(e) => setValue(e.target.value)} onBlur={save} />
       </form>
     </Row>
   );
@@ -581,6 +622,7 @@ function Workspaces() {
           <Switch label="Auto setup" on={p.autoSetup} onChange={(v) => void api.session.setPrefs({ autoSetup: v })} />
         </Row>
         <BranchPrefixRow />
+        <PrTitleRow />
         <FetchEveryRow />
         <Row label="Keep open pull requests current" detail="When your agent commits in a worktree whose pull request is open, it pushes there as its turn ends. Off: it commits here, and you push from the toolbar.">
           <Switch label="Keep open pull requests current" on={p.pushToPr} onChange={(v) => void api.session.setPrefs({ pushToPr: v })} />
@@ -719,6 +761,7 @@ const BODY: Record<SettingsPane, () => ReactNode> = {
   general: General,
   appearance: Appearance,
   claude: AgentPane,
+  traces: TracesSettings,
   notifications: NotificationSettings,
   workspaces: Workspaces,
   terminal: TerminalSettings,
@@ -772,6 +815,7 @@ function SettingsWindow({ pane }: { pane: SettingsPane }) {
         <Dialog.Overlay className={s.overlay} data-over-welcome={overWelcome} />
         <Dialog.Content
           className={s.window}
+          data-settings-window=""
           data-over-welcome={overWelcome}
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => {

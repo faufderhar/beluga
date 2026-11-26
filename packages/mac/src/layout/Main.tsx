@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useContext, useEffect, useState } from 'react';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { groupChatOpen } from '../lib/group-chat.js';
 import { ViewBoundary, lazyView } from '../lib/lazy-view.js';
@@ -7,7 +7,8 @@ import { MakingWorktree } from './MakingWorktree.js';
 import { ChatView } from '../views/ChatView.js';
 import { Toolbar } from './Toolbar.js';
 import { ProjectCenter, WorkspaceCenter } from './panel/FocusView.js';
-import { TerminalDrawer } from './panel/TerminalDrawer.js';
+import { CenterDock, usePanelBridges } from './RightPanel.js';
+import { FrameContext } from './frame.js';
 import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
 import { SharedPlanPage } from '../team/SharedPlans.js';
@@ -141,20 +142,33 @@ function Route() {
   }
 }
 
-export function Main() {
+/** The center's own content: the conversation, or the page that's open (the center dock's one tab: RightPanel's CenterDock). */
+function MainBody() {
   const at = useApp((st) => JSON.stringify(st.view));
-  const column = useRef<HTMLElement>(null);
-  const making = useMaking();
   return (
-    <main ref={column} className={s.main}>
-      <Toolbar />
+    <div className={s.mainBody}>
       <ViewBoundary at={at}>
         <Suspense fallback={<div className={s.loading} />}>
           <Route />
         </Suspense>
       </ViewBoundary>
-      {/* Nothing to run in a worktree that isn't there yet. */}
-      {making ? null : <TerminalDrawer column={column} />}
+    </div>
+  );
+}
+
+/**
+ * The center: the toolbar, and under it a dock (Dockview) whose one tab of its own is the
+ * conversation or the page. A panel tab dragged over sits beside it, and the terminal under it
+ * (what the drawer was).
+ */
+export function Main() {
+  // The panel follows this page's own state (on a computer's page, that computer's): run here, inside its client.
+  usePanelBridges();
+  const { onCenterMin } = useContext(FrameContext);
+  return (
+    <main className={s.main}>
+      <Toolbar />
+      <CenterDock main={MainBody} onMinWidth={onCenterMin} />
     </main>
   );
 }

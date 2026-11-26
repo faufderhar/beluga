@@ -11,6 +11,14 @@ import type { ArgsRuntime } from '../shared/agent-args.js';
 /** How far a request may reach on the owner's computer. */
 export type AccessScope = 'folder' | 'full';
 
+/** A runtime's word about itself at the start of a run (AgentRunInput.onHarness). Names only, never descriptions. */
+export interface HarnessFacts {
+  readonly version?: string;
+  readonly permissionMode?: string;
+  readonly tools?: readonly string[];
+  readonly mcpServers?: readonly string[];
+}
+
 export interface AgentRunInput {
   readonly prompt: string;
   /** Instructions for the agent's own terminal (BLG-534), not a turn: visuals as tokens, no fences (agent/terminal-prompt.ts). */
@@ -45,6 +53,16 @@ export interface AgentRunInput {
    * this computer only: kept beside the chat, never sent anywhere (see core/step-book.ts).
    */
   readonly onStep?: (record: StepRecord) => void;
+  /**
+   * What the agent's own program said about itself when the run started: its version, how it asks
+   * before acting, the tools the model was given and its MCP servers. Usage statistics only.
+   */
+  readonly onHarness?: (facts: HarnessFacts) => void;
+  /**
+   * A tool call starts running (its id, epoch ms): after it waited behind the calls before it, and
+   * before any approval. Its step starts when the model asked for it. Usage statistics only.
+   */
+  readonly onToolRun?: (id: string, at: number) => void;
   /** Model for this run (an alias like "sonnet" or a full id); unset: the default. */
   readonly model?: string;
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -52,8 +70,19 @@ export interface AgentRunInput {
   readonly maxTurns?: number;
   /** Your environment variables for this run, over Beluga's own (only for runs you asked for). */
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * The sign-in variables in `env` are Claude Code's own (a local model's endpoint key, agent/runtime/local.ts),
+   * not a project's: Claude Code signs in with them, and they are never held back for its shell (sign-in-env.ts).
+   */
+  readonly signsInFromEnv?: boolean;
   /** Your own runs: your own MCP servers from Claude Code (agent/owner-mcp.ts); never a friend's or a guest's. */
   readonly ownerMcp?: boolean;
+  /**
+   * You watch this run's chat (you sent it: not a Sentinel run, an external agent or another chat's
+   * agent), so Claude Code tells your MCP servers their apps are drawn (runner.ts withAppsHost). A
+   * server may then say less to the model, as the view shows the rest.
+   */
+  readonly appsShown?: boolean;
   /** Claude in Chrome (agent/chrome.ts): as usual on a run you typed, asking you on any other. Unset: no Chrome (a guest's run). */
   readonly chrome?: import('./chrome.js').ChromeAccess;
   /** Auto-compact threshold (percent) for Claude Code's own compaction; unset: auto-compact is off. */
@@ -143,11 +172,15 @@ export interface AgentRunInput {
   /** Your phone (core/phone): tools to act on your own paired phone, and what Claude is told about it. */
   readonly phoneTools?: PhoneTools;
   readonly phoneBrief?: string;
+  /** Names of variables kept for this chat alone (keys pasted and kept out of the chat, BLG-965). */
+  readonly chatVars?: readonly string[];
   /** Live previews are on (Settings › Experimental): what Claude is told about showing them. */
   readonly previewBrief?: string;
   /** Your own runs: sentinels (core/sentinel), and what Claude is told (a sentinel run's brief, or a short note). */
   readonly sentinelTools?: SentinelTools;
   readonly sentinelBrief?: string;
+  /** A sentinel's own run (it acts on what it watched): every run of yours has the sentinel tools, only this one is a sentinel's. */
+  readonly sentinelRun?: boolean;
   /** Your own runs: dashboards and the numbers sentinels keep (server `beluga_dashboard`; sentinel_measure inside a run). */
   readonly dashboardTools?: DashboardTools;
   /** Your own runs: the notes of calls you were in (core/calls, BLG-715), to look up, never pasted in. */
@@ -489,8 +522,8 @@ export interface AgentPlace {
   readonly onSession: (sessionId: string) => void;
   /** The model picked for this conversation. */
   readonly model?: string;
-  /** The thinking effort picked for this conversation (unset: Settings'). */
-  readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** The thinking effort picked for this conversation (null: Auto, picked here; unset: Settings'). */
+  readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
   /** A project's main folder: questions only, nothing may change (see policy.ts). */
   /** `stays`: a read-only thread (core/threads) stays read-only: it cannot move itself into a worktree. */
   readonly askOnly?: { readonly project: string; readonly stays?: boolean };
@@ -507,6 +540,22 @@ export interface AgentPlace {
   readonly shipped?: { readonly number: number; readonly url?: string; readonly into: string };
   /** Its pull request is open (BLG-840): the run pushes its commits there (see prompt.ts buildCommitAppend). */
   readonly openPr?: OpenPr;
+  /** Straight to main (no open PR): when its turn ends, Beluga lands its commits on this branch in the main folder. */
+  readonly landsOn?: string;
+  /** How its pull request titles are written (the project's naming rule, else Settings'; BLG-1033). */
+  readonly prTitleRule?: string;
+  /** A fork of a friend's worktree (BLG-1017): what came with it, and what stayed on their computer (its `.beluga/fork.json`). */
+  readonly forked?: ForkedPlace;
+}
+
+/** What a fork brought from its owner's computer and what it left there (core/friend-share/carry.ts ForkNote). */
+export interface ForkedPlace {
+  readonly owner: string;
+  readonly from: string;
+  readonly scratch: number;
+  readonly sent: ReadonlyArray<{ readonly path: string; readonly files: number; readonly bytes: number }>;
+  readonly secrets: readonly string[];
+  readonly left: ReadonlyArray<{ readonly path: string; readonly why: 'secret' | 'big' | 'limit' | 'ignored' | 'there' | 'unplaced' }>;
 }
 
 /** A worktree's open pull request, for its run's commit rules (BLG-840). */
@@ -585,6 +634,8 @@ export interface AgentBackend {
   describeProject?(dir: string, project: string): Promise<string | undefined>;
   /** A pull request reviewed before a sentinel merges it: ship or hold, in one sentence (a small model, read-only). */
   reviewPr?(input: import('./pr-reviewer.js').PrReviewInput): Promise<import('./pr-reviewer.js').PrReview | undefined>;
+  /** Full Autopilot's stand-in (BLG-981): answer for you what your agent asked (one turn, no tools) → its reply (JSON). */
+  standIn?(req: import('./stand-in.js').StandInRequest): Promise<string>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
   /**

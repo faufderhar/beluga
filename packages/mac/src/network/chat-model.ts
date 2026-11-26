@@ -1,5 +1,5 @@
 import type { ChatFile, GroupView, LiveClaude, MessageView, NetworkState } from '../../../../src/net/mesh/views.js';
-import { type Suggestion, friendMention, typedMention } from '../../../../src/ui/suggest.js';
+import { type SuggestContext, type Suggestion, chatMentions, friendMention, typedMention } from '../../../../src/ui/suggest.js';
 import { MENTION, type MentionWorld } from '../chat/mentions.js';
 import { agentName } from '../../../../src/shared/agent-label.js';
 import { continues } from './net-model.js';
@@ -54,12 +54,34 @@ const COMMANDS: ReadonlyArray<{ name: ChannelCommand; hint: string; when?: 'othe
   { name: 'add-people', hint: 'Add people to this channel…', when: 'admin' },
 ];
 
+/** A project of yours, as "@" names it. */
+export interface ProjectMention {
+  readonly name: string;
+  readonly id: string;
+}
+
+/** A name "@" takes whole (mentions.ts's MENTION): a project called "My App" can't be one. */
+const MENTIONABLE = /^[\p{L}\p{N}_][\p{L}\p{N}_.:/+-]*$/u;
+/** What "@" already means in a channel: an agent's word, never a project's. */
+const TAKEN = /^claudes?(:|$)/i;
+
+/** Your projects a friends' conversation can name: those "@" takes whole, none that reads as an agent or a person here. */
+export function mentionableProjects(projects: readonly ProjectMention[], people: readonly Member[] = []): ProjectMention[] {
+  const handles = new Set(people.map((p) => handle(p.name).toLowerCase()));
+  return projects.filter((p) => MENTIONABLE.test(p.name) && !TAKEN.test(p.name) && !handles.has(p.name.toLowerCase()));
+}
+
 /**
  * What to list for the words in a channel's box: "/" at the start → the channel's commands;
- * "@…" → your Claude, each member's Claude, everyone's, the people themselves, then the tasks of
- * repositories you're teamed up on with them (`tasks`, BLG-263: you ask their Claude about one here).
+ * "@…" → your Claude, each member's Claude, everyone's, the people themselves, your projects, then
+ * the tasks of repositories you're teamed up on with them (`tasks`, BLG-263: you ask their Claude
+ * about one here), then your chats and worktrees by a word of their title (`chats`: their chip
+ * goes in the box, as a dropped row's does).
  */
-export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean; friends?: readonly Member[]; tasks?: readonly TaskMention[] }): ChannelSuggestion[] {
+export function channelSuggestions(
+  text: string,
+  ctx: { people: readonly Member[]; admin?: boolean; friends?: readonly Member[]; tasks?: readonly TaskMention[]; projects?: readonly ProjectMention[]; chats?: SuggestContext['chats'] },
+): ChannelSuggestion[] {
   if (/^\/[\w-]*$/.test(text)) {
     const typed = text.slice(1).toLowerCase();
     const commands: ChannelSuggestion[] = COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
@@ -81,13 +103,14 @@ export function channelSuggestions(text: string, ctx: { people: readonly Member[
     ...ctx.people.map((p) => ({ label: `${p.name}’s agent`, insert: `@claude:${handle(p.name)}`, hint: `answers from ${p.name}’s computer` })),
     ...(ctx.people.length ? [{ label: 'Everyone’s agent', insert: '@claudes', hint: 'each answers from their own computer' }] : []),
     ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their agent' })),
+    ...mentionableProjects(ctx.projects ?? [], ctx.people).map((p) => ({ label: p.name, insert: `@${p.name}`, hint: 'your project' })),
   ];
   const t = typed.toLowerCase();
   const named: ChannelSuggestion[] = options
     .filter((o) => o.insert.slice(1).toLowerCase().startsWith(t) || o.label.toLowerCase().startsWith(t))
     .map((o) => ({ label: o.label, hint: `${o.insert} · ${o.hint}`, value: `${before}${o.insert} `, enter: 'complete' }));
   const tasks: ChannelSuggestion[] = matchTasks(typed, ctx.tasks ?? []).map((task) => ({ label: `@${task.key}`, hint: task.title, value: `${before}@${task.key} `, enter: 'complete' }));
-  return [...named, ...tasks];
+  return [...named, ...tasks, ...chatMentions(typed, before, ctx.chats)];
 }
 
 /**
@@ -127,11 +150,15 @@ export function mergeAsk(a: 'all' | readonly string[] | undefined, b: 'all' | re
   return [...new Set([...(a ?? []), ...(b ?? [])])];
 }
 
-/** What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"), and the tasks you share with them. */
-export const channelWorld = (me: Member | undefined, people: readonly Member[], tasks?: readonly TaskMention[]): MentionWorld => ({
+/**
+ * What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"),
+ * the tasks you share with them, and your projects (a friend's "@beluga" is your copy of it, if you
+ * have one by that name).
+ */
+export const channelWorld = (me: Member | undefined, people: readonly Member[], tasks?: readonly TaskMention[], projects: readonly ProjectMention[] = []): MentionWorld => ({
   friends: people,
   peers: me ? [me, ...people] : people,
-  projects: [],
+  projects: mentionableProjects(projects, people),
   workspaces: [],
   ...(tasks?.length ? { tasks } : {}),
 });

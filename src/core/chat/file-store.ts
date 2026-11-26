@@ -1,6 +1,7 @@
 import { constants, promises as fs, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { MAX_CHAT_FILE, cleanFileName } from '../../net/mesh/extras.js';
+import { COMPUTER } from '../../shared/assistant.js';
 import type { ChatFile } from '../../net/mesh/views.js';
 import { sha256File } from '../gateway/transfer.js';
 
@@ -70,7 +71,8 @@ export class FileStore {
   async add(file: string, as?: string): Promise<ChatFile> {
     const stat = await fs.stat(file).catch(() => undefined);
     if (!stat) throw new Error(`${path.basename(file)} isn’t there any more`);
-    if (stat.isDirectory()) throw new Error(`${path.basename(file)} is a folder: compress it first (right-click › Compress in Finder)`);
+    // computer-wording: mac (only on a Mac)
+    if (stat.isDirectory()) throw new Error(`${path.basename(file)} is a folder: compress it first${COMPUTER === 'mac' ? ' (right-click › Compress in Finder)' : ''}`);
     if (!stat.isFile()) throw new Error(`${path.basename(file)} can’t be sent`);
     if (stat.size > MAX_CHAT_FILE) throw new Error(`${path.basename(file)} is too big to send`);
     const sha = await sha256File(file);

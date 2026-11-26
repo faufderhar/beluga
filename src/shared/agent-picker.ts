@@ -2,6 +2,7 @@ import type { AgentRef } from '../protocol.js';
 import type { RuntimeChoice, RuntimeModel } from './agent-runtimes.js';
 import { modelName } from './agent-label.js';
 import { CLOSED_WHY, modelsForChat, runtimeModels } from './open-models.js';
+import type { Effort } from './settings-schema.js';
 
 /**
  * The agent picker (BLG-446), as the Mac's composer and the phone show it: runtimes as groups
@@ -56,6 +57,22 @@ const workspaceOf = (state: PickerState, channel: string) => {
   const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
   return id ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
 };
+
+/** What the effort reads of the app's state: the default, and each conversation's own pick. */
+export interface EffortState {
+  readonly prefs: { readonly effort?: Effort };
+  readonly projects: ReadonlyArray<{ readonly workspaces: ReadonlyArray<{ readonly id: string; readonly effort?: Effort | null }> }>;
+}
+
+/**
+ * How hard a conversation's agent thinks (undefined: Auto): its own pick (null is Auto picked
+ * there), else the default. Not a conversation (the home composer): the default for new ones.
+ */
+export function effortIn(state: EffortState, channel: string): Effort | undefined {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const own = id ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id)?.effort : undefined;
+  return own === null ? undefined : (own ?? state.prefs.effort);
+}
 
 /** The runtime a conversation runs on (its pick, else your default agent's). */
 export function runtimeOf(state: PickerState, channel: string, defaultRuntime = DEFAULT_RUNTIME): string {

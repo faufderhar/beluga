@@ -167,6 +167,14 @@ describe('StepBook (the details beside the chat)', () => {
     expect(ids[0]).toBe('s10');
   });
 
+  it('drops an app’s result (structuredContent and _meta) from the oldest steps when a run is too big, keeping where it is drawn from', () => {
+    const book = new StepBook();
+    const app = { server: 'ratel', tool: 'get_session', resourceUri: 'ui://ratel/replay', structuredContent: { ok: true }, resultMeta: { view: 'x'.repeat(200_000) } };
+    for (let i = 0; i < 20; i++) book.put('k', rec(`s${i}`, { input: undefined, output: undefined, app }));
+    expect(book.get('k', 's0')?.app).toEqual({ server: 'ratel', tool: 'get_session', resourceUri: 'ui://ratel/replay' });
+    expect(book.get('k', 's19')?.app?.resultMeta).toEqual(app.resultMeta);
+  });
+
   it('saves runs to disk and reads them back after a restart', () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-steps-'));
     const book = new StepBook(dir);
@@ -337,6 +345,8 @@ describe('steps in words', () => {
 
   it('reads the one-line steps of older cards and other Claudes', () => {
     expect(humanizeLine('Bash npm test').done).toBe('Ran npm test');
+    // Beluga's step before the agent starts (core/before-run.ts), as a friend's or the phone's one-line step.
+    expect(humanizeLine('make_worktree pr-49')).toMatchObject({ done: 'Made the worktree pr-49', doing: 'Making the worktree pr-49' });
     expect(humanizeLine('Grep "TODO"').done).toBe('Searched for ‘TODO’');
     expect(humanizeLine('ask_person bob')).toMatchObject({ done: 'Asked bob’s agent', person: 'bob' });
     expect(humanizeLine('wait_for t_lbTQ6LYNbZrq')).toMatchObject({ doing: 'Waiting for an answer', task: 't_lbTQ6LYNbZrq', wait: true });

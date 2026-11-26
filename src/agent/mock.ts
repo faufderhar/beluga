@@ -34,6 +34,12 @@ interface Script {
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
 const SCRIPTS: readonly Script[] = [
   {
+    // A command to paste in your terminal (BLG-968): the block's Run does it for you.
+    match: /\bhow do i (run|start|check)\b/i,
+    steps: ['Read package.json'],
+    answer: 'It needs Node 20 or later. Paste this in your terminal to check yours:\n\n```bash\nnode --version\n```',
+  },
+  {
     // Issues › Investigate on the demo's headline bug (core/issues/prompts.ts): why, a reproduction, and the brief written.
     match: /^Investigate GitHub issue #48\b/,
     stepMs: 900,
@@ -256,11 +262,22 @@ const sleep = (ms: number, signal: AbortSignal): Promise<void> =>
     });
   });
 
+// Taller than the plan card, so Read in full has more to show (the e2e opens it).
 const MOCK_PLAN = `## Plan: add auth
 
+### Context
+\`src/server.ts\` has a \`TODO: add auth\` and no middleware. Sessions are signed cookies set by the login route.
+
+### Steps
 1. Add \`src/auth.ts\` with a \`requireUser()\` middleware
+   - read the session cookie and check its signature
+   - reject a missing or expired session with 401
 2. Protect \`/api/payments/*\`
 3. Cover it with 3 tests (missing, expired, valid session)
+
+### Not in this change
+- Admin bypass for support tools (an open question)
+- A server-side session store
 
 Nothing is changed until you approve.`;
 
@@ -286,6 +303,8 @@ async function mockPlan(input: AgentRunInput, pace: number): Promise<string> {
   input.onEvent('text', MOCK_PLAN);
   const answer = input.askUser ? await input.askUser({ kind: 'plan', plan: MOCK_PLAN }) : ({ kind: 'skip' } as const);
   if (answer.kind === 'plan' && answer.approve) input.planTask?.approved();
+  // Approved, with another agent to build it (BLG-982): the planner stops there.
+  if (answer.kind === 'plan' && !answer.approve && answer.feedback.includes('builds it in this conversation from here')) return 'Approved: the plan is handed over.';
   if (answer.kind !== 'plan' || !answer.approve) return answer.kind === 'plan' && answer.feedback ? `Got it. I'll revise the plan: ${answer.feedback}` : 'Okay, I left everything as it was.';
   for (const step of ['Write src/auth.ts', 'Edit src/server.ts', 'Bash npm test']) {
     await sleep(450 * pace, input.signal);
@@ -888,6 +907,11 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     titlePlan: async (goal) => {
       await new Promise((r) => setTimeout(r, 400 * pace));
       return mockPlanTitle(goal);
+    },
+    // Full Autopilot's stand-in: a beat of thought, then yes, with the agent's own pick for any question (core/autopilot fills it in).
+    standIn: async (req) => {
+      await sleep(700 * pace, req.signal ?? new AbortController().signal);
+      return JSON.stringify({ approve: true, allow: true, answers: {}, why: 'It keeps to the goal you set and is what your agent recommended.' });
     },
     titleChat: async (content) => {
       await new Promise((r) => setTimeout(r, 400 * pace));

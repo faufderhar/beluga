@@ -3,8 +3,12 @@
   z-index: 88;
   min-width: 220px;
   max-width: 380px;
-  max-height: min(70vh, 560px);
-  overflow: auto;
+  /* As tall as the room Radix found for it (inside the edges it keeps clear, the title bar
+     included), so a long menu shows whole when the window has space and scrolls only when it
+     truly doesn't, then without a bar (fork: FitContent picks the side it fits on). */
+  max-height: var(--radix-dropdown-menu-content-available-height, var(--radix-context-menu-content-available-height, calc(100vh - 60px)));
+  overflow-y: auto;
+  scrollbar-width: none;
   padding: 5px;
   border-radius: 9px;
   background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
@@ -13,6 +17,9 @@
   box-shadow: var(--shadow-pop);
   animation: appear var(--dur-fast) var(--ease-out);
   transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-context-menu-content-transform-origin));
+}
+.menu::-webkit-scrollbar {
+  display: none;
 }
 @keyframes appear {
   from {
@@ -108,6 +115,56 @@
 }
 
 /* The chosen one, in a menu of choices that each have an icon. */
+/* An on/off setting's switch (Full Autopilot): Settings' switch, smaller. */
+.toggle {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 15px;
+  margin-left: auto;
+  border-radius: 8px;
+  background: var(--segment-track);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  transition: background var(--dur-fast);
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur) var(--ease-out);
+}
+.toggleOn {
+  background: var(--control-accent);
+}
+.toggleOn::after {
+  transform: translateX(11px);
+}
+/* On the lit row (the accent): the track goes white, so on and off still read apart. */
+.item[data-highlighted] .toggle,
+.item:not([data-disabled]):hover .toggle {
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: none;
+}
+.item[data-highlighted] .toggleOn,
+.item:not([data-disabled]):hover .toggleOn {
+  background: white;
+}
+.item[data-highlighted] .toggleOn::after,
+.item:not([data-disabled]):hover .toggleOn::after {
+  background: var(--accent);
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle::after {
+    transition: none;
+  }
+}
 .trailingCheck {
   flex: none;
   margin-left: auto;

@@ -9,7 +9,6 @@
   --font-mono: ui-monospace, 'SF Mono', Menlo, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', 'Liberation Mono', 'Ubuntu Mono', monospace;
   --text-size: 13px;
   --accent: AccentColor;
-  --sidebar-w: 248px;
   --inspector-w: 296px;
   --titlebar-h: 52px;
   --chat-max: 100%;
@@ -29,6 +28,13 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-fast: 120ms;
   --dur: 180ms;
+}
+
+/* Simplified Chinese (i18n/index.ts sets <html lang>): its own system face before any fallback, so
+   Han characters are drawn in PingFang SC (Microsoft YaHei, Noto Sans SC elsewhere), never a
+   Japanese face, and the Latin in a Chinese sentence stays SF. */
+:root:lang(zh-CN) {
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', system-ui, 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif;
 }
 
 :root[data-density='compact'] {
@@ -64,6 +70,9 @@
   --merged: #8a63d2;
   --warn: #b36b00;
   --error: #c4352e;
+  /* A red to fill a button with (Delete), and its words: light's red already is one. */
+  --error-fill: var(--error);
+  --on-error-fill: var(--bg);
   --info: #2f6cb3;
   /* Claude's sub-agents at work: violet, apart from the main Claude's copper. */
   --subagent: #7656c9;
@@ -104,6 +113,10 @@
   --merged: #b294f0;
   --warn: #e3a64a;
   --error: #ef7a72;
+  /* Dark's red is a pastel for words and icons: as a button's face it read as a disabled button.
+     A Delete button is the full red it was before the controls were drawn as macOS's, in white. */
+  --error-fill: #d9483f;
+  --on-error-fill: #ffffff;
   --info: #79aef0;
   --subagent: #ab93f3;
   --worktree: #66c6bb;
@@ -113,6 +126,80 @@
   --call-ink: #9be0cb;
   --code-bg: #242427;
   --term-bg: #17171a;
+}
+
+/*
+ * Controls (buttons, pop-ups, checkboxes, switches, fields, segmented controls), after AppKit's
+ * semantic colours — the names react-native-macos's PlatformColor exposes: controlColor,
+ * textBackgroundColor, keyboardFocusIndicatorColor, controlAccentColor, disabledControlTextColor —
+ * and its system effects (pressed, disabled). Every one is made from the tokens above, so a
+ * theme (lib/themes.ts) and the accent carry through. Metrics are AppKit's regular size.
+ */
+:root {
+  /* The three sizes of docs/mac-controls.md: one height, text size and corner each. */
+  --control-h-large: 28px;
+  --control-h: 22px;
+  --control-h-small: 20px;
+  --control-text-large: 13px;
+  --control-text: 13px;
+  --control-text-small: 12px;
+  /* Softly rounded, Beluga's own: a big button's corner a little rounder than a small one's, never a
+     capsule (that's the Round shape, below: Settings › Appearance). Crisp rather than pill-like. */
+  --control-radius-large: 6px;
+  --control-radius: 5px;
+  --control-radius-small: 4px;
+  /* controlColor: a button's face, flat (no gradient); a shade deeper under the pointer, deeper still pressed. */
+  --control: var(--bg-raised);
+  --control-hover: color-mix(in srgb, var(--bg-raised) 94%, var(--text));
+  --control-press: color-mix(in srgb, var(--bg-raised) 88%, var(--text));
+  /* The bezel: a hairline edge and a soft drop under it. */
+  --control-edge: var(--hairline-strong);
+  --control-drop: 0 0.5px 1px var(--hairline-strong);
+  --control-sheen: inset 0 0 0 0 transparent;
+  --control-bezel: 0 0 0 0.5px var(--control-edge), var(--control-drop), var(--control-sheen);
+  /* controlAccentColor, flat; under the pointer it shifts a little toward the words' colour (darker
+     in light, lighter in dark); what's drawn on it. */
+  --control-accent: var(--accent);
+  --control-lift: var(--bg);
+  --control-accent-hover: color-mix(in srgb, var(--control-accent) 90%, var(--text));
+  --control-accent-press: color-mix(in srgb, var(--control-accent) 82%, var(--text));
+  --control-accent-edge: color-mix(in srgb, var(--control-accent) 70%, var(--text));
+  --control-accent-sheen: inset 0 0 0 0 transparent;
+  --on-accent: var(--bg);
+  /* A destructive default button (Delete): the theme's red as a flat face. */
+  --control-destructive: var(--error-fill);
+  --control-destructive-hover: color-mix(in srgb, var(--control-destructive) 92%, var(--text));
+  --control-destructive-press: color-mix(in srgb, var(--control-destructive) 86%, var(--text));
+  --on-destructive: var(--on-error-fill);
+  /* disabledControlTextColor, as an opacity on the whole control. */
+  --control-disabled: 0.5;
+  /* textBackgroundColor: a field's well. */
+  --text-bg: var(--bg);
+  /* NSSegmentedControl: the recessed track and its chosen segment. */
+  --segment-track: color-mix(in srgb, var(--text) 7%, transparent);
+  --segment-on: var(--bg-raised);
+  /* keyboardFocusIndicatorColor: the ring outside a focused control. */
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+:root[data-theme='dark'] {
+  --control: color-mix(in srgb, var(--bg-raised) 74%, var(--text));
+  --control-hover: color-mix(in srgb, var(--bg-raised) 68%, var(--text));
+  --control-press: color-mix(in srgb, var(--bg-raised) 62%, var(--text));
+  --control-edge: color-mix(in srgb, var(--bg-sunken) 60%, transparent);
+  --control-drop: 0 0.5px 1px color-mix(in srgb, var(--bg-sunken) 70%, transparent);
+  --control-lift: var(--text);
+  --on-accent: var(--text);
+  /* Never lifted toward the light words (that paled it); pressed, it darkens. */
+  --control-destructive-hover: color-mix(in srgb, var(--control-destructive) 92%, var(--bg-sunken));
+  --control-destructive-press: color-mix(in srgb, var(--control-destructive) 86%, var(--bg-sunken));
+  --text-bg: color-mix(in srgb, var(--bg-raised) 92%, var(--text));
+  --segment-track: color-mix(in srgb, var(--text) 9%, transparent);
+  --segment-on: color-mix(in srgb, var(--bg-raised) 70%, var(--text));
+}
+/* Unemphasized: while the window isn't key (lib/window-active.ts), the default button, a checked
+   box and a pop-up's arrows lose the accent, as AppKit's do. */
+:root[data-window='idle'] {
+  --control-accent: color-mix(in srgb, var(--text-3) 70%, var(--bg-raised));
 }
 
 :root[data-motion='reduce'] {
@@ -132,4 +219,36 @@
   :root {
     --accent: #007aff;
   }
+}
+
+/*
+ * Liquid Glass (docs/mac-controls.md): the window as macOS 26 draws its own apps. Only on a Mac
+ * whose window blurs (data-transparency='full', lib/prefs.ts: not with Reduce transparency, not on
+ * a solid theme); Windows, Linux and the flat window keep the look above. CSS only, and still: the
+ * refraction some web versions draw is an SVG displacement filter WebKit doesn't draw.
+ */
+:root[data-os='mac'][data-transparency='full'][data-look='macos'] {
+  --glass-inset: 8px;
+  --glass-radius: 16px;
+  --glass-fill: color-mix(in srgb, var(--bg-sidebar-solid) 72%, transparent);
+  --glass-edge: rgba(255, 255, 255, 0.7);
+  --glass-rim: rgba(0, 0, 0, 0.1);
+  --glass-drop: 0 10px 30px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --glass-chip: color-mix(in srgb, var(--bg-raised, #fff) 70%, transparent);
+  --glass-ring: inset 0 0 0 0.5px var(--glass-edge), 0 0 0 0.5px var(--glass-rim);
+  /* A capsule's ring is a real 0.5px border (each control draws it): WebKit breaks a 0.5px shadow up round the ends. */
+  --control-bezel: var(--control-drop), var(--control-sheen);
+}
+/* The macOS style (Settings › Appearance › Style, off by default): buttons, fields and segmented
+   controls are capsules, as macOS 26 draws them (its glass panes: Liquid Glass, below). */
+:root[data-look='macos'] {
+  --control-radius-large: 999px;
+  --control-radius: 999px;
+  --control-radius-small: 999px;
+}
+:root[data-os='mac'][data-transparency='full'][data-look='macos'][data-theme='dark'] {
+  --glass-edge: rgba(255, 255, 255, 0.16);
+  --glass-rim: rgba(0, 0, 0, 0.5);
+  --glass-drop: 0 12px 34px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --glass-chip: color-mix(in srgb, var(--text) 9%, transparent);
 }

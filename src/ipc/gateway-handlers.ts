@@ -2,6 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { needGateway } from '../core/gateway/registry.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
+import { FILE_MANAGER } from '../shared/assistant.js';
 
 /** What each `gateway.*` method does (see gateway-api.ts). */
 
@@ -29,7 +30,7 @@ export const GATEWAY_HANDLERS = {
     const file = needGateway(s).get(id)?.result?.files.find((f) => f.name === name && f.image && f.path);
     if (!file?.path) throw new Error('No such picture');
     const size = (await stat(file.path)).size;
-    if (size > MAX_IMAGE_BYTES) throw new Error('That picture is too big to show here; open it in Finder');
+    if (size > MAX_IMAGE_BYTES) throw new Error(`That picture is too big to show here; open it in ${FILE_MANAGER}`);
     const type = /\.png$/i.test(file.path) ? 'image/png' : /\.gif$/i.test(file.path) ? 'image/gif' : /\.webp$/i.test(file.path) ? 'image/webp' : 'image/jpeg';
     return `data:${type};base64,${(await readFile(file.path)).toString('base64')}`;
   },

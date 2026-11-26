@@ -30,6 +30,13 @@ describe('sdkMcpCall (the mcp_call control request)', () => {
     });
   });
 
+  it('hands back the result’s own _meta for the view, and drops one that is not an object', async () => {
+    const { ch } = channel({ content: [{ type: 'text', text: 'x' }], _meta: { 'sh.ratel/view': { kind: 'trace' } } });
+    expect(await sdkMcpCall(ch, 'clock', 'now', {})).toEqual({ content: [{ type: 'text', text: 'x' }], _meta: { 'sh.ratel/view': { kind: 'trace' } } });
+    const odd = channel({ content: [{ type: 'text', text: 'x' }], _meta: ['a'] });
+    expect(await sdkMcpCall(odd.ch, 'clock', 'now', {})).toEqual({ content: [{ type: 'text', text: 'x' }] });
+  });
+
   it('turns a legacy toolResult string into one text block', async () => {
     const { ch } = channel({ toolResult: 'plain' });
     expect(await sdkMcpCall(ch, 'clock', 'now', {})).toEqual({ content: [{ type: 'text', text: 'plain' }] });

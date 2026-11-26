@@ -1,7 +1,10 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
-import { runtimeFor } from '../agent/runtime/registry.js';
+import { acpRuntimes, runtimeFor } from '../agent/runtime/registry.js';
+import { acpAgents } from '../agent/runtime/acp/agents.js';
+import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
+import type { Settings } from '../shared/settings-schema.js';
 import { claudeStatus } from '../agent/runtime/claude/status.js';
 import type { AgentRuntime, RuntimeId } from '../agent/runtime/types.js';
 import { createMockBackend } from '../agent/mock.js';
@@ -15,6 +18,8 @@ import { DEMO_PROVIDER_MODELS, demoDescription } from '../agent/runtime/opencode
 import { createCopilotRuntime } from '../agent/runtime/copilot/index.js';
 import { ScriptedCopilot } from '../agent/runtime/copilot/scripted.js';
 import { AUTO_MODEL } from '../agent/runtime/copilot/status.js';
+import { createAntigravityRuntime } from '../agent/runtime/antigravity/index.js';
+import { ScriptedAgy } from '../agent/runtime/antigravity/scripted.js';
 import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
@@ -37,6 +42,7 @@ import { launchFriendShares } from '../core/friend-share/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchRevenueCat } from '../core/revenuecat-launch.js';
 import { launchSupport } from '../core/merge-counter.js';
+import { launchAttachmentSweep } from '../core/attachment-sweep.js';
 import { launchTelemetry } from '../telemetry/launch.js';
 import { launchStats } from '../core/stats/counter.js';
 import { launchLeaderboard } from '../core/leaderboard/launch.js';
@@ -110,8 +116,23 @@ function demoCopilot(): AgentRuntime {
   return createCopilotRuntime({ connect: scripted.connect, status: async () => ({ state: 'ready', models }) });
 }
 
+/** The demo's Antigravity: ready, on a plan with Gemini (its thinking levels) and a Claude model. */
+function demoAntigravity(): AgentRuntime {
+  const scripted = new ScriptedAgy({ stepMs: 600, models: ['gemini-3.8-flash', 'claude-sonnet-4-6'] });
+  const models = [
+    { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', description: '', efforts: ['low', 'medium', 'high'] },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)', description: '' },
+  ];
+  return createAntigravityRuntime({ connect: scripted.connect, status: async () => ({ state: 'ready', models }) });
+}
+
 let claudeWithStatus: AgentRuntime | undefined;
 /** The runtimes, Claude's saying whether it's signed in (a local model's side calls go to Claude only then, BLG-503). */
+/** Whether you ran a runtime before: it's your agent, a project's, or a workspace's or chat's own. */
+function usedRuntime(saved: Pick<Settings, 'defaultAgent' | 'projectAgents'>, workspaces: Pick<WorkspaceManager, 'usesRuntime'>, runtime: string): boolean {
+  return saved.defaultAgent?.runtime === runtime || Object.values(saved.projectAgents ?? {}).some((a) => a.runtime === runtime) || workspaces.usesRuntime(runtime);
+}
+
 function withClaudeStatus(id?: RuntimeId): AgentRuntime | undefined {
   const rt = runtimeFor(id);
   if (!rt || rt.id !== 'claude' || rt.status) return rt;
@@ -331,6 +352,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let closing = false;
   let saveAsked = false;
   const workspaces = demo ? await createDemoWorkspaces() : new WorkspaceManager();
+  // Antigravity is one of your ACP agents now: a Mac that ran it before keeps it, added once (acp/agents.ts).
+  if (!demo) acpAgents.migrate(() => usedRuntime(saved, workspaces, 'antigravity'));
   // The demo reads Claude Code's conversations only from a pretend ~/.claude (BELUGA_CLAUDE_HOME, the e2e's), never yours.
   const readsClaude = !demo || Boolean(belugaEnv('CLAUDE_HOME'));
   if (demo && readsClaude) process.env.CLAUDE_CONFIG_DIR = claudeHome();
@@ -355,10 +378,10 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     createAgent: demo
       ? (bridge) => createMockBackend(bridge, Number(belugaEnv('DEMO_PACE')) || 2.6) // unhurried, so you can watch workspaces run side by side
       : undefined,
-    // The demo's Codex, OpenCode, Grok Build and Copilot: the real runtimes over a scripted app-server,
-    // a scripted `opencode acp`, a scripted `grok agent stdio` and a scripted `copilot --acp`
-    // (BLG-462, BLG-686, BLG-873).
-    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect }), demoOpenCode(), demoGrok(), demoCopilot()] } : {}),
+    // The demo's Codex, OpenCode, Grok Build, Copilot and Antigravity: the real runtimes over a scripted app-server,
+    // a scripted `opencode acp`, a scripted `grok agent stdio`, a scripted `copilot --acp` and a scripted `agy acp`,
+    // so a worktree can run on any (BLG-462, BLG-686, BLG-873).
+    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect }), demoOpenCode(), demoGrok(), demoCopilot(), demoAntigravity()] } : {}),
     // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
     ...(!demo && config.agent
       ? {
@@ -366,6 +389,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
           // Claude to fall back on; each run follows its place's agent, side calls your default (session.sideRoute).
           runtime: {
             runtimes: withClaudeStatus,
+            // Your ACP agents Beluga has no name of its own for (Cursor, a Registry agent, a command of yours): after the fixed ones.
+            extra: () => acpRuntimes().filter((rt) => !KNOWN_RUNTIMES.some((k) => k.id === rt.id)).map((rt) => ({ id: rt.id, label: rt.label })),
             options: {
               cwd: agentCwd,
               autoEdit: primary?.writable ?? false,
@@ -396,6 +421,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopEarnings = (): void => undefined;
   let stopRevenueCat = (): void => undefined;
   let stopSupport = (): void => undefined;
+  let stopAttachmentSweep = (): void => undefined;
   let stopTelemetry = async (): Promise<void> => undefined;
   let stopStats = (): void => undefined;
   let stopLeaderboard = (): void => undefined;
@@ -469,6 +495,15 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopCompanion = launchCompanion({ session, store, identity: you.identity, you, terminals, demo: Boolean(demo), log: (line) => console.warn(line) });
     // External agents (GrokBot, a Claude Code in your terminal): their own port, off until you turn it on.
     if (opts.network) stopExternal = launchExternal({ session, log: (line) => console.warn(line) });
+    // Pasted images no conversation links any more (its worktree or chat deleted) are cleaned up (core/attachment-sweep).
+    // Never in the demo: its pretend chats link images of their own.
+    if (!demo) {
+      const controller = session.workspaces;
+      stopAttachmentSweep = launchAttachmentSweep({
+        ...(controller ? { onRemoved: (listener: () => void) => controller.onWorktree((e) => e.kind === 'removed' && listener()) } : {}),
+        log: (line) => console.warn(line),
+      });
+    }
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
     // A pretend friend and a fake invite so every part of the UI has something to show.
@@ -482,6 +517,23 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
       // A second and a third provider, so the Usage tab shows a card for each shape (BLG-458).
       session.updateUsage({ plan: 'plus', windows: [{ label: 'Weekly', pct: 24 }] }, { runtime: 'codex', model: 'gpt-5', label: 'Codex' });
       session.updateUsage({ tokens: { input: 182_000, output: 41_500 }, tokensPerSec: 38 }, { runtime: 'local', model: 'qwen3', label: 'Local' });
+      // Antigravity's quota per group of models, its 5-hour and weekly limits, on a card of its own.
+      const refill = Date.now() + 3 * 60 * 60_000;
+      const week = Date.now() + 6 * 24 * 60 * 60_000;
+      session.updateUsage(
+        {
+          plan: 'AI Ultra',
+          windows: [
+            { group: 'Gemini Models', label: '5-hour', pct: 25, resetsAt: refill },
+            { group: 'Gemini Models', label: 'Weekly', pct: 8, resetsAt: week },
+            { group: 'Claude and GPT models', label: '5-hour', pct: 0, resetsAt: refill + 20 * 60_000 },
+            { group: 'Claude and GPT models', label: 'Weekly', pct: 0, resetsAt: week + 2 * 60 * 60_000 },
+          ],
+        },
+        { runtime: 'antigravity', label: 'Antigravity' },
+      );
+      // An ACP agent without a quota: its card shows its week from your stats.
+      session.updateUsage({ signedIn: true }, { runtime: 'cursor', label: 'Cursor' });
     }, 300);
     // bob "arrives" a moment later so you first see how inviting works (sooner at a faster pace: the e2e tests).
     const soon = (ms: number): number => ms * Math.min(1, Number(process.env.KLAUD_DEMO_PACE) || 1);
@@ -521,6 +573,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopEarnings();
     stopRevenueCat();
     stopSupport();
+    stopAttachmentSweep();
     await stopTelemetry();
     stopLeaderboard();
     stopStats();

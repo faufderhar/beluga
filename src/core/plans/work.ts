@@ -14,7 +14,7 @@ import { coherenceWarnings, warningsText } from './coherence.js';
 import { DraftReviewer } from './draft-review.js';
 import { dropEpics, syncEpics } from './epics.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
-import { type Autonomy, type Plan, type TestsAt, activeDecisions, allTasks, checkerOf, planForHome, planTaskOfIssue, planTitle, reviewerOf } from './model.js';
+import { type Autonomy, type Plan, type PlanRole, type TestsAt, activeDecisions, allTasks, autonomyOf, checkerOf, findMilestone, planAutonomy, planForHome, planTaskOfIssue, planTitle, reviewerOf, roleAgent } from './model.js';
 import { PlanMover } from './move-work.js';
 import { issueForWorkspace } from '../board/model.js';
 import { type PilotDeps, PlanPilot } from './pilot.js';
@@ -22,6 +22,7 @@ import { liveFrom } from './progress.js';
 import { type PlanGit, planGitOf } from './plan-git.js';
 import { type Plans, UNTITLED } from './plans.js';
 import { checkFailedPrompt, checkerBrief, describePlan, headBrief, milestoneNote, planningBrief, reviewerBrief, sizeWords, workerNote } from './prompt.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 /**
  * Plans at work: making a plan (its own conversation, in the project's main folder where Claude
@@ -75,6 +76,21 @@ export interface PlansWorkDeps {
 const WS = 'ws:';
 
 /**
+ * What a new plan starts from: its goal, how it runs, and who plays each part (BLG-982: `agent`
+ * builds, `planner` and `checker` when another agent plans or checks). Full Autopilot: BLG-981.
+ */
+export interface PlanStart {
+  readonly projectId: string;
+  readonly goal: string;
+  readonly autonomy?: Autonomy;
+  readonly testsAt?: TestsAt;
+  readonly agent?: AgentRef;
+  readonly planner?: AgentRef;
+  readonly checker?: AgentRef;
+  readonly fullAuto?: boolean;
+}
+
+/**
  * Whether a conversation already runs on `pick` (undefined: your default): its runtime, and its
  * model when the pick names one. A pick naming no model leaves the conversation's own model alone,
  * unless that model is what the plan's last pick (`was`) put there.
@@ -109,11 +125,13 @@ export class PlansWork {
         ? {
             reviewChat: async (plan: Plan) => {
               const ws = await deps.controller!.newChat(plan.projectId, `Review: ${planTitle(plan)}`.slice(0, 40), undefined, { quiet: true });
-              if (ws && plan.agent) deps.controller!.manager.setAgent(ws.id, plan.agent);
+              const checker = roleAgent(plan, 'checker');
+              if (ws && checker) deps.controller!.manager.setAgent(ws.id, checker);
               return ws?.id;
             },
             chatAgent: (chat: string, plan: Plan) => {
-              if (plan.agent) deps.controller!.manager.setAgent(chat, plan.agent);
+              const checker = roleAgent(plan, 'checker');
+              if (checker) deps.controller!.manager.setAgent(chat, checker);
             },
           }
         : {}),
@@ -137,10 +155,11 @@ export class PlansWork {
       // Each milestone's check: a conversation of its own in the project (folded into the plan), archived once it passed.
       ...(deps.controller
         ? {
-            // On the plan's agent (BLG-503), like its workers; none picked: the project's.
+            // On the plan's checker (BLG-982), else its builder (BLG-503); none picked: the project's.
             checkerChat: async (plan, milestone) => {
               const ws = await deps.controller!.newChat(plan.projectId, `Check: ${milestone.title}`.slice(0, 40), undefined, { quiet: true });
-              if (ws && plan.agent) deps.controller!.manager.setAgent(ws.id, plan.agent);
+              const checker = roleAgent(plan, 'checker');
+              if (ws && checker) deps.controller!.manager.setAgent(ws.id, checker);
               return ws?.id;
             },
             retireChat: (id) => void deps.controller!.archive(id, false, { quiet: true }).catch(() => undefined),
@@ -193,7 +212,7 @@ export class PlansWork {
    * the code there and changes nothing), and the plan's page. Claude starts planning from `goal`.
    */
   /** `quiet`: started from elsewhere (Your Mac), so the Mac's window stays where it is. */
-  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt; readonly agent?: AgentRef }, opts: { readonly quiet?: boolean } = {}): Promise<Plan> {
+  async create(input: PlanStart, opts: { readonly quiet?: boolean } = {}): Promise<Plan> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Plans need a project folder');
     const goal = input.goal.trim();
@@ -201,11 +220,13 @@ export class PlansWork {
     const chat = await controller.newChat(input.projectId, UNTITLED, undefined, { quiet: true });
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
-    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}), ...(input.agent ? { agent: input.agent } : {}) }, this.me());
-    // Its conversation plans on the agent picked for its work (a new conversation: nothing to hand off).
+    const { goal: _g, projectId, ...rest } = input;
+    const plan = this.plans.create({ projectId, home, goal, ...rest }, this.me());
+    // Its conversation plans on the planner picked, else the agent picked for its work (a new conversation: nothing to hand off).
     // One this Mac can't run would fail the first turn, so your default plans it and the plan keeps the pick.
-    if (input.agent && runsHere(this.deps.store.getState().runtimes, input.agent)) controller.manager.setAgent(chat.id, input.agent);
-    else if (input.agent) this.deps.store.dispatch({ type: 'system', channel: home, text: `${agentName(input.agent)} isn’t set up on this Mac, so your default agent plans this.`, level: 'warn' });
+    const planner = roleAgent(plan, 'planner');
+    if (planner && runsHere(this.deps.store.getState().runtimes, planner)) controller.manager.setAgent(chat.id, planner);
+    else if (planner) this.deps.store.dispatch({ type: 'system', channel: home, text: `${agentName(planner)} isn’t set up on ${THIS_COMPUTER}, so your default agent plans this.`, level: 'warn' });
     if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
     // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.
@@ -262,7 +283,11 @@ export class PlansWork {
     const ws = channel.startsWith(WS) ? this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(WS.length)) : undefined;
     const project = ws ? this.deps.store.getState().projects.find((p) => p.id === ws.projectId && p.root) : undefined;
     if (!ws || !project) throw new Error('Plans belong to a project: start one from a conversation in a project');
-    return this.plans.create({ projectId: project.id, home: channel, ...(autonomy ? { autonomy } : {}) }, this.me());
+    // Picked in the mode menu (BLG-982): another agent builds it; the one in this chat plans it, as it is.
+    const builder = this.deps.store.getState().buildWith[channel];
+    if (builder) this.deps.store.dispatch({ type: 'build_with', channel });
+    const planner = builder ? this.deps.board.myClaude(channel).agent : undefined;
+    return this.plans.create({ projectId: project.id, home: channel, ...(autonomy ? { autonomy } : {}), ...(builder ? { agent: builder } : {}), ...(planner ? { planner } : {}) }, this.me());
   }
 
   /** Approve the draft: its tasks go on the board, and the plan runs (or carries on with the changes). */
@@ -382,11 +407,39 @@ export class PlansWork {
     const plan = this.plans.setWorkAgent(id, agent ?? undefined, this.me());
     // The plan's own conversation follows it, so the one you plan with is the one you picked (even when the pick didn't change: it brings a drifted conversation back).
     // One already on it isn't moved: a move clears the conversation's own effort and model.
-    const chat = plan.status !== 'done' && plan.home.startsWith(WS) ? this.deps.controller?.manager?.find(plan.home.slice(WS.length)) : undefined;
+    // A planner of its own (BLG-982) keeps the conversation.
+    const chat = plan.status !== 'done' && !plan.planner && plan.home.startsWith(WS) ? this.deps.controller?.manager?.find(plan.home.slice(WS.length)) : undefined;
     if (chat && !chatRunsOn(chat, agent ?? undefined, was)) this.deps.followAgent?.(plan.home, agent ?? undefined);
     const who = agent ? agentName(agent, { model: true }) : 'your default agent';
     const busy = Object.values(plan.runs).filter((r) => r?.agent && !r.passedAt).length;
-    return busy ? `${who} works what starts next; the ${busy === 1 ? 'milestone' : `${busy} milestones`} already at work keep${busy === 1 ? 's' : ''} ${busy === 1 ? 'its' : 'their'} agent` : `${who} works this plan’s milestones and tasks`;
+    return busy ? `${who} works what starts next; the ${busy === 1 ? 'milestone' : `${busy} milestones`} already at work keep${busy === 1 ? 's' : ''} ${busy === 1 ? 'its' : 'their'} agent (to switch ${busy === 1 ? 'it' : 'one'} now, pick an agent in its conversation)` : `${who} works this plan’s milestones and tasks`;
+  }
+
+  /**
+   * Who plays a part of the plan (BLG-982): the builder is setWorkAgent; the planner moves the plan's
+   * own conversation to its agent (null: back to the builder's); the checker takes the checks and
+   * draft reviews that start from now on. → in words.
+   */
+  setRoleAgent(id: string, role: PlanRole, agent: AgentRef | null): string {
+    if (role === 'builder') return this.setWorkAgent(id, agent);
+    const before = this.plans.need(id);
+    const was = roleAgent(before, role);
+    const plan = this.plans.setRoleAgent(id, role, agent ?? undefined, this.me());
+    const now = roleAgent(plan, role);
+    const who = now ? agentName(now, { model: true }) : 'your default agent';
+    if (role === 'planner') {
+      const chat = plan.status !== 'done' && plan.home.startsWith(WS) ? this.deps.controller?.manager?.find(plan.home.slice(WS.length)) : undefined;
+      if (chat && !chatRunsOn(chat, now, was)) this.deps.followAgent?.(plan.home, now);
+      return `${who} plans with you here from now on`;
+    }
+    return `${who} checks this plan’s milestones from the next check on`;
+  }
+
+  /** Full Autopilot on or off (BLG-981): see Plans.setFullAuto. */
+  setFullAuto(id: string, on: boolean): Plan {
+    const plan = this.plans.setFullAuto(id, on, this.me());
+    this.pilot.schedule();
+    return plan;
   }
 
   pass(id: string, milestone: string): Plan {
@@ -495,7 +548,7 @@ export class PlansWork {
       if (checking.plan.status !== 'active' || !checking.plan.body || checking.plan.movedTo) return undefined;
       const view = this.pilot.view(checking.plan);
       const m = view.milestones.find((x) => x.milestone.id === checking.milestone);
-      return m ? { tools: this.checkerTools(checking.plan.id, m.milestone.id), brief: checkerBrief(view, m), checker: true } : undefined;
+      return m ? { tools: this.checkerTools(checking.plan.id, m.milestone.id, this.deps.board.myClaude(channel)), brief: checkerBrief(view, m), checker: true } : undefined;
     }
     const plan = planForHome(this.plans.state(), channel);
     if (!plan) return undefined;
@@ -546,8 +599,8 @@ export class PlansWork {
    * A milestone's checker: it reads the plan and records its verdict on that milestone, nothing more.
    * The verdict reaches the head Claude as one line; a failed one with the notes, to add the fix tasks.
    */
-  private checkerTools(planId: string, milestoneId: string): PlanTools {
-    const full = this.toolsFor(planId);
+  private checkerTools(planId: string, milestoneId: string, actor?: Actor): PlanTools {
+    const full = this.toolsFor(planId, undefined, undefined, actor);
     const refuse = (): never => {
       throw new Error('You check this milestone: only plan_get and plan_gate are yours here');
     };
@@ -562,11 +615,11 @@ export class PlansWork {
         const plan = this.plans.need(planId);
         const m = plan.body?.milestones.find((x) => x.id === milestoneId);
         if (!m) throw new Error('That milestone isn’t in the approved plan any more: nothing to record');
-        if (milestone !== m.id && milestone.toLowerCase() !== m.title.toLowerCase()) throw new Error(`You check “${m.title}” only (id ${m.id})`);
+        if (findMilestone([m], milestone) !== m) throw new Error(`milestone: you check “${m.title}” only: call plan_gate again with milestone "${m.id}"`);
         const said = full.gate(m.id, verdict, notes);
         if (!said.startsWith('Recorded')) return said;
         const first = notes.trim().split('\n')[0]!.slice(0, 200);
-        const auto = (m.autonomy ?? plan.autonomy) === 'autopilot';
+        const auto = autonomyOf(plan, m) === 'autopilot';
         if (verdict === 'pass') {
           this.deps.store.dispatch({ type: 'system', channel: plan.home, text: `“${m.title}” checked: it passes${auto ? ', and the plan moves on' : '. It’s yours to pass'}. ${first}`, level: 'info' });
           return `${said} Your check is done: end your turn.`;
@@ -612,7 +665,8 @@ export class PlansWork {
   }
 
   /** `chain`: the chain of the run that has the tools; a message to a task goes on in it, one hop on (BLG-303). */
-  private toolsFor(planId: string, external?: Actor, chain?: () => ChatChain): PlanTools {
+  /** `actor`: who records a check (a checker's own agent, BLG-982); else your agent. */
+  private toolsFor(planId: string, external?: Actor, chain?: () => ChatChain, actor?: Actor): PlanTools {
     const by = (): Actor => external ?? this.claude();
     const plans = this.plans;
     const after = (change: () => Plan): string => {
@@ -625,7 +679,7 @@ export class PlansWork {
       // What this change left behind, said next to "Saved" (BLG-772).
       const warn = (body: Plan['draft']): string => (body ? warningsText(coherenceWarnings(body, before.draft ?? before.body)) : '');
       // On autopilot, the head Claude's changes to a running plan apply at once.
-      if (!external && plan.body && plan.autonomy === 'autopilot') {
+      if (!external && plan.body && planAutonomy(plan) === 'autopilot') {
         const applied = this.approve(plan.id, this.claude());
         return `Applied at once (the plan runs on autopilot): ${sizeWords(applied.body)}.${warn(applied.body)}`;
       }
@@ -645,16 +699,17 @@ export class PlansWork {
         ),
       gate: (milestone, verdict, notes) => {
         const plan = plans.need(planId);
-        const m = plan.body?.milestones.find((x) => x.id === milestone || x.title.toLowerCase() === milestone.toLowerCase());
-        if (!m) throw new Error(`There's no milestone "${milestone}" in the approved plan (milestones: ${(plan.body?.milestones ?? []).map((x) => x.id).join(', ')})`);
+        const m = findMilestone(plan.body?.milestones ?? [], milestone);
+        if (!m) throw new Error(`milestone: there's no milestone "${milestone.slice(0, 80)}" in the approved plan: use one of its ids (${(plan.body?.milestones ?? []).map((x) => x.id).join(', ')})`);
         // The user passed it while you checked: your verdict isn't needed any more.
         if (plan.runs[m.id]?.passedAt || (plan.merging?.[m.id] && !plan.merging[m.id]!.catchUp)) return 'The user already passed this milestone: nothing to record. Stop checking it and end your turn.';
-        plans.recordCheck(planId, m.id, { by: this.claude(), verdict, notes });
+        plans.recordCheck(planId, m.id, { by: actor ?? this.claude(), verdict, notes });
         this.pilot.schedule();
-        const auto = (m.autonomy ?? plan.autonomy) === 'autopilot';
+        const auto = autonomyOf(plan, m) === 'autopilot';
         return verdict === 'pass' ? (auto ? 'Recorded: the milestone passes and the plan moves on.' : 'Recorded: the user passes the milestone.') : 'Recorded as failed. Add the fix tasks with plan_update.';
       },
-      start: (task) => this.pilot.startNow(planId, task, by()),
+      // An agent's call: what changes nothing (started already, or Beluga starts it by itself) is said, not refused.
+      start: (task) => this.pilot.startForAgent(planId, task, by()),
       message: (task, text, mode = 'queue') => {
         const plan = plans.need(planId);
         const hit = allTasks(plan.body).find((t) => t.task.id === task || (t.task.issueId && this.deps.board.board.get(t.task.issueId)?.key === task.toUpperCase()));

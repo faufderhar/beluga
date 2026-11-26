@@ -79,7 +79,7 @@ export function cannotTake(name: string, info: BelugaInfo | undefined, feature: 
   const what = FEATURE_NAMES[feature];
   // No task features at all: their Beluga runs, but its requests side isn't on.
   if (feature.startsWith('task.') && !info.can.some((f) => f.startsWith('task.')))
-    return !linked ? undefined : `${name}'s Beluga isn't taking requests right now (it's open, but not the Mac app). Ask ${name} to open Beluga for Mac.`;
+    return !linked ? undefined : `${name}'s Beluga isn't taking requests right now (it's open, but not the Beluga app). Ask ${name} to open the Beluga app.`;
   // Their Beluga declines every secret at once: say so before asking.
   if (feature === 'task.secret') return `${name}'s Beluga ${shortVersion(info.version)} can't send secrets ${name} approves yet. Ask ${name} to update Beluga.`;
   // Shared things are opened on their Mac, not taken as requests.

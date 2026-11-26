@@ -1,7 +1,7 @@
 import { type AgentMark, modelMark } from '@beluga/shared/agent-marks.js';
 
 /** The maker a runtime's models usually come from: its own models carry no second mark. */
-const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode', copilot: 'copilot', grok: 'grok' };
+const HOUSE: Readonly<Record<string, AgentMark>> = { claude: 'anthropic', codex: 'openai', opencode: 'opencode', copilot: 'copilot', grok: 'grok', antigravity: 'antigravity' };
 
 /** A model's maker mark when it isn't its runtime's own (a local runtime serving a GPT model, DeepSeek under OpenCode); else none. */
 export function foreignMark(model: string, runtime: string): AgentMark | undefined {

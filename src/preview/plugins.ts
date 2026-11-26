@@ -35,10 +35,10 @@ export function tailwindPlugin(root: string): Plugin {
 }
 
 /** The names a file imports from a module (`import { Inter, Roboto } from 'next/font/google'`). */
-function namedImports(importer: string, spec: string): string[] {
+export function namedImports(importer: string, spec: string): string[] {
   try {
     const src = readFileSync(importer, 'utf8');
-    const re = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*['"]${spec.replace(/[/]/g, '\\/')}['"]`, 'g');
+    const re = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*['"]${spec.replace(/[/$]/g, '\\$&')}['"]`, 'g');
     return [...src.matchAll(re)].flatMap((m) => m[1]!.split(',').map((p) => p.trim().split(/\s+as\s+/)[0]!.trim()).filter((n) => /^[A-Za-z_$][\w$]*$/.test(n)));
   } catch {
     return [];

@@ -29,6 +29,7 @@ export const SENTINEL_HANDLERS = {
   'sentinel.moveReceive': (s, token, n, total, data) => needSentinel(s).mover.receive(token, n, total, data),
   'sentinel.moveLand': (s, token, projectId, from) => needSentinel(s).mover.landIn(token, projectId ?? null, from),
   'sentinel.moveDrop': (s, id) => needSentinel(s).mover.drop(id),
+  'sentinel.forChat': (s, chat) => needSentinel(s).forChat(chat),
   'sentinel.runs': (s, id) => needSentinel(s).runsOf(id),
   'sentinel.runGet': (s, runId) => needSentinel(s).runGet(runId),
   'sentinel.ask': (s, id, text) => needSentinel(s).ask(id, text),

@@ -1,7 +1,7 @@
 {
   "name": "@beluga/mac",
   "private": true,
-  "version": "3.4.0",
+  "version": "3.8.0",
   "description": "Beluga for macOS: the same Beluga as the terminal UI, as a native app.",
   "type": "module",
   "scripts": {
@@ -42,6 +42,7 @@
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.12.0",
     "cmdk": "^1.1.1",
+    "dockview-react": "^8.9.1",
     "elkjs": "^0.12.0",
     "emojibase-data": "^18.0.0",
     "katex": "^0.16.47",

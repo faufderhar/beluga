@@ -1,7 +1,7 @@
 import type { View } from '../../../../src/core/store.js';
 import { groupChatOpen } from './group-chat.js';
 import type { PanelSnapshot } from './nav-history.js';
-import { type PanelTab, drawerFits, paneKey, panelFits, rememberTab } from './panel-model.js';
+import { type ShownTabs, drawerFits, panelFits, panelKey } from './panel-model.js';
 
 /**
  * What Back and Forward need to know about pages, as plain data: whether a page is still there
@@ -71,7 +71,7 @@ export interface PanelPrefs {
   readonly inspector: boolean;
   readonly bottomOpen: boolean;
   readonly drawer: boolean;
-  readonly panelTabs: Readonly<Record<string, PanelTab>>;
+  readonly panelShown: ShownTabs;
 }
 
 /**
@@ -80,14 +80,14 @@ export interface PanelPrefs {
  */
 export function restorePatch(prefs: PanelPrefs, view: View, panels: PanelSnapshot): Partial<PanelPrefs> {
   const fits = panelFits(view);
-  let tabs = prefs.panelTabs;
-  if (fits && panels.topTab && tabs[paneKey(view, 'top')] !== panels.topTab) tabs = rememberTab(tabs, paneKey(view, 'top'), panels.topTab);
-  if (fits && panels.bottomTab && tabs[paneKey(view, 'bottom')] !== panels.bottomTab) tabs = rememberTab(tabs, paneKey(view, 'bottom'), panels.bottomTab);
+  // The tabs its docks showed (each group shows the latest of its own again).
+  const key = panelKey(view);
+  const tabs = fits && panels.shown?.length && (prefs.panelShown[key] ?? []).join() !== panels.shown.join() ? { ...prefs.panelShown, [key]: panels.shown } : prefs.panelShown;
   return {
     ...(panels.sidebar !== prefs.sidebar ? { sidebar: panels.sidebar } : {}),
     ...(fits && panels.inspector !== prefs.inspector ? { inspector: panels.inspector } : {}),
     ...(fits && panels.bottomOpen !== prefs.bottomOpen ? { bottomOpen: panels.bottomOpen } : {}),
     ...(drawerFits(view) && panels.drawer !== prefs.drawer ? { drawer: panels.drawer } : {}),
-    ...(tabs !== prefs.panelTabs ? { panelTabs: tabs } : {}),
+    ...(tabs !== prefs.panelShown ? { panelShown: tabs } : {}),
   };
 }

@@ -15,6 +15,7 @@ import type { Session } from '../core/session.js';
 import type { TaskDraft } from '../agent/task-drafter.js';
 import type { TaskDraftResult } from '../companion/calls.js';
 import type { Args, Method } from './api.js';
+import { THIS_COMPUTER, YOUR_COMPUTER } from '../shared/assistant.js';
 
 /** What each `companion.*` method does (see companion-api.ts). Results carry no keys or secrets beyond the pairing's own link and code. */
 
@@ -49,16 +50,16 @@ export const COMPANION_HANDLERS = {
     // One of your providers by its runtime (its card's agent); Claude is "no default set", as on the Mac.
     const me = s.store.getState().peers.find((p) => p.peerId === s.selfId) ?? s.store.getState().self;
     const agent = providersOf(me).find((a) => a.runtime === runtime);
-    if (!agent) throw new Error(`No ${runtime} agent on this Mac`);
+    if (!agent) throw new Error(`No ${runtime} agent on ${THIS_COMPUTER}`);
     s.setPrefs({ defaultAgent: runtime === CLAUDE_AGENT.runtime ? null : agent });
   },
   'companion.openOnMac': async (s, target) => {
     const view = macViewFor(s.store.getState(), target);
-    if (!view) return { opened: false, why: 'That isn’t on your Mac any more' };
+    if (!view) return { opened: false, why: `That isn’t on ${YOUR_COMPUTER} any more` };
     // A worktree's conversation is loaded before it's shown (as opening it on the Mac does).
     if (view.kind === 'workspace') s.workspaces?.ensureLoaded(view.id);
     const raised = await s.showOnScreens({ type: 'navigate', view });
-    return raised ? { opened: true } : { opened: false, why: 'Beluga isn’t open on your Mac' };
+    return raised ? { opened: true } : { opened: false, why: `Beluga isn’t open on ${YOUR_COMPUTER}` };
   },
   'companion.icon': (s, sum) => needCompanion(s).icon(sum),
   'companion.voice': (s) => needCompanion(s).voice.status(),

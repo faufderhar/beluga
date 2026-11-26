@@ -3,14 +3,29 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { dropGitLocalEnv } from '../core/git-env.js';
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
 import { limiter } from './limit.js';
 import { withSshRoutes } from './ssh-routes.js';
 
 export class GitError extends Error {}
 
-/** Git must never ask for a password on Beluga's screen: fail instead, and say why. */
-const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
+/**
+ * Git's messages in English, whatever the computer's language: Beluga reads them (changes in the
+ * way of an update, a branch not fully merged, why a clone or a push failed), and on a Mac set to
+ * Chinese git answers in Chinese even with LANG unset. LANGUAGE too: it wins over LC_ALL. File
+ * names are unaffected (that's core.quotePath).
+ */
+export const GIT_IN_ENGLISH = { LC_ALL: 'en_US.UTF-8', LANGUAGE: 'en' } as const;
+
+/**
+ * Git must never ask for a password on Beluga's screen: fail instead, and say why. Built as this
+ * module loads, before the daemon or the demo can drop git's own variables (an ESM import runs
+ * first), so they're left out here too: started from a hook or `git rebase -x`, GIT_DIR sent every
+ * worktree and commit into that repository (git-env.ts).
+ */
+const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, ...GIT_IN_ENGLISH, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
+dropGitLocalEnv(GIT_ENV);
 
 /**
  * Run git in a directory; resolves stdout, rejects with git's own message. `env`: more of git's
@@ -513,8 +528,11 @@ export async function mergeInto(mainDir: string, branch: string, target?: string
   }
 }
 
-/** The files a merge (or stash apply) left conflicted in `dir`. */
-export const conflictedFiles = async (dir: string): Promise<string[]> => ((await tryGit(dir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
+/**
+ * The files a merge (or stash apply) left conflicted in `dir`, as paths: -z, so a name git would
+ * quote (`"docs/\345\257\271.md"`, core.quotepath) comes as it is and can be read and added.
+ */
+export const conflictedFiles = async (dir: string): Promise<string[]> => [...new Set(((await tryGit(dir, ['diff', '--name-only', '-z', '--diff-filter=U'])) ?? '').split('\0').filter(Boolean))];
 
 export const isAncestor = async (cwd: string, a: string, b: string): Promise<boolean> => (await tryGit(cwd, ['merge-base', '--is-ancestor', a, b])) !== undefined;
 
@@ -569,8 +587,14 @@ export async function combineBranches(repo: string, dir: string, branch: string,
       const msg = await readFile(path.join((await git(dir, ['rev-parse', '--path-format=absolute', '--git-dir'])).trim(), 'MERGE_MSG'), 'utf8').catch(() => '');
       return { ok: false, branch, dir, merging: /'([^']+)'/.exec(msg)?.[1] ?? 'a branch', files: marked };
     }
-    if (files.length) await git(dir, ['add', '--', ...files]);
-    await git(dir, ['commit', '--no-edit']);
+    try {
+      if (files.length) await git(dir, ['add', '--', ...files]);
+      await git(dir, ['commit', '--no-edit']);
+    } catch (err) {
+      // Never left half-merged: the next merge starts clean, and a conflict shows again as one.
+      await tryGit(dir, ['merge', '--abort']);
+      throw err;
+    }
   }
   for (const b of branches) {
     if (await isAncestor(dir, b, 'HEAD')) continue;

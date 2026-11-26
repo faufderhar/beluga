@@ -6,6 +6,7 @@ import { useApi, useApp } from '../lib/beluga.js';
 import { copyText } from '../lib/copy.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
+import { thisComputer } from '../lib/os-words.js';
 
 /** In a grant's projects: all your chats with no project. */
 const STANDALONE_CHATS = 'chats';
@@ -142,7 +143,7 @@ export function ExternalAgentsSettings() {
   return (
     <>
       <Group>
-        <Row label="Let other agents connect" detail={status?.error ?? (status?.on ? status.routes?.length ? 'Each agent needs a pairing code from you.' : 'Only programs on this Mac can reach it, and each one needs a pairing code from you.' : 'Off: nothing listens.')}>
+        <Row label="Let other agents connect" detail={status?.error ?? (status?.on ? status.routes?.length ? 'Each agent needs a pairing code from you.' : `Only programs on ${thisComputer()} can reach it, and each one needs a pairing code from you.` : 'Off: nothing listens.')}>
           <Switch label="Let other agents connect" on={status?.on ?? false} onChange={(on) => run(api.external.setEnabled(on))} />
         </Row>
         {status?.on ? (
@@ -167,9 +168,9 @@ export function ExternalAgentsSettings() {
       </Group>
       {status?.on ? (
         <Group title="Connect an agent">
-          <Row label="For an agent outside this Mac" detail="It starts at Trusted. Full trust takes your explicit choice for this code.">
+          <Row label="For a remote agent" detail="It starts at Trusted. Full trust takes your explicit choice for this code.">
             <Switch
-              label="For an agent outside this Mac"
+              label="For a remote agent"
               on={remote}
               onChange={(on) => {
                 setRemote(on);
@@ -178,7 +179,7 @@ export function ExternalAgentsSettings() {
               }}
             />
           </Row>
-          <Row label="What it may do" detail="Chosen now. The sign-in page can't raise it. Full: what you can do on this Mac.">
+          <Row label="What it may do" detail={`Chosen now. The sign-in page can't raise it. Full: what you can do on ${thisComputer()}.`}>
             <Select<Level> label="What it may do" value={level} options={LEVELS} onChange={(next) => { setLevel(next); setConfirmFull(false); }} />
           </Row>
           {remote && level === 'full' ? (
@@ -219,7 +220,7 @@ export function ExternalAgentsSettings() {
             <Button onClick={() => run(api.external.stopAll())}>Stop All</Button>
           </Row>
           {agents.map((a) => (
-            <Row key={a.id} label={a.name} detail={`${a.suspendedAt === undefined ? '' : 'Suspended after repeated refusals · '}${a.route === 'remote' && a.level === 'full' ? '⚠ Full trust from outside this Mac' : `${LEVEL_WORDS[a.level] ?? a.level} · ${a.route === 'local' ? 'On this Mac' : 'Outside this Mac'}`} · Last seen ${seenWords(a.lastSeen)}`}>
+            <Row key={a.id} label={a.name} detail={`${a.suspendedAt === undefined ? '' : 'Suspended after repeated refusals · '}${a.route === 'remote' && a.level === 'full' ? `⚠ Full trust from outside ${thisComputer()}` : `${LEVEL_WORDS[a.level] ?? a.level} · ${a.route === 'local' ? `On ${thisComputer()}` : `Outside ${thisComputer()}`}`} · Last seen ${seenWords(a.lastSeen)}`}>
               {a.suspendedAt === undefined ? null : <Button onClick={() => run(api.external.resume(a.id))}>Resume</Button>}
               <Button onClick={() => run(api.external.stopAgent(a.id))}>Stop</Button>
               <Button tone="error" onClick={() => run(api.external.revoke(a.id))}>Revoke</Button>

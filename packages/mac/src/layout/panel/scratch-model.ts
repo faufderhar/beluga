@@ -155,13 +155,14 @@ export interface ScratchSplit<T> {
 }
 
 /**
- * What the tab lists for the view you asked for: Claude's files, unless you picked what you sent (and
- * there is some), or Claude saved nothing yet and you sent something.
+ * What the tab lists: the view you picked (what you sent only while there is some). Not picked yet:
+ * Claude's files, or what you sent while Claude saved nothing. A pick sticks, even to Claude's empty
+ * view: it was the "From Your Agent" you clicked that did nothing.
  */
-export function splitSent<T extends Pick<ScratchEntry, 'path'>>(files: readonly T[], wanted: ScratchView, isSent: (path: string) => boolean): ScratchSplit<T> {
+export function splitSent<T extends Pick<ScratchEntry, 'path'>>(files: readonly T[], wanted: ScratchView | undefined, isSent: (path: string) => boolean): ScratchSplit<T> {
   const sent = files.filter((f) => isSent(f.path));
   const mine = files.filter((f) => !isSent(f.path));
-  const view: ScratchView = sent.length && (wanted === 'sent' || !mine.length) ? 'sent' : 'claude';
+  const view: ScratchView = !sent.length ? 'claude' : (wanted ?? (mine.length ? 'claude' : 'sent'));
   return { view, mine, sent, shown: view === 'sent' ? sent : mine };
 }
 

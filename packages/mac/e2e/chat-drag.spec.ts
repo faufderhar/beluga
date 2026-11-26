@@ -223,6 +223,71 @@ test('an Unread row is a source and a target (BLG-307)', async ({ page }) => {
   await boxIn(page, a).fill('');
 });
 
+test('with the sidebar categories on, a category row is a source and a target', async ({ page }) => {
+  const { self, a, b } = await setUp(page);
+  await daemon(page, `(c) => c.api.session.setPrefs({ chatCategories: true, folded: [] })`);
+  try {
+    // The same row as in a project's list, with the categories' extras.
+    const categoryRow = (w: Worktree) => sidebar(page).locator(`[data-category][data-chat-row="ws:${w.id}"]`);
+    await expect(categoryRow(a)).toBeVisible();
+    await expect(categoryRow(b)).toBeVisible();
+    await sidebar(page).getByText('Your Mac', { exact: true }).click();
+    await pause(page);
+    // Dropped on another category row: that chat opens with the chip in its draft.
+    await lift(page, categoryRow(a), categoryRow(b));
+    await expect(categoryRow(b)).toHaveClass(/over/);
+    await page.mouse.up();
+    await expect.poll(() => sentFrom(page, boxIn(page, b))).toBe(`${chip(self, a)} `);
+    await boxIn(page, b).fill('');
+    await pause(page);
+    // Dropped on the open chat's message box.
+    await lift(page, categoryRow(a), boxIn(page, b));
+    await expect(glow(page)).toBeVisible();
+    await page.mouse.up();
+    await expect.poll(() => sentFrom(page, boxIn(page, b))).toBe(`${chip(self, a)} `);
+    await pause(page);
+    await boxIn(page, b).fill('');
+  } finally {
+    await daemon(page, `(c) => c.api.session.setPrefs({ chatCategories: false })`);
+  }
+});
+
+/** A friend's row in the sidebar, and the message box of your chat with them. */
+const friendRow = (page: Page, name: string) => sidebar(page).locator('[data-friend-row]').filter({ has: page.getByRole('button', { name: `${name}’s profile` }) });
+const dmBox = (page: Page, name: string) => page.locator('main').getByRole('textbox', { name: `Message ${name}` });
+/** What you sent to anyone on the network: a drop must not add to it. */
+const sentToFriends = (page: Page): Promise<number> => daemon<number>(page, `(c) => Object.values(c.store.getState().network.messages ?? {}).flat().filter((m) => m.mine).length`);
+
+test('a row dropped on a chat with a friend: a chip in your message to them, nothing sent', async ({ page }) => {
+  const { self, a } = await setUp(page);
+  await friendRow(page, 'mia').click();
+  const box = dmBox(page, 'mia');
+  await box.fill('have a look at');
+  const before = await sentToFriends(page);
+  await lift(page, rowOf(page, a), box);
+  await expect(glow(page)).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(() => sentFrom(page, box)).toBe(`have a look at ${chip(self, a)} `);
+  // The box shows the chat as a chip with its title, never its ref.
+  await expect(page.locator('main').getByTestId('mention-highlighter')).toContainText(a.name);
+  expect(await sentToFriends(page)).toBe(before);
+  await box.fill('');
+});
+
+test('a row dropped on a friend’s row: their chat opens with the chip in your message', async ({ page }) => {
+  // Tall enough for the friends under the unfolded projects: a drag doesn't scroll to them.
+  await page.setViewportSize({ width: 1440, height: 1600 });
+  const { self, a } = await setUp(page);
+  await expect(friendRow(page, 'bob')).toBeInViewport();
+  await sidebar(page).getByText('Your Mac', { exact: true }).click();
+  await lift(page, rowOf(page, a), friendRow(page, 'bob'));
+  await expect(friendRow(page, 'bob')).toHaveClass(/over/);
+  await page.mouse.up();
+  const box = dmBox(page, 'bob');
+  await expect.poll(() => sentFrom(page, box)).toBe(`${chip(self, a)} `);
+  await box.fill('');
+});
+
 test('Esc cancels; the row still opens its chat afterwards', async ({ page }) => {
   const { a, b } = await setUp(page);
   await rowOf(page, a).click();

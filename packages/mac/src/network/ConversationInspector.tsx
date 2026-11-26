@@ -50,7 +50,7 @@ function FriendAccess({ peerId, name }: { peerId: string; name: string }) {
   return (
     <Panel title="Trust">
       <div className={s.wide}>
-        <Select<TrustLevel> label={`Trust ${name}`} value={level} onChange={set} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label, description: TRUST_INFO[l].detail }))} />
+        <Select<TrustLevel> size="small" label={`Trust ${name}`} value={level} onChange={set} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label, description: TRUST_INFO[l].detail }))} />
       </div>
       <p className={s.note}>{TRUST_INFO[level].detail}</p>
       {gateway ? <PersonRules peerId={peerId} compact /> : null}

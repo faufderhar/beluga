@@ -119,7 +119,7 @@ export function WebAccessSettings() {
   const intro = 'The whole app in any browser: on this computer, over SSH, on your tailnet or through a public link.';
   return (
     <Group title="Web access">
-      <Row label="Open Beluga in a browser" detail={manage ? `${intro} Each browser is let in once by its own link, and you can remove it any time.` : `${intro} Browsers are let in and removed from the Mac app, or with beluga web on the computer Beluga runs on.`}>
+      <Row label="Open Beluga in a browser" detail={manage ? `${intro} Each browser is let in once by its own link, and you can remove it any time.` : `${intro} Browsers are let in and removed from the Beluga app, or with beluga web on the computer Beluga runs on.`}>
         {manage ? <Switch on={on} onChange={(v) => void turn(v)} label="Open Beluga in a browser" /> : <span />}
       </Row>
       {manage && on ? (

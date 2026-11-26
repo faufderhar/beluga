@@ -110,9 +110,9 @@ function FindBar({ search, onClose }: { readonly search: SearchAddon; readonly o
         }}
       />
       <span className={s.findCount}>{count ? (count.total ? `${count.index + 1} of ${count.total}` : 'None') : ''}</span>
-      <IconButton icon="chevronUp" label="Previous" onClick={() => go(true)} />
-      <IconButton icon="chevronDown" label="Next" onClick={() => go(false)} />
-      <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
+      <IconButton size="small" icon="chevronUp" label="Previous" onClick={() => go(true)} />
+      <IconButton size="small" icon="chevronDown" label="Next" onClick={() => go(false)} />
+      <IconButton size="small" icon="x" label="Close" keys="Esc" onClick={onClose} />
     </div>
   );
 }
@@ -275,7 +275,7 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
 
   return (
     <div ref={root} className={cx(s.pane, split && s.paneSplit)} style={chipVars} data-pane={kind} data-term-key={termKey}>
-      <Xterm key={`${termKey}:${gen}`} termKey={termKey} start={start} focus={focusOnMount} gpu extend={extend} onKey={onKey} settleMs={140} fromBottom={kind === 'agent'} />
+      <Xterm key={`${termKey}:${gen}`} termKey={termKey} start={start} focus={focusOnMount} extend={extend} onKey={onKey} settleMs={140} fromBottom={kind === 'agent'} />
       {finding && search ? (
         <FindBar
           search={search}
@@ -286,9 +286,9 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
         />
       ) : null}
       <div className={s.paneTools}>
-        <IconButton icon="panelRight" label="Split Right" keys={keyFor(keys, 'split_right')} onClick={() => onSplit('right')} />
-        <IconButton icon="panelBottom" label="Split Down" keys={keyFor(keys, 'split_down')} onClick={() => onSplit('down')} />
-        {onClose ? <IconButton icon="x" label="Close This Shell" onClick={onClose} /> : null}
+        <IconButton size="small" icon="panelRight" label="Split Right" keys={keyFor(keys, 'split_right')} onClick={() => onSplit('right')} />
+        <IconButton size="small" icon="panelBottom" label="Split Down" keys={keyFor(keys, 'split_down')} onClick={() => onSplit('down')} />
+        {onClose ? <IconButton size="small" icon="x" label="Close This Shell" onClick={onClose} /> : null}
       </div>
       {busy && !error ? (
         <div className={s.over} role="status" data-term-busy="">
@@ -301,7 +301,7 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
           <Icon name={error ? 'alert' : 'terminal'} size={18} />
           <p className={s.overTitle}>{error ? (kind === 'agent' ? `${label} couldn’t start here` : 'The shell couldn’t start') : kind === 'agent' ? `${label}’s terminal ended` : 'The shell ended'}</p>
           {error ? <p className={s.overDetail}>{error}</p> : kind === 'agent' ? <p className={s.overDetail}>The conversation is the chat’s again. Start it here to go on in the terminal.</p> : null}
-          <Button variant="primary" icon="play" disabled={starting} onClick={() => void again()}>
+          <Button size="small" variant="primary" icon="play" disabled={starting} onClick={() => void again()}>
             {error ? 'Try Again' : 'Start Again'}
           </Button>
         </div>

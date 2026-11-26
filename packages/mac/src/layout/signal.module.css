@@ -80,6 +80,9 @@
 .later {
   color: var(--text-3);
 }
+.scheduledOff {
+  opacity: 0.5;
+}
 .count {
   display: inline-flex;
   margin-left: 2px;

@@ -151,6 +151,7 @@ const MAC_SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'composer-steer', label: 'Steer', section: 'Message box', keys: ['Alt+Enter'], scope: 'composer', hint: 'The agent reads it at its next step. With Steer as your default it queues instead (Settings › General › Writing)' },
   { id: 'composer-send-now', label: 'Send Now', section: 'Message box', keys: ['Alt+Shift+Enter'], scope: 'composer', hint: 'Your steered message goes now; its step stops' },
   { id: 'composer-mode', label: 'Switch Acting and Planning', section: 'Message box', keys: ['Shift+Tab'], scope: 'composer' },
+  { id: 'composer-keep-key', label: 'Keep as Key', section: 'Message box', keys: ['Alt+Cmd+K'], scope: 'composer', hint: 'The word you picked in the message box goes in as a variable, never the key (BLG-977)' },
 
   { id: 'page-back', label: 'Back', section: 'Pages', keys: ['Cmd+['], scope: 'page', hint: 'From a task, an issue, a run or a sentinel', over: ['nav-back'] },
   { id: 'page-new', label: 'New Here', section: 'Pages', keys: ['Cmd+N', 'C'], scope: 'page', hint: 'A task in Tasks, a plan in Plans, a sentinel in Sentinel', bare: true, over: ['new-chat'] },

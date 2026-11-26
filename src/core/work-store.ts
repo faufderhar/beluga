@@ -208,6 +208,8 @@ export interface WorkState {
   readonly termVisuals: Readonly<Record<string, readonly TermVisual[]>>;
   /** Shells installed on this computer, for picking the terminal's shell. */
   readonly shellChoices: readonly ShellChoice[];
+  /** Monospace font families installed on this computer, for picking the terminal's font (#547). */
+  readonly fontChoices: readonly string[];
   /** Names of the environment variables you set (never their values). */
   readonly envKeys: EnvKeys;
   /** You customized the pull request instructions. */
@@ -245,6 +247,7 @@ export type WorkAction =
   /** Visuals a workspace's terminal showed: these join the list (or replace it, with `all`). */
   | { type: 'term_visuals'; id: string; visuals: readonly TermVisual[]; all?: boolean }
   | { type: 'shell_choices'; shells: readonly ShellChoice[] }
+  | { type: 'font_choices'; fonts: readonly string[] }
   | { type: 'env_keys'; keys: EnvKeys }
   | { type: 'pr_custom'; custom: boolean }
   | { type: 'gh'; ok: boolean }
@@ -274,6 +277,7 @@ export const initialWork: WorkState = {
   agentTerms: {},
   termVisuals: {},
   shellChoices: [],
+  fontChoices: [],
   envKeys: NO_ENV_KEYS,
   prCustom: false,
   remembered: {},
@@ -348,6 +352,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
     }
     case 'shell_choices':
       return { ...state, shellChoices: action.shells };
+    case 'font_choices':
+      return action.fonts.join('\0') === state.fontChoices.join('\0') ? state : { ...state, fontChoices: action.fonts };
     case 'env_keys':
       return { ...state, envKeys: action.keys };
   }

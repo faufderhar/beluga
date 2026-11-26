@@ -223,7 +223,13 @@ describe('Sentinel on the Mac', () => {
   it('offers only what this Beluga runs: the rest is shown for a later update, or refused by the access', () => {
     const triggers = triggerChoices();
     // Every kind runs now (phase 3): nothing is left for a later update.
-    expect(triggers.filter((c) => !c.disabled).map((c) => c.value)).toEqual(['schedule', 'manual', 'after', 'beluga', 'github', 'stripe', 'uptime', 'sentry', 'webhook']);
+    expect(triggers.filter((c) => !c.disabled).map((c) => c.value)).toEqual(['schedule', 'once', 'manual', 'after', 'beluga', 'github', 'stripe', 'uptime', 'sentry', 'webhook']);
+    expect(triggers.find((c) => c.value === 'once')!.label).toBe('Once');
+    // A one-time trigger starts at the next whole hour on the Mac's clock.
+    const now = new Date(2026, 10, 12, 14, 30, 15).getTime();
+    const once = triggerOfKind('once', { kind: 'manual' }, now);
+    expect(once).toMatchObject({ kind: 'once', missed: 'catch-up' });
+    expect(new Date((once as { at: string }).at).getTime()).toBe(new Date(2026, 10, 12, 15, 0).getTime());
     expect(triggers.some((c) => c.description === LATER)).toBe(false);
     expect(triggerOfKind('manual', { kind: 'schedule', every: 'day', at: '07:00', missed: 'skip' })).toEqual({ kind: 'manual' });
     expect(triggerOfKind('schedule', { kind: 'manual' })).toMatchObject({ kind: 'schedule', every: 'day' });

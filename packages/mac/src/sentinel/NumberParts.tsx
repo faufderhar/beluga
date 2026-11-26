@@ -22,7 +22,7 @@ import n from './numbers.module.css';
 const Chart = lazy(() => import('../components/views/Chart.js'));
 
 export function CompareSwitch({ value, onChange, label = 'Compare with' }: { value: Compare; onChange: (c: Compare) => void; label?: string }) {
-  return <Segmented<Compare> label={label} value={value} onChange={onChange} options={COMPARE_CHOICES} />;
+  return <Segmented<Compare> size="small" label={label} value={value} onChange={onChange} options={COMPARE_CHOICES} />;
 }
 
 /** A number as a stat tile. `note`: a quiet word in its corner ("paused", "vs last week" when pinned). */

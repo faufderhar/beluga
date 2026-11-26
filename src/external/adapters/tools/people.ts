@@ -4,6 +4,7 @@ import type { Grant } from '../../domain/grant.js';
 import type { MethodCalls } from '../../ports/methods.js';
 import type { ExternalToolDef, Resolved } from '../mcp-tools.js';
 import type { MethodRow, Scope } from './method-tool.js';
+import { THIS_COMPUTER } from '../../../shared/assistant.js';
 
 /**
  * Direct messages, groups and friends. Each needs grant.chats.dms or grant.chats.groups. What an
@@ -36,7 +37,7 @@ export const PEOPLE_ROWS: readonly MethodRow[] = [
   { name: 'group_remove_member', method: 'network.groups.removeMember', params: ['group', 'peer'], scope: groups, description: 'Remove a member from a group. A person is asked each time.' },
   { name: 'group_set_admin', method: 'network.groups.setAdmin', params: ['group', 'peer', 'admin'], scope: groups, description: 'Make a member an admin of a group, or not.' },
   { name: 'group_leave', method: 'network.groups.leave', params: ['group'], scope: groups, description: 'Leave a group. A person is asked each time.' },
-  { name: 'group_delete', method: 'network.groups.delete', params: ['group'], scope: groups, description: 'Delete a group you left from this Mac. A person is asked each time.' },
+  { name: 'group_delete', method: 'network.groups.delete', params: ['group'], scope: groups, description: `Delete a group you left from ${THIS_COMPUTER}. A person is asked each time.` },
   { name: 'group_rename', method: 'network.groups.rename', params: ['group', 'name'], scope: groups, description: 'Rename a group.' },
   { name: 'group_invite', method: 'network.groups.invite', params: ['group', 'options'], scope: groups, description: 'Make an invite link for a group.' },
   { name: 'group_join', method: 'network.groups.join', params: ['invitation'], scope: groups, description: 'Join a group with an invitation.' },
@@ -55,7 +56,7 @@ export const PEOPLE_ROWS: readonly MethodRow[] = [
   { name: 'net_file_preview', method: 'network.files.preview', params: ['sha'], scope: either, description: 'A shared picture\'s bytes.' },
   { name: 'message_delete', method: 'network.messages.delete', params: ['conversation', 'message', 'options'], scope: conversation, description: 'Delete a direct message. A person is asked each time.' },
   { name: 'message_edit', method: 'network.messages.edit', params: ['conversation', 'message', 'text'], scope: conversation, description: 'Change the words of a direct message you sent.' },
-  { name: 'conversation_clear', method: 'network.clear', params: ['conversation'], scope: conversation, description: 'Empty a direct conversation on this Mac. A person is asked each time.' },
+  { name: 'conversation_clear', method: 'network.clear', params: ['conversation'], scope: conversation, description: `Empty a direct conversation on ${THIS_COMPUTER}. A person is asked each time.` },
   { name: 'conversation_read', method: 'network.read', params: ['conversation'], scope: conversation, description: 'Mark a conversation read.' },
 ];
 

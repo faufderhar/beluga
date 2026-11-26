@@ -804,8 +804,29 @@ export class DemoTransport implements Transport {
       }
       case 'plans.setAutonomy': {
         const p = w.plans.find((x) => x.id === str(0));
-        if (p) p.autonomy = str(1);
+        if (p) {
+          p.autonomy = str(1);
+          delete p.fullAuto;
+        }
         this.touch(`plan:${str(0)}` as Topic, 'plans');
+        return ok();
+      }
+      // 1.58 (BLG-981): Full Autopilot on a plan, and in a chat.
+      case 'plans.setFullAuto': {
+        const p = w.plans.find((x) => x.id === str(0));
+        if (p) {
+          p.autonomy = 'autopilot';
+          if (args[1] === true) p.fullAuto = true;
+          else delete p.fullAuto;
+        }
+        this.touch(`plan:${str(0)}` as Topic, 'plans');
+        return ok();
+      }
+      case 'session.setAutopilot': {
+        const c = w.convs.get(`conv:${str(0)}` as Topic);
+        if (c && args[1] === true) c.autopilot = {};
+        else if (c) delete c.autopilot;
+        this.touch(`conv:${str(0)}` as Topic);
         return ok();
       }
       case 'board.start': {

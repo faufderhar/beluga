@@ -9,6 +9,8 @@ import { SCRATCH_DIR } from '../../shared/scratch-dir.js';
 import { findEnvFiles, parseDotenv } from '../../workspaces/env.js';
 import { git } from '../../workspaces/git.js';
 import { isDenied } from '../shares.js';
+import { CarryNote, type CarryPicks, FORK_NOTE, type ForkNote, NO_PICKS, plainLine } from '../../shared/fork-carry.js';
+import { packCarry, placeCarry } from './carry.js';
 
 /**
  * Forking a friend's worktree to your own Mac (BLG-312): a worktree of yours that starts where
@@ -23,9 +25,11 @@ import { isDenied } from '../shares.js';
  *   without what the friend says they have already. None when they have all of it.
  * - `meta.json` (ForkMeta), `history.json` (the conversation), `session.jsonl` (Claude's session,
  *   the values of the worktree's .env files taken out), `scratch/` (its Scratch folder).
+ * - `carry/`: what git ignores that its owner picked for forks to bring (carry.ts, BLG-1017), and
+ *   in the meta's `carried`, what came and what stayed behind.
  *
- * What git ignores (node_modules, build output) never goes: it's made again by the setup. Nor
- * do secrets (.env files, keys: `isDenied`), which the friend's own copy of the project brings.
+ * Nothing else git ignores goes (node_modules, build output: the setup makes them again). Nor do
+ * secrets (.env files, keys: `isDenied`), unless the owner ticked that very file in a pick.
  */
 
 /** A file in Scratch bigger than this stays behind; so does the rest once they add up to `SCRATCH_MAX`. */
@@ -53,6 +57,8 @@ export const ForkMeta = z.object({
   changed: z.number().int().min(0),
   scratch: z.number().int().min(0),
   sessionId: z.string().regex(/^[\w-]{1,100}$/).optional(),
+  /** What git ignores that came along (under `carry/`), and what stayed behind. A Mac from before BLG-1017 sends none. */
+  carried: CarryNote.optional(),
 });
 export type ForkMeta = z.infer<typeof ForkMeta>;
 
@@ -61,6 +67,19 @@ export type ForkHistory = z.infer<typeof ForkHistory>;
 
 const run = (cmd: string, args: readonly string[], cwd: string): Promise<void> =>
   new Promise((resolve, reject) => execFile(cmd, [...args], { cwd, timeout: PACK_MS, maxBuffer: 8 * 1024 * 1024 }, (err, _out, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve())));
+
+/** How many bytes the files under `dir` take (no links followed). */
+async function sizeOf(dir: string): Promise<number> {
+  let total = 0;
+  const walk = async (at: string): Promise<void> => {
+    for (const e of await fs.readdir(at, { withFileTypes: true }).catch(() => [])) {
+      if (e.isDirectory()) await walk(path.join(at, e.name));
+      else if (e.isFile()) total += (await fs.stat(path.join(at, e.name)).catch(() => undefined))?.size ?? 0;
+    }
+  };
+  await walk(dir);
+  return total;
+}
 
 /** Files under `from` (no links, nothing hidden by isDenied), copied to `to`, within the limits. → how many. */
 async function copyTree(from: string, to: string, budget = { bytes: SCRATCH_MAX, files: SCRATCH_FILES }): Promise<number> {
@@ -147,6 +166,10 @@ export interface PackInput {
   readonly have: readonly string[];
   /** Where the pack goes (a fresh folder of its own). */
   readonly out: string;
+  /** What git ignores that the owner picked for forks to bring (carry.ts). */
+  readonly carry?: CarryPicks;
+  /** The friend may have the secrets the owner ticked ("Can fork with secrets", BLG-1019); else they stay behind. */
+  readonly secrets?: boolean;
 }
 
 /** Pack a worktree for a friend's fork. → `fork.tgz` in `out`, its size and what's in it. */
@@ -171,7 +194,11 @@ export async function packFork(input: PackInput): Promise<{ file: string; size: 
   const session = input.sessionId ? sessionText(dir, input.sessionId) : undefined;
   if (session) await fs.writeFile(path.join(stage, 'session.jsonl'), session, { mode: 0o600 });
   const scratch = existsSync(path.join(dir, SCRATCH_DIR)) ? await copyTree(path.join(dir, SCRATCH_DIR), path.join(stage, 'scratch')) : 0;
-  const meta: ForkMeta = { v: 1, id: input.id, name: input.name.slice(0, 200), branch: input.branch.slice(0, 200), tip, ...(work.sha ? { work: work.sha } : {}), changed: work.changed, scratch, ...(session && input.sessionId ? { sessionId: input.sessionId } : {}) };
+  // What's carried fits in what the pack has left (its commits, Scratch and session come first), with room to spare.
+  const used = await sizeOf(stage);
+  const picks = input.carry ?? NO_PICKS;
+  const carried = await packCarry(dir, input.secrets ? picks : { ...picks, secrets: [] }, stage, Math.max(0, MAX_DOWNLOAD_BYTES * 0.9 - used));
+  const meta: ForkMeta = { v: 1, id: input.id, name: input.name.slice(0, 200), branch: input.branch.slice(0, 200), tip, ...(work.sha ? { work: work.sha } : {}), changed: work.changed, scratch, ...(session && input.sessionId ? { sessionId: input.sessionId } : {}), carried };
   await fs.writeFile(path.join(stage, 'history.json'), JSON.stringify(input.history));
   await fs.writeFile(path.join(stage, 'meta.json'), JSON.stringify(meta));
   const file = path.join(out, 'fork.tgz');
@@ -222,10 +249,11 @@ export async function fetchFork(root: string, from: Unpacked, branch: string): P
 }
 
 /**
- * Into the new worktree at `dir`: the uncommitted work (left uncommitted, as it was), Scratch, and
- * Claude's session where Claude Code looks for it.
+ * Into the new worktree at `dir`: the uncommitted work (left uncommitted, as it was), Scratch, what
+ * git ignores that its owner sent (never over a file already here), Claude's session where Claude
+ * Code looks for it, and `.beluga/fork.json`: what came and what stayed with `owner`, for its agent.
  */
-export async function placeFork(dir: string, from: Unpacked): Promise<void> {
+export async function placeFork(dir: string, from: Unpacked, owner = 'its owner'): Promise<ForkNote> {
   const { meta } = from;
   if (meta.work) {
     await git(dir, ['read-tree', '-m', '-u', 'HEAD', meta.work]);
@@ -239,4 +267,18 @@ export async function placeFork(dir: string, from: Unpacked): Promise<void> {
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.copyFile(session, target);
   }
+  const carried = meta.carried ?? { sent: [], secrets: [], left: [] };
+  const { kept, unplaced } = existsSync(path.join(from.dir, 'carry')) ? await placeCarry(from.dir, dir) : { kept: [], unplaced: [] };
+  const note: ForkNote = {
+    owner: plainLine(owner, 120),
+    from: plainLine(meta.name, 200),
+    at: Date.now(),
+    scratch: meta.scratch,
+    sent: carried.sent,
+    secrets: carried.secrets.filter((s) => !kept.includes(s) && !unplaced.includes(s)),
+    left: [...kept.map((p) => ({ path: p, why: 'there' as const })), ...unplaced.map((p) => ({ path: plainLine(p, 400), why: 'unplaced' as const })), ...carried.left].slice(0, 100),
+  };
+  await fs.mkdir(path.dirname(path.join(dir, FORK_NOTE)), { recursive: true });
+  await fs.writeFile(path.join(dir, FORK_NOTE), JSON.stringify(note, null, 2));
+  return note;
 }

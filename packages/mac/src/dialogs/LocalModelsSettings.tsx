@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { type EndpointView, OLLAMA_URL, modelsOfEndpoint } from '@beluga/shared/local-endpoints.js';
-import { Button, Dot } from '../components/ui.js';
+import { type EndpointFormat, type EndpointView, OLLAMA_URL, modelsOfEndpoint } from '@beluga/shared/local-endpoints.js';
+import { Button, Dot, Segmented } from '../components/ui.js';
 import { useApi } from '../lib/beluga.js';
 import { Group, Row } from './settings-controls.js';
 import s from './settings.module.css';
@@ -15,9 +15,15 @@ interface Draft {
   readonly clearKey: boolean;
   readonly models: string;
   readonly hasKey: boolean;
+  readonly format: EndpointFormat;
 }
 
-const blank: Draft = { label: 'Ollama', baseUrl: OLLAMA_URL, key: '', clearKey: false, models: '', hasKey: false };
+const FORMATS: ReadonlyArray<{ value: EndpointFormat; label: string; hint: string }> = [
+  { value: 'anthropic', label: 'Anthropic', hint: 'It has /v1/messages: Claude Code calls it directly' },
+  { value: 'openai', label: 'OpenAI', hint: 'It has only /v1/chat/completions: Beluga translates on this computer' },
+];
+
+const blank: Draft = { label: 'Ollama', baseUrl: OLLAMA_URL, key: '', clearKey: false, models: '', hasKey: false, format: 'anthropic' };
 const errorText = (err: unknown): string => (err instanceof Error ? err.message.replace(/^Bad arguments for [\w.]+: /, '') : String(err));
 
 function statusOf(e: EndpointView): { tone: 'ok' | 'warn' | 'error' | 'muted'; words: string } {
@@ -65,12 +71,13 @@ export function LocalModelsSettings() {
         baseUrl: d.baseUrl,
         ...(d.key ? { key: d.key } : d.clearKey ? { key: '' } : {}),
         models: d.models.split(/[,\n]/).map((m) => m.trim()).filter(Boolean),
+        format: d.format,
       }),
     );
 
   const edit = (e: EndpointView): void => {
     setError('');
-    setDraft({ ...(e.builtIn ? {} : { id: e.id }), label: e.label, baseUrl: e.baseUrl, key: '', clearKey: false, models: e.models.join(', '), hasKey: e.hasKey });
+    setDraft({ ...(e.builtIn ? {} : { id: e.id }), label: e.label, baseUrl: e.baseUrl, key: '', clearKey: false, models: e.models.join(', '), hasKey: e.hasKey, format: e.format ?? 'anthropic' });
   };
 
   const form = draft ? (
@@ -85,9 +92,13 @@ export function LocalModelsSettings() {
         <span>Name</span>
         <input className={s.text} aria-label="Name" value={draft.label} onChange={(ev) => setDraft({ ...draft, label: ev.target.value })} autoFocus />
       </label>
+      <div className={s.endpointField}>
+        <span>Format</span>
+        <Segmented size="small" label="Format" value={draft.format} options={FORMATS} onChange={(format) => setDraft({ ...draft, format })} />
+      </div>
       <label className={s.endpointField}>
         <span>Address</span>
-        <input className={s.text} aria-label="Address" value={draft.baseUrl} spellCheck={false} placeholder={OLLAMA_URL} onChange={(ev) => setDraft({ ...draft, baseUrl: ev.target.value })} />
+        <input className={s.text} aria-label="Address" value={draft.baseUrl} spellCheck={false} placeholder={draft.format === 'openai' ? 'https://api.example.com/v1' : OLLAMA_URL} onChange={(ev) => setDraft({ ...draft, baseUrl: ev.target.value })} />
       </label>
       <label className={s.endpointField}>
         <span>Key</span>
@@ -124,7 +135,7 @@ export function LocalModelsSettings() {
 
   return (
     <Group title="Local models">
-      <Row label="Run on your own models" detail={`Ollama on ${thisComputer()}, or any Anthropic-compatible address (LiteLLM, a company proxy). Same tools and features; how good the answers are depends on the model. Pick Local model in the agent box you type in.`}>
+      <Row label="Run on your own models" detail={`Ollama on ${thisComputer()}, or any Anthropic- or OpenAI-compatible address (LiteLLM, a company proxy, a gateway). Same tools and features; how good the answers are depends on the model. Pick Local model in the agent box you type in.`}>
         <Button variant="quiet" icon="refresh" disabled={busy} onClick={() => void run(() => api.env.checkEndpoints())}>
           Check Again
         </Button>
@@ -147,7 +158,7 @@ export function LocalModelsSettings() {
           const status = statusOf(e);
           if (draft?.id === e.id && !e.builtIn) return <div key={e.id}>{form}</div>;
           return (
-            <Row key={e.id} label={e.builtIn ? `Ollama on ${thisComputer()}` : e.label} detail={e.builtIn && !e.reachable ? 'Install it from ollama.com, start it with OLLAMA_CONTEXT_LENGTH=32768 ollama serve, and pull a model (ollama pull qwen3-coder).' : `${e.baseUrl}${e.hasKey ? ' · key saved' : ''} · ${status.words}`}>
+            <Row key={e.id} label={e.builtIn ? `Ollama on ${thisComputer()}` : e.label} detail={e.builtIn && !e.reachable ? 'Install it from ollama.com, start it with OLLAMA_CONTEXT_LENGTH=32768 ollama serve, and pull a model (ollama pull qwen3-coder).' : `${e.baseUrl}${e.format === 'openai' ? ' · OpenAI format' : ''}${e.hasKey ? ' · key saved' : ''} · ${status.words}`}>
               <Dot tone={status.tone} />
               <Button size="small" variant="quiet" disabled={busy} onClick={() => edit(e)}>
                 {e.builtIn ? 'Set Up…' : 'Edit…'}

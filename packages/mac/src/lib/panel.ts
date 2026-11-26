@@ -6,14 +6,22 @@ export type PanelState = Pick<AppState, 'view' | 'projects'>;
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
-import { DEFAULT_LAYOUT, PANES_DEFAULT, type PaneId, type PanelTab, drawerFits, moveTab, panelFits, paneKey, paneOf, paneTabs, panelTabsFor, pickPanelTab, rememberTab, viewsOf } from './panel-model.js';
+import { DEFAULT_LAYOUT, type DockTab, MAIN, PANES_DEFAULT, type PanelTab, panelFits, panelKey, panelTabsFor, rememberShown, shownIn, slotOf, terminalUnderChat, viewsOf } from './panel-model.js';
 import { type UiPrefs, getPrefs, setPrefs } from './prefs.js';
 
 /**
- * The right panel and the terminal drawer, as the window uses them: which tab shows, showing a
+ * The right panel and the terminal drawer, as the window uses them: which tabs show, showing a
  * tab from anywhere (Run shows the terminal, a file link shows Files), ⌘J, and the focus view
  * (a diff or a file across the whole center for a while, Esc goes back to the chat).
+ *
+ * The panel is a dock (layout/RightPanel.tsx, Dockview), and so is the center: the chat is a tab
+ * there, and a tab dragged out of the panel can sit beside it. How their groups are arranged is
+ * Dockview's to keep. What's decided here is which tab each group shows: the one you showed last
+ * in this place (`panelShown`). The docks read that, and tell this file what's in them (`setDock`).
  */
+
+/** The two docks: the center's (the chat and what you put beside it) and the right panel's. */
+export type DockPlace = 'center' | 'panel';
 
 export type FocusKind = 'diff' | 'file' | 'terminal' | 'pr';
 
@@ -22,8 +30,8 @@ interface Runtime {
   readonly focus?: { readonly kind: FocusKind; readonly wsId: string };
   /** When the keyboard was last asked to go to the terminal (⌘J): the terminal that shows takes it. */
   readonly termFocus: number;
-  /** What the panel showed before ⌘J brought the terminal up (⌘J again goes back), and where. */
-  readonly before?: { readonly key: string; readonly tab: PanelTab; readonly closed: boolean; readonly bottomClosed: boolean };
+  /** What the terminal's group showed before ⌘J brought the terminal up (⌘J again goes back), and where. */
+  readonly before?: { readonly key: string; readonly tab: DockTab; readonly closed: boolean; readonly bottomClosed: boolean };
   /**
    * The panel was open when a file or a diff took the center: it steps aside for the focus view
    * and comes back with Esc. Showing or hiding it yourself meanwhile forgets this (your choice stays).
@@ -31,9 +39,19 @@ interface Runtime {
   readonly panelBack?: boolean;
   /** An Android phone is paired: the panel has its Phone tab (BLG-186). */
   readonly phone?: boolean;
+  /** Both docks' groups (each one's tabs, in order; the chat is 'main'), while they're on screen. */
+  readonly groups: ReadonlyArray<readonly DockTab[]>;
+  /** The center's groups among them (those show whether the panel is open or not). */
+  readonly central: ReadonlyArray<readonly DockTab[]>;
+  /** The panel's tabs in groups under another one (the terminal's dock): those fold to just their tabs. */
+  readonly docked: readonly PanelTab[];
+  /** Counts up each time the dock is asked to start over (Reset Panel Layout). */
+  readonly reset: number;
 }
 
-let runtime: Runtime = { termFocus: 0 };
+let runtime: Runtime = { termFocus: 0, groups: [], central: [], docked: [], reset: 0 };
+/** What each dock last said is in it. */
+const docks: Record<DockPlace, ReadonlyArray<readonly DockTab[]>> = { center: [], panel: [] };
 const listeners = new Set<() => void>();
 const patch = (next: Partial<Runtime>): void => {
   runtime = { ...runtime, ...next };
@@ -70,35 +88,57 @@ export const setPhoneTab = (on: boolean): void => {
   if (Boolean(runtime.phone) !== on) patch({ phone: on });
 };
 
-/** A pane's tabs for what's on screen, in your order. */
-export const paneTabsOf = (state: PanelState, pane: PaneId, prefs: UiPrefs = getPrefs()): PanelTab[] => paneTabs(prefs.panelLayout, pane, tabsOf(state));
+const sameGroups = (a: ReadonlyArray<readonly DockTab[]>, b: ReadonlyArray<readonly DockTab[]>): boolean => a.length === b.length && a.every((g, i) => g.join() === b[i]!.join());
 
-/** The tab a pane shows (or would, while hidden): the one you last picked there, else Changes when there are changes, else Info. */
-export function currentTab(state: PanelState, prefs: UiPrefs = getPrefs(), pane: PaneId = 'top'): PanelTab | undefined {
-  const tabs = paneTabsOf(state, pane, prefs);
-  if (!tabs.length) return undefined;
-  // History is Changes' second view: a pane with Changes can show it.
-  const views = tabs.flatMap((t) => viewsOf(t, tabsOf(state)));
-  return pickPanelTab(views, prefs.panelTabs[paneKey(state.view, pane)], hasChanges(workspaceOf(state)));
+/** A dock says what's in it (its groups changed, it went away): which tabs share a group, and which of the panel's groups fold. */
+export function setDock(place: DockPlace, groups: ReadonlyArray<readonly DockTab[]>, docked: readonly PanelTab[] = []): void {
+  docks[place] = groups;
+  const all = [...docks.center, ...docks.panel];
+  const nextDocked = place === 'panel' ? docked : runtime.docked;
+  if (sameGroups(runtime.groups, all) && sameGroups(runtime.central, docks.center) && runtime.docked.join() === nextDocked.join()) return;
+  patch({ groups: all, central: docks.center, docked: nextDocked });
 }
 
-/** The pane is on screen: the panel is open, it has tabs here, and (the bottom one) it's open. */
-export function paneShowing(state: PanelState, pane: PaneId, prefs: UiPrefs = getPrefs()): boolean {
-  return prefs.inspector && paneTabsOf(state, pane, prefs).length > 0 && (pane === 'top' || prefs.bottomOpen || !paneTabsOf(state, 'top', prefs).length);
+/** This tab is beside the chat (in the center's dock), not in the panel. */
+export const inCenter = (tab: DockTab): boolean => runtime.central.some((g) => g.includes(slotOf(tab)));
+
+/** The tabs you showed last in this place, oldest first. */
+export const recentTabs = (view: View, prefs: UiPrefs = getPrefs()): readonly DockTab[] => prefs.panelShown[panelKey(view)] ?? [];
+
+/** The tab a group shows here (or would, while the panel is hidden): see shownIn. */
+export function groupTab(state: PanelState, group: readonly PanelTab[], prefs?: UiPrefs): PanelTab | undefined;
+export function groupTab(state: PanelState, group: readonly DockTab[], prefs?: UiPrefs): DockTab | undefined;
+export function groupTab(state: PanelState, group: readonly DockTab[], prefs: UiPrefs = getPrefs()): DockTab | undefined {
+  return shownIn(group, recentTabs(state.view, prefs), tabsOf(state), hasChanges(workspaceOf(state)));
 }
+
+/** The dock's group this tab is in, while its dock is on screen. */
+const groupOf = (tab: DockTab): readonly DockTab[] | undefined => runtime.groups.find((g) => g.includes(slotOf(tab)));
+
+/** Folded: the panel's groups under the top one are just their tabs. */
+const isFolded = (tab: DockTab, prefs: UiPrefs): boolean => !prefs.bottomOpen && runtime.docked.includes(slotOf(tab) as PanelTab);
 
 /** This tab is on screen right now. */
 export function tabShowing(state: PanelState, tab: PanelTab, prefs: UiPrefs = getPrefs()): boolean {
-  const pane = paneOf(prefs.panelLayout, tab);
-  return paneShowing(state, pane, prefs) && currentTab(state, prefs, pane) === tab;
+  const group = groupOf(tab);
+  if (!group) return false;
+  if (inCenter(tab)) {
+    // Beside the chat it shows whether the panel is open or not. The terminal with a group to itself there is put away with ⌘J.
+    if (tab === 'terminal' && group.length === 1 && !prefs.drawer) return false;
+  } else if (!panelFits(state.view) || !prefs.inspector || isFolded(tab, prefs)) return false;
+  return groupTab(state, group, prefs) === tab;
 }
 
-/** Pick a tab (remembered for this workspace, in its pane). */
-export function setPanelTab(view: View, tab: PanelTab): void {
+/** What showing this tab changes: it's the latest in this place, and its group unfolds. */
+const shows = (view: View, tab: DockTab, prefs: UiPrefs): Partial<UiPrefs> => ({
+  panelShown: rememberShown(prefs.panelShown, panelKey(view), tab),
+  ...(runtime.docked.includes(slotOf(tab) as PanelTab) && !prefs.bottomOpen ? { bottomOpen: true } : {}),
+});
+
+/** Pick a tab (remembered for this workspace). */
+export function setPanelTab(view: View, tab: DockTab): void {
   patch({ before: undefined });
-  const prefs = getPrefs();
-  const pane = paneOf(prefs.panelLayout, tab);
-  setPrefs({ panelTabs: rememberTab(prefs.panelTabs, paneKey(view, pane), tab), ...(pane === 'bottom' ? { bottomOpen: true } : {}) });
+  setPrefs(shows(view, tab, getPrefs()));
 }
 
 /** You showed or hid the panel yourself: during a focus view, that's what stays after it. */
@@ -106,25 +146,31 @@ const panelChosen = (): void => {
   if (runtime.focus && runtime.panelBack !== undefined) patch({ panelBack: undefined });
 };
 
-/** Show the panel on this tab (opening its pane). False when the view has no such tab. */
+/** Show the panel on this tab (unfolding its group). False when the view has no such tab. */
 export function showPanelTab(state: PanelState, tab: PanelTab): boolean {
   if (!tabsOf(state).includes(tab)) return false;
-  panelChosen();
   patch({ before: undefined });
-  const prefs = getPrefs();
-  const pane = paneOf(prefs.panelLayout, tab);
-  setPrefs({ inspector: true, panelTabs: rememberTab(prefs.panelTabs, paneKey(state.view, pane), tab), ...(pane === 'bottom' ? { bottomOpen: true } : {}) });
+  // Beside the chat, it's already on screen: the panel stays as it is.
+  if (inCenter(tab)) return setPrefs(shows(state.view, tab, getPrefs())), true;
+  panelChosen();
+  setPrefs({ inspector: true, ...shows(state.view, tab, getPrefs()) });
   return true;
 }
 
-/** Drag a tab to the other pane (or along its own): it stays there, and shows. */
-export function placeTab(state: PanelState, tab: PanelTab, to: PaneId, before?: PanelTab): void {
-  const prefs = getPrefs();
-  const panelLayout = moveTab(prefs.panelLayout, tab, to, before);
-  setPrefs({ panelLayout, panelTabs: rememberTab(prefs.panelTabs, paneKey(state.view, to), tab), ...(to === 'bottom' ? { bottomOpen: true } : {}) });
-}
+/** Fold or unfold the groups under the top one (the terminal's dock). */
+export const setDockOpen = (open: boolean): void => setPrefs({ bottomOpen: open });
 
-export const resetPanelLayout = (): void => setPrefs({ panelLayout: DEFAULT_LAYOUT, paneSplit: PANES_DEFAULT, bottomOpen: true });
+/** You picked a tab in the dock yourself: ⌘J no longer has something to go back to. */
+export const tabPicked = (): void => {
+  if (runtime.before) patch({ before: undefined });
+};
+
+/** Back to how the docks start, everywhere: the chat alone in the center; in the panel, what Claude made on top and what runs below. */
+export function resetPanelLayout(): void {
+  // The terminal too: back in the panel, wherever you had dragged it.
+  setPrefs({ dockLayouts: {}, centerTabs: {}, termIn: 'panel', panelLayout: DEFAULT_LAYOUT, paneSplit: PANES_DEFAULT, bottomOpen: true });
+  patch({ reset: runtime.reset + 1 });
+}
 
 /** A changed file the Changes tab should open when it next shows (asked from the Files tab). */
 let changeAsk: { readonly wsId: string; readonly path: string; readonly at: number } | undefined;
@@ -154,30 +200,39 @@ export const togglePanel = (view: View): void => {
   setPrefs({ inspector: !getPrefs().inspector });
 };
 
-/** The terminal is on screen: in the drawer, or as the panel's tab. */
+/** The terminal is on screen: under the chat, or as the panel's tab. */
 export function terminalShowing(state: PanelState, prefs: UiPrefs = getPrefs()): boolean {
-  return (prefs.drawer && drawerFits(state.view)) || tabShowing(state, 'terminal', prefs);
+  return tabShowing(state, 'terminal', prefs);
 }
+
+/** The terminal's place here is under the chat (see terminalUnderChat). */
+const underChat = (state: PanelState, prefs: UiPrefs): boolean => terminalUnderChat(prefs.termIn, tabsOf(state), state.view);
 
 /** Put the keyboard in the terminal that's showing. */
 export const focusTerminal = (): void => patch({ termFocus: Date.now() });
 
 /**
- * Show the terminal where you keep it (Settings › Terminal: the drawer or the panel). Run uses
- * it too, without taking the keyboard from the message box.
+ * Show the terminal where you keep it (Settings › Terminal: under the chat or in the panel). Run
+ * uses it too, without taking the keyboard from the message box.
  */
 export function revealTerminal(state: PanelState, focus: boolean): boolean {
   const prefs = getPrefs();
-  const inDrawer = (prefs.termIn === 'drawer' || !tabsOf(state).includes('terminal')) && drawerFits(state.view);
-  if (inDrawer) {
-    if (!prefs.drawer) setPrefs({ drawer: true });
+  if (underChat(state, prefs)) {
+    if (!tabShowing(state, 'terminal', prefs)) {
+      const group = groupOf('terminal');
+      const tab = (group && groupTab(state, group, prefs)) ?? 'terminal';
+      setPrefs({ drawer: true, panelShown: rememberShown(prefs.panelShown, panelKey(state.view), 'terminal') });
+      patch({ before: { key: panelKey(state.view), tab, closed: false, bottomClosed: false } });
+    }
   } else if (tabsOf(state).includes('terminal')) {
     if (!tabShowing(state, 'terminal', prefs)) {
-      const pane = paneOf(prefs.panelLayout, 'terminal');
-      const tab = currentTab(state, prefs, pane) ?? 'terminal';
-      const before = { key: paneKey(state.view, pane), tab, closed: !prefs.inspector, bottomClosed: !prefs.bottomOpen };
-      panelChosen();
-      setPrefs({ inspector: true, panelTabs: rememberTab(prefs.panelTabs, paneKey(state.view, pane), 'terminal'), ...(pane === 'bottom' ? { bottomOpen: true } : {}) });
+      // What its group shows now (not known while the panel is hidden: then ⌘J again just hides it).
+      const group = groupOf('terminal');
+      const tab = (group && groupTab(state, group, prefs)) ?? 'terminal';
+      const central = inCenter('terminal');
+      const before = { key: panelKey(state.view), tab, closed: !central && !prefs.inspector, bottomClosed: !prefs.bottomOpen };
+      if (!central) panelChosen();
+      setPrefs({ ...(central ? {} : { inspector: true }), panelShown: rememberShown(prefs.panelShown, panelKey(state.view), 'terminal'), ...(prefs.bottomOpen || central ? {} : { bottomOpen: true }) });
       patch({ before });
     }
   } else return false;
@@ -188,31 +243,39 @@ export function revealTerminal(state: PanelState, focus: boolean): boolean {
 /** Put the terminal away: close the drawer, or give the panel back what it showed before. */
 export function hideTerminal(state: PanelState): void {
   const prefs = getPrefs();
-  const pane = paneOf(prefs.panelLayout, 'terminal');
-  const key = paneKey(state.view, pane);
-  const inDrawer = prefs.drawer && drawerFits(state.view);
-  // With the drawer open, the panel's Terminal tab only points at it: closing the drawer is enough.
-  const inPanel = !inDrawer && tabShowing(state, 'terminal', prefs);
-  if (!inPanel && !inDrawer) return;
+  const key = panelKey(state.view);
+  if (!tabShowing(state, 'terminal', prefs)) return;
   // The panel goes back to what it showed before ⌘J (here, not in another workspace).
   const before = runtime.before?.key === key ? runtime.before : undefined;
   patch({ before: undefined });
-  if (inPanel && pane === 'bottom') {
-    // Below the rest: the bottom pane closes (back to what it showed, if ⌘J switched it).
-    const back = before && before.tab !== 'terminal' ? before.tab : undefined;
-    setPrefs({
-      ...(inDrawer ? { drawer: false } : {}),
-      ...(back ? { panelTabs: rememberTab(prefs.panelTabs, key, back), bottomOpen: !before?.bottomClosed } : { bottomOpen: false }),
-      ...(before?.closed ? { inspector: false } : {}),
-    });
+  const group = groupOf('terminal') ?? [];
+  // Under or beside the chat: with a group to itself it's put away; sharing one, back to what the
+  // group showed (the chat, if that's what it shares it with). The keyboard goes to the message box.
+  if (inCenter('terminal')) {
+    if (group.length === 1) {
+      setPrefs({ drawer: false });
+      setTimeout(() => document.dispatchEvent(new CustomEvent('beluga:focus-composer')), 60);
+      return;
+    }
+    const to = before && slotOf(before.tab) !== 'terminal' && group.includes(slotOf(before.tab)) ? before.tab : (group.find((t) => t !== 'terminal') ?? undefined);
+    if (to) setPrefs({ panelShown: rememberShown(prefs.panelShown, key, to === MAIN ? MAIN : (viewsOf(to, tabsOf(state))[0] ?? to)) });
+    // (Once the chat is back on screen: hidden behind the terminal's tab it can't take the keyboard.)
+    setTimeout(() => document.dispatchEvent(new CustomEvent('beluga:focus-composer')), 60);
     return;
   }
-  const back = before && before.tab !== 'terminal' ? before.tab : (paneTabsOf(state, pane, prefs).find((t) => t !== 'terminal') ?? 'info');
-  setPrefs({
-    ...(inDrawer ? { drawer: false } : {}),
-    // Closing the drawer mustn't leave the terminal showing in the panel instead.
-    ...(inPanel ? { inspector: before ? !before.closed : true, panelTabs: rememberTab(prefs.panelTabs, key, back) } : {}),
-  });
+  // The tab ⌘J took the terminal's group from, if it's still beside it.
+  const back = before && slotOf(before.tab) !== 'terminal' && group.includes(slotOf(before.tab)) ? before.tab : undefined;
+  const showBack = back ? { panelShown: rememberShown(prefs.panelShown, key, back) } : {};
+  const foldBack = before?.bottomClosed ? { bottomOpen: false } : {};
+  // The panel was hidden before ⌘J: hidden again.
+  if (before?.closed) return setPrefs({ inspector: false, ...showBack, ...foldBack });
+  if (back) return setPrefs({ ...showBack, ...foldBack });
+  // Under the rest: its dock folds to its tabs.
+  if (runtime.docked.includes('terminal')) return setPrefs({ bottomOpen: false });
+  // Beside other tabs: the next one shows. Alone in its group: the panel hides.
+  const other = group.find((t) => t !== 'terminal');
+  const next = other ? (viewsOf(other, tabsOf(state))[0] ?? other) : undefined;
+  setPrefs(next ? { panelShown: rememberShown(prefs.panelShown, key, next) } : { inspector: false });
 }
 
 /** The keyboard is in a terminal. */
@@ -224,9 +287,7 @@ const typingInTerminal = (): boolean => Boolean(document.activeElement?.closest(
  */
 export function toggleTerminal(state: PanelState): string | undefined {
   const prefs = getPrefs();
-  // Kept in the drawer: the drawer is the terminal ⌘J means (the panel's tab is just a tab then).
-  const showing = prefs.termIn === 'drawer' && drawerFits(state.view) ? prefs.drawer && drawerFits(state.view) : terminalShowing(state, prefs);
-  if (showing) {
+  if (terminalShowing(state, prefs)) {
     if (typingInTerminal()) hideTerminal(state);
     else focusTerminal();
     return undefined;
@@ -236,17 +297,11 @@ export function toggleTerminal(state: PanelState): string | undefined {
   return revealTerminal(state, true) ? undefined : 'No terminal here';
 }
 
-/** Move the terminal to the other place (and keep it there for ⌘J). */
+/** Move the terminal to the other place (and keep it there for ⌘J): its tab goes to that dock, and shows. */
 export function moveTerminal(state: PanelState, to: 'drawer' | 'panel'): void {
-  if (to === 'drawer') {
-    const prefs = getPrefs();
-    const panelHadIt = tabShowing(state, 'terminal', prefs);
-    if (panelHadIt) hideTerminal(state);
-    setPrefs({ termIn: 'drawer', drawer: true });
-  } else {
-    setPrefs({ termIn: 'panel', drawer: false });
-    revealTerminal(state, false);
-  }
+  const prefs = getPrefs();
+  patch({ before: undefined });
+  setPrefs({ termIn: to, drawer: true, ...(to === 'panel' ? { inspector: true, bottomOpen: true } : {}), panelShown: rememberShown(prefs.panelShown, panelKey(state.view), 'terminal') });
 }
 
 /**

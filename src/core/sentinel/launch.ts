@@ -21,7 +21,8 @@ import { openTunnel, waitUntilReachable } from '../../net/tunnel.js';
 import { demoGitHub, demoServices, demoTriggers, seedDemoSentinel } from './demo.js';
 import type { FetchLike, TriggerDeps, WebhookTunnel } from './triggers/types.js';
 import { attachSentinel, detachSentinel } from './registry.js';
-import type { PrLook, PrPlace, SentinelChat, SentinelClaude, SentinelFriends, SentinelGitHub, SentinelPlaces } from './runner.js';
+import type { PrLook, PrPlace, SentinelChat, SentinelClaude, SentinelFriends, SentinelGitHub, SentinelPlaces, SentinelWake } from './runner.js';
+import { wakeRefusal } from './wake.js';
 import { Sentinels } from './sentinels.js';
 import { keepWidgetSnapshot } from './widgets.js';
 import path from 'node:path';
@@ -57,6 +58,7 @@ export function launchSentinel(host: SentinelHost): () => void {
     // The demo's pull requests open, pass and merge without GitHub.
     github: host.demo ? demoGitHub() : github(session, store),
     chat: chat(session, store),
+    wake: wake(session, store),
     friends: friends(session),
     // The demo's GitHub, Stripe, Sentry, sites and tunnel answer without the network.
     triggers: host.demo ? demoTriggers(store) : triggers(session, store),
@@ -299,6 +301,15 @@ function chat(session: Session, store: Store): SentinelChat {
     shares: (to, peerId) => networkOf(session).shares(to, peerId),
     tell: (peerId, note) => void networkOf(session).sendDm(peerId, note),
     me: () => store.getState().self?.name ?? net().self?.name ?? 'A friend',
+  };
+}
+
+/** Your own chats, woken by a sentinel (BLG-397): yours alone. */
+function wake(session: Session, store: Store): SentinelWake {
+  return {
+    refusal: (to) => wakeRefusal(store.getState(), to),
+    deliver: async (input) => (await session.host.chatSends.deliverFromSentinel({ sentinel: input.sentinel, run: input.run, step: input.step, channel: input.to, text: input.text })).messageId,
+    wait: (messageId, ms, signal) => session.host.chatSends.outcome(messageId, ms, signal),
   };
 }
 

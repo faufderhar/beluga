@@ -13,21 +13,24 @@ import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWo
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, boardName, boardOf, byStatus, isArchived, isEpic, isOwnBoard, isStartable, isVisiting, issueById, progressOf as boardProgress, reposOf, showsOn } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
+import { chatsWithThreadsWorking } from '../core/threads/model.js';
 import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle, reviewState } from '../core/plans/model.js';
+import { autopilotIn } from '../core/autopilot/model.js';
 import { verifyProgress } from '../core/plans/verify-progress.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState, notOnPr } from '../core/branch-state.js';
 import { worktreeSharedWith } from '../ui/worktree-share.js';
-import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
+import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, chatSchedules, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
 import { type Dashboard, type Tile, metricOf, outputLook, tileColumns, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
 import { documentMime, isDocumentKind, storageName, storageSources } from '../core/sentinel/columns.js';
 import { sentinelGraph } from '../core/sentinel/workflow.js';
 import { widgetSnapshot } from '../core/sentinel/widgets.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
-import { type MilestoneView, type PlanView as PlanProgress, agentNowWords, liveFrom, planView } from '../core/plans/progress.js';
+import { type MilestoneView, type PlanView as PlanProgress, type TaskView, agentNowWords, liveFrom, planView } from '../core/plans/progress.js';
+import { taskTimes } from '../core/plans/times.js';
 import { triageFacts } from '../core/triage/facts.js';
 import { categoryOf, triageKey } from '../core/triage/model.js';
 import { shortVersion } from '../net/mesh/features.js';
@@ -39,7 +42,9 @@ import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '..
 import { type AgentRef, CLAUDE_AGENT, type Profile, defaultAgentOf } from '../protocol.js';
 import { threadNesting } from '../ui/thread-tree.js';
 import { cacheHitRows, phoneCacheRows } from '../ui/cache-usage.js';
-import { type LocalLedger, providerCards, withLocalUsage } from '../ui/usage-cards.js';
+import { type LocalLedger, type RuntimeReadiness, providerCards, withLocalUsage } from '../ui/usage-cards.js';
+import { type AgentWeek, agentWeek } from '../ui/agent-week.js';
+import type { StatsSnapshot } from '../shared/stats.js';
 import {
   type BranchView,
   type ChatMessageView,
@@ -56,6 +61,7 @@ import {
   type ProseView,
   type PeopleView,
   type PlansView,
+  type PlanTaskView,
   type PlanView,
   type SentinelPageView,
   type SentinelRunView,
@@ -155,6 +161,8 @@ export interface ViewContext {
   readonly merges?: (workspaceId: string) => MergeView | undefined;
   /** MCP Apps: the lines of a Claude card's steps whose tool has an app (drawn on the Mac only). */
   readonly appSteps?: (channel: string, itemId: string) => ReadonlySet<string>;
+  /** Your stats' days (core/stats), for an ACP agent's week on its usage card. */
+  readonly statsDays?: () => StatsSnapshot['days'] | undefined;
 }
 
 // ---- small helpers
@@ -175,14 +183,16 @@ const PHONE_WINDOW: Readonly<Record<string, string>> = { '5-hour': '5 hours', We
  * that has said nothing yet is left out, unless it's signed out or its card explains why (Grok's
  * period, when this Mac's own ledger is passed). A friend's card gets no ledger.
  */
-export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined, ledger?: LocalLedger): UsageView[] {
-  const cards = withLocalUsage(providerCards(p, defaultAgent), ledger)
-    .filter((c) => c.shape !== 'empty' || !c.signedIn || Boolean(c.note))
+export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined, runtimes?: RuntimeReadiness, weekOf?: (runtime: string) => AgentWeek | undefined, ledger?: LocalLedger): UsageView[] {
+  const cards = withLocalUsage(providerCards(p, defaultAgent, runtimes, weekOf), ledger)
+    // An ACP agent with its week shows, a quiet week too (1.60), and a provider whose card explains why (Grok's period).
+    .filter((c) => c.shape !== 'empty' || !c.signedIn || Boolean(c.note) || Boolean(c.week))
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
   return cards.slice(0, 8).map((c) => ({
     provider: c.key === CLAUDE_AGENT.runtime ? 'Claude Code' : clip(c.agent.label, 40),
     ...(c.plan ? { plan: clip(c.plan, 40) } : {}),
-    windows: c.windows.slice(0, 8).map((w) => ({ label: clip(PHONE_WINDOW[w.label] ?? w.label, 40), pct: Math.max(0, Math.min(100, w.pct)), ...(w.resetsAt !== undefined ? { resetsAt: Math.round(w.resetsAt) } : {}) })),
+    // A window of a group of models says which (Antigravity's "Gemini Models · 5 hours").
+    windows: c.windows.slice(0, 8).map((w) => ({ label: clip([w.group, PHONE_WINDOW[w.label] ?? w.label].filter(Boolean).join(' · '), 40), pct: Math.max(0, Math.min(100, w.pct)), ...(w.resetsAt !== undefined ? { resetsAt: Math.round(w.resetsAt) } : {}) })),
     updatedAt: Math.round(c.updatedAt ?? 0),
     runtime: c.key,
     isDefault: c.isDefault,
@@ -190,8 +200,15 @@ export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | und
     ...(c.tokensPerSec !== undefined ? { tokensPerSec: c.tokensPerSec } : {}),
     ...(c.signedIn ? {} : { signedIn: false }),
     ...(c.note ? { note: clip(c.note, 200) } : {}),
+    ...(c.week ? { week: { runs: c.week.runs, agentMs: Math.round(c.week.agentMs), tokens: c.week.tokens, ...(c.week.cost > 0 ? { cost: c.week.cost } : {}), days: c.week.days.map((ms) => Math.round(ms)) } } : {}),
   }));
 }
+
+/** An ACP agent's week from your stats, when the daemon has them. */
+const weekFrom = (ctx: ViewContext | undefined, now: number): ((runtime: string) => AgentWeek | undefined) | undefined => {
+  const days = ctx?.statsDays?.();
+  return days ? (runtime) => agentWeek(days, runtime, now) : undefined;
+};
 
 // ---- conversations
 
@@ -513,7 +530,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     agent: item.agent ?? CLAUDE_AGENT,
     prose: pictures(proseOf(item.text)),
     ts: item.ts,
-    ...(item.origin ? { origin: { ref: clip(item.origin.ref, 400), title: clip(item.origin.title, 200), agent: clip(item.origin.agent.label, 64), prose: proseOf(item.prompt ?? '') } } : {}),
+    ...(item.origin ? { origin: { ref: clip(item.origin.ref, 400), title: clip(item.origin.title, 200), agent: clip(item.origin.agent.label, 64), ...(item.origin.sentinel ? { sentinel: clip(item.origin.sentinel.name, 200) } : {}), prose: proseOf(item.prompt ?? '') } } : {}),
     ...(status ? { status } : {}),
     ...(step ? { step } : {}),
     steps: item.steps.length,
@@ -588,7 +605,7 @@ function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<
   // A note about a steered message ("reads this after its current step") isn't the last thing said.
   const last = [...items].reverse().find((l) => (l.type === 'chat' || (l.type === 'agent' && !steerWaiting(l) && l.text !== STEERED_IN && l.text !== TAKEN_BACK)) && (l.type === 'chat' ? l.text : l.text || l.prompt));
   const lastText = last?.type === 'chat' ? last.text : last?.type === 'agent' ? last.text || last.prompt || '' : '';
-  const status: ConvSummary['status'] = waiting.has(topic) ? 'waiting' : running.length ? 'working' : lastAgent && (lastAgent.status === 'error' || lastAgent.status === 'denied') ? 'failed' : 'idle';
+  const status: ConvSummary['status'] = waiting.has(topic) ? 'waiting' : running.length || chatsWithThreadsWorking(state).has(conv.channel) ? 'working' : lastAgent && (lastAgent.status === 'error' || lastAgent.status === 'denied') ? 'failed' : 'idle';
   const lastAt = Math.max(0, ...items.map((l) => (l.type === 'agent' ? (l.lastAt ?? l.endTs ?? l.ts) : l.ts)));
   const subs = running.reduce((n, a) => n + a.subagents.filter((s) => s.status === 'running' && s.kind !== 'background').length, 0);
   const unread = state.unread[conv.channel] ?? 0;
@@ -663,7 +680,8 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
     // 1.14: all of Your Mac's chats, for the phone's chat list.
     ...(macChats.length ? { macChats } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },
-    usage: usageViews(state.peers.find((p) => p.peerId === state.self?.peerId) ?? state.self, state.prefs.defaultAgent, {
+    // Yours: only the agents ready on this Mac, as on the Mac's Usage tab.
+    usage: usageViews(state.peers.find((p) => p.peerId === state.self?.peerId) ?? state.self, state.prefs.defaultAgent, state.runtimes, weekFrom(ctx, Date.now()), {
       projects: state.projects,
       runtimes: state.runtimes,
       defaultRuntime: state.prefs.defaultAgent?.runtime ?? 'claude',
@@ -794,7 +812,24 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...tagsOf(state, channel),
     ...terminalOf(state, channel),
     ...(reactableChannel(channel) ? { quick: quickRow(state) } : {}),
+    ...schedulesOf(state, channel),
+    ...autopilotOf(state, channel),
   };
+}
+
+/** Full Autopilot here (BLG-981): on in this chat, or through the plan it works for (named; a plan's own conversation is the plan's switch). */
+function autopilotOf(state: DomainState, channel: string): Pick<ConvView, 'autopilot'> {
+  const on = autopilotIn(state, channel);
+  if (!on) return {};
+  return { autopilot: on.plan && on.plan.home !== channel ? { plan: clip(planTitle(on.plan), 300) } : {} };
+}
+
+/** The sentinels that send into this chat on a schedule (BLG-401): run and pause only. */
+function schedulesOf(state: DomainState, channel: string): Pick<ConvView, 'schedules'> {
+  if (!state.selfId) return {};
+  const rows = chatSchedules(state.sentinel, `${state.selfId}/${channel}`).slice(0, 20);
+  const nameOf = (id: string): string | undefined => state.sentinel.items.find((i) => i.id === id)?.name;
+  return rows.length ? { schedules: rows.map((r) => ({ id: r.id, name: clip(r.name, 200), sentence: clip(scheduleSentence(r.trigger, nameOf), 200), ...(r.nextAt !== undefined ? { nextAt: r.nextAt } : {}), paused: r.paused, running: r.running })) } : {};
 }
 
 /** The Mac's terminal view drives this conversation (BLG-534): who, so the phone can say so and take it back. */
@@ -913,7 +948,7 @@ function queueOf(state: DomainState, channel: string): NonNullable<ConvView['que
   return state.log
     .filter((l): l is AgentItem => l.type === 'agent' && l.channel === channel && l.status === 'queued' && l.owner === me && (l.requester !== undefined ? l.requester === me : l.requesterName === l.ownerName))
     .slice(0, 20)
-    .map((l) => ({ id: clip(l.requestId, 200), text: plainLine(l.prompt ?? '', 300) || 'A message', ...(l.slotWait ? { waiting: clip(slotWaitDetail(l.slotWait), 300) } : {}), ...(l.origin ? { origin: { ref: clip(l.origin.ref, 400), title: clip(l.origin.title, 200), agent: clip(l.origin.agent.label, 64) } } : {}) }));
+    .map((l) => ({ id: clip(l.requestId, 200), text: plainLine(l.prompt ?? '', 300) || 'A message', ...(l.slotWait ? { waiting: clip(slotWaitDetail(l.slotWait), 300) } : {}), ...(l.origin ? { origin: { ref: clip(l.origin.ref, 400), title: clip(l.origin.title, 200), agent: clip(l.origin.agent.label, 64), ...(l.origin.sentinel ? { sentinel: clip(l.origin.sentinel.name, 200) } : {}) } } : {}) }));
 }
 
 const planState = (plan: Plan, progress: PlanProgress): string => (plan.status === 'active' && plan.paused ? 'paused' : plan.status === 'active' && progress.next.kind === 'done' ? 'done' : plan.status);
@@ -978,6 +1013,7 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
           ...(t.task.acceptance.length ? { acceptance: t.task.acceptance.slice(0, 20).map((a) => clip(plainLine(a, 400), 400)) } : {}),
           ...(waits.length ? { blockedBy: waits.slice(0, 20).map((b) => clip(b, 200)) } : {}),
           ...(t.why ? { why: clip(plainLine(t.why, 300), 300) } : {}),
+          ...timesOf(t),
         };
       }),
       ...(m.dependsOn.length ? { dependsOn: m.dependsOn.slice(0, 20).map((d) => clip(d, 200)) } : {}),
@@ -996,9 +1032,20 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
     // 1.35 (BLG-498): who works its milestones and tasks (none: your default), and the list to change it from.
     ...(plan.agent ? { agent: agentRefView(plan.agent) } : {}),
     ...(plan.status !== 'done' ? { agents: workPicker(state, plan.agent) } : {}),
+    // 1.58 (BLG-982, BLG-981): who plans and checks it when not its builder, and Full Autopilot.
+    ...(plan.planner ? { planner: agentRefView(plan.planner) } : {}),
+    ...(plan.checker ? { checker: agentRefView(plan.checker) } : {}),
+    ...(plan.fullAuto ? { fullAuto: true } : {}),
     // 1.45 (BLG-772): its decisions, and its draft's review.
     ...decisionsAndReview(state, plan),
   };
+}
+
+/** 1.59: a plan task's times (on the board only): since it reached its state, and its last change. */
+function timesOf(t: TaskView): Pick<PlanTaskView, 'since' | 'updatedAt'> {
+  const at = t.issue && taskTimes(t.issue, t.pulse);
+  if (!at) return {};
+  return { since: at.since, updatedAt: at.updated };
 }
 
 /** A verification under way, from its agent's run: so the phone shows it moving, never stuck. */

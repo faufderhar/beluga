@@ -225,12 +225,12 @@ export class CodexSubAgents {
       if (a.tools.has(item.id)) return;
       a.tools.add(item.id);
       this.out.onSub({ id: a.id, phase: 'step', step: summarizeTool(call.name, call.input, this.cwd) });
-      this.recorder.observe({ type: 'assistant', parent_tool_use_id: id, message: { content: [{ type: 'tool_use', id: item.id, name: call.name, input: call.input }] } });
+      this.recorder.observe({ type: 'assistant', parent_tool_use_id: id, message: { content: [{ type: 'tool_use', id: item.id, name: call.name, input: call.input, native: item.type }] } });
       if (method === 'item/started') return;
     }
     a.tools.delete(item.id);
     if (item.type === 'fileChange') for (const change of (item as Extract<ThreadItem, { type: 'fileChange' }>).changes) this.out.onFileTouched?.(path.resolve(this.cwd, change.path));
-    const { content, isError } = toolResultOf(item);
-    this.recorder.observe({ type: 'user', parent_tool_use_id: id, message: { content: [{ type: 'tool_result', tool_use_id: item.id, content, is_error: isError }] } });
+    const { content, isError, exitCode } = toolResultOf(item);
+    this.recorder.observe({ type: 'user', parent_tool_use_id: id, message: { content: [{ type: 'tool_result', tool_use_id: item.id, content, is_error: isError, ...(exitCode !== undefined ? { exit_code: exitCode } : {}) }] } });
   }
 }

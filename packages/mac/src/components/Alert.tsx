@@ -129,10 +129,10 @@ function AlertDetail({ table }: { table: AlertTable }) {
 }
 
 /** The small checkbox under an alert's message, or in a form (macOS style). */
-export function Checkbox({ checked, onChange, label, detail }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode; detail?: ReactNode }) {
+export function Checkbox({ checked, onChange, label, detail, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode; detail?: ReactNode; disabled?: boolean }) {
   return (
-    <label className={s.check}>
-      <input type="checkbox" className={s.box} checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className={cx(s.check, disabled && s.checkOff)}>
+      <input type="checkbox" className={s.box} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className={s.checkText}>
         <span>{label}</span>
         {detail ? <span className={s.checkDetail}>{detail}</span> : null}

@@ -64,6 +64,21 @@ test("a project's Environment… shows its .env, and typing over a value sets it
   await sheet.getByRole('button', { name: 'Done' }).click();
 });
 
+test('a project opened from Settings › Environment comes up above Settings, and closing it goes back there (BLG-970)', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
+  await page.keyboard.press('Meta+,');
+  await page.getByRole('button', { name: 'Environment', exact: true }).click();
+  await page.getByRole('button', { name: /^bob-api\b/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'bob-api Settings' });
+  // A real click (no force): it fails if Settings covers the sheet.
+  await sheet.getByRole('switch', { name: "Use the main folder's .env" }).click();
+  await sheet.getByRole('switch', { name: "Use the main folder's .env" }).click();
+  await sheet.getByRole('button', { name: /^(Close|Cancel)$/ }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^bob-api\b/ })).toBeVisible();
+});
+
 test('a worktree’s new key goes to the main folder on its own; a changed value is asked about and saved in Beluga', async ({ page }) => {
   const { readFileSync, writeFileSync } = await import('node:fs');
   const path = await import('node:path');

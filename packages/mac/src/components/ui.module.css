@@ -1,49 +1,66 @@
+/* A push button (NSButton, rounded bezel): tokens.css's control colours at AppKit's regular size. */
 .button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: var(--radius-s);
-  font-size: 0.96rem;
-  font-weight: 500;
+  height: var(--control-h);
+  padding: 0 12px;
+  border-radius: var(--control-radius);
+  font-size: var(--control-text);
+  font-weight: 400;
   white-space: nowrap;
-  transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur-fast);
+  transition: background var(--dur-fast), color var(--dur-fast), opacity var(--dur-fast), transform var(--dur-fast) var(--ease-out);
+}
+/* Every push button answers the pointer: a shade deeper on hover (below, per style), pressed in a touch. */
+.button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .small {
-  height: 22px;
+  gap: 5px;
+  height: var(--control-h-small);
   padding: 0 8px;
-  font-size: 0.92rem;
+  border-radius: var(--control-radius-small);
+  font-size: var(--control-text-small);
+}
+.large {
+  gap: 7px;
+  height: var(--control-h-large);
+  padding: 0 16px;
+  border-radius: var(--control-radius-large);
+  font-size: var(--control-text-large);
 }
 .plain {
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.06);
+  background: var(--control);
+  box-shadow: var(--control-bezel);
 }
 .plain:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bg-raised) 92%, var(--text));
+  background: var(--control-hover);
 }
 .plain:active:not(:disabled) {
-  background: var(--bg-press);
+  background: var(--control-press);
 }
 .primary {
-  background: var(--accent);
-  color: white;
-  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.12);
+  background: var(--control-accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 0.5px var(--control-accent-edge), var(--control-drop);
 }
 .primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, black);
+  background: var(--control-accent-hover);
+}
+.primary:active:not(:disabled) {
+  background: var(--control-accent-press);
 }
 /* Merging changes your main branch: green, as GitHub's Merge, and never the everyday blue. */
 .merge {
   background: var(--merge);
   color: white;
-  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--merge) 70%, var(--text)), var(--control-drop);
 }
 .merge:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--merge) 86%, black);
+  background: color-mix(in srgb, var(--merge) 90%, black);
 }
-.merge:disabled {
-  background: color-mix(in srgb, var(--merge) 40%, var(--bg-hover));
+.merge:active:not(:disabled) {
+  background: color-mix(in srgb, var(--merge) 86%, black);
 }
 .quiet {
   color: var(--text-2);
@@ -57,14 +74,34 @@
 }
 .danger {
   color: var(--error);
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  background: var(--control);
+  box-shadow: var(--control-bezel);
 }
 .danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--error) 10%, var(--bg-raised));
+  background: color-mix(in srgb, var(--error) 8%, var(--control));
+}
+.danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 12%, var(--control));
 }
 .button:disabled {
-  opacity: 0.4;
+  opacity: var(--control-disabled);
+}
+/*
+ * A primary or Merge button that can't be pressed is drawn as a plain one, as AppKit draws a
+ * disabled default button: its colour goes and its words dim with the rest of it. Faded, the
+ * accent left white words on pale blue that couldn't be read. The sheets' buttons do the same
+ * (alert.module.css); a danger button is plain already and keeps its red words, dimmed.
+ */
+.primary:disabled,
+.merge:disabled {
+  background: var(--control);
+  color: var(--text);
+  box-shadow: var(--control-bezel);
+}
+/* Keyboard focus: the ring outside the bezel, not an outline. */
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 0.5px var(--control-edge), var(--focus-ring);
 }
 .tone_error {
   color: var(--error);
@@ -85,6 +122,30 @@
   border-radius: var(--radius-s);
   color: var(--text-2);
   transition: background var(--dur-fast), color var(--dur-fast);
+}
+.iconLarge,
+.iconRegular,
+.iconSmall {
+  flex: none;
+}
+.iconLarge {
+  width: var(--control-h-large);
+  height: var(--control-h-large);
+  border-radius: var(--control-radius-large);
+}
+.iconRegular {
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--control-radius);
+}
+.iconSmall {
+  width: var(--control-h-small);
+  height: var(--control-h-small);
+  border-radius: var(--control-radius-small);
+}
+.iconButton:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .iconButton:hover {
   background: var(--bg-hover);
@@ -132,30 +193,70 @@
   font-family: var(--font);
 }
 
+/* NSSegmentedControl: a recessed track, the chosen segment raised on it, hairlines between the others. */
 .segmented {
   display: inline-flex;
-  padding: 2px;
-  gap: 1px;
-  border-radius: 7px;
-  background: var(--bg-hover);
+  padding: 1px;
+  border-radius: calc(var(--control-radius) + 1px);
+  background: var(--segment-track);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
 }
 .segment {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
-  padding: 0 11px;
-  border-radius: 5px;
-  color: var(--text-2);
-  font-size: 0.93rem;
-  font-weight: 500;
+  height: calc(var(--control-h) - 2px);
+  padding: 0 12px;
+  border-radius: var(--control-radius);
+  color: var(--text);
+  font-size: var(--control-text);
+  font-weight: 400;
+  /* A pill is one line high: its words never break inside it (#527). */
+  white-space: nowrap;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
-.segment:hover {
-  color: var(--text);
+.segmentedSmall {
+  border-radius: calc(var(--control-radius-small) + 1px);
+}
+.segmentedSmall .segment {
+  height: calc(var(--control-h-small) - 2px);
+  padding: 0 9px;
+  border-radius: var(--control-radius-small);
+  font-size: var(--control-text-small);
+}
+.segmentedLarge {
+  border-radius: calc(var(--control-radius-large) + 1px);
+}
+.segmentedLarge .segment {
+  height: calc(var(--control-h-large) - 2px);
+  padding: 0 14px;
+  border-radius: var(--control-radius-large);
+  font-size: var(--control-text-large);
+}
+.segment + .segment::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 1px;
+  background: var(--hairline-strong);
+}
+.segmentOn::before,
+.segmentOn + .segment::before {
+  display: none;
+}
+.segment:active:not(.segmentOn) {
+  background: var(--bg-press);
+}
+.segment:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .segmentIcon {
   padding: 0 9px;
+  color: var(--text-2);
 }
 .segmentCount {
   color: var(--text-3);
@@ -165,9 +266,9 @@
   color: var(--text-2);
 }
 .segmentOn {
-  background: var(--bg-raised);
+  background: var(--segment-on);
   color: var(--text);
-  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--control-bezel);
 }
 
 .badge {
@@ -341,5 +442,69 @@
 
 /* Near-black themes: a plain button keeps its shape by a lit edge. */
 :global(:root[data-edges='lit']) .plain {
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), var(--rim);
+  box-shadow: 0 0 0 0.5px var(--control-edge), var(--control-drop), var(--rim);
+}
+
+/* Liquid Glass: the window toolbar's icon buttons sit on glass capsules. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos'] header[data-tauri-drag-region]) .iconButton {
+  border-radius: 999px;
+  background: var(--glass-chip);
+  box-shadow: var(--glass-ring), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos'] header[data-tauri-drag-region]) .iconButton:disabled {
+  background: none;
+  box-shadow: none;
+}
+
+/* Liquid Glass: buttons and the segmented control are capsules, so their 0.5px ring is a real border
+   (WebKit breaks a 0.5px shadow up round a capsule's ends); the bezel keeps its drop and sheen. */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .plain,
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .danger {
+  border: 0.5px solid var(--control-edge);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .primary {
+  border: 0.5px solid var(--control-accent-edge);
+  box-shadow: var(--control-drop), var(--control-accent-sheen);
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .merge {
+  border: 0.5px solid color-mix(in srgb, var(--merge) 70%, var(--text));
+  box-shadow: var(--control-drop), var(--control-accent-sheen);
+}
+/* The track's ring is drawn on its own layer and takes no room, so the segments sit the same 1px from
+   its top and its bottom whatever the ring rounds to (Chromium makes a 0.5px border 1px, and a track
+   at a fractional position then put more room above a segment than below it). */
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .segmented {
+  position: relative;
+  padding: 1px;
+  box-shadow: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .segmented::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 0.5px solid var(--hairline);
+  border-radius: inherit;
+  pointer-events: none;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .segment {
+  border: 0.5px solid transparent;
+}
+:global(:root[data-os='mac'][data-transparency='full'][data-look='macos']) .segmentOn {
+  border-color: var(--control-edge);
+  /* Even all round: a drop below would fill the track's gap under it, and the segment would look pushed up. */
+  box-shadow: 0 0 1.5px rgba(0, 0, 0, 0.14), var(--control-sheen);
+}
+
+/* A phone (BLG-6): a row of choices wider than the screen scrolls sideways, never runs off it. */
+@media (max-width: 700px) {
+  .segmented {
+    max-width: 100%;
+    /* Scrolls (never shrinks to a sliver beside other controls: those wrap, or the row scrolls). */
+    min-width: min(100%, 14rem);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .segment {
+    flex: none;
+  }
 }

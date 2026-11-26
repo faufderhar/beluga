@@ -43,7 +43,6 @@ function workspaceCommands({ ui, actions, state }: Ctx): PaletteCommand[] {
   const list: Array<[WorkspaceAction, PaletteCommand, boolean]> = [
     ['pr', cmd('pr', 'pr', state.prs[ws.id] ? 'Pull Request…' : 'Create Pull Request…', 'pr', act('pr'), 'Your agent pushes and opens one'), worktree],
     ['fork', cmd('fork', 'fork', 'Fork This Workspace…', 'branch', act('fork'), 'A copy with its conversation'), ws.kind !== 'chat'],
-    ['handoff', cmd('handoff', 'handoff', 'Hand Off to Someone…', 'hand', act('handoff'), 'Their agent continues it'), worktree],
     ['commit', cmd('commit', 'commit', 'Commit All Changes…', 'commit', act('commit')), worktree && Boolean(ws.status?.changed)],
     ['merge', cmd('merge', 'merge', 'Merge into the Main Folder…', 'merge', act('merge')), worktree],
     ['compact', cmd('compact', 'compact', 'Compact the Conversation…', 'wand', act('compact'), 'Your agent keeps what matters'), true],
@@ -55,6 +54,8 @@ function workspaceCommands({ ui, actions, state }: Ctx): PaletteCommand[] {
   ];
   return [
     ...list.filter(([action, , ok]) => ok && !here.has(action)).map(([, c]) => c),
+    // Hand off lives in Share now (BLG-967): typing it opens Share on "Take it over".
+    ...(worktree ? [cmd('handoff', 'handoff', 'Share So Someone Takes It Over…', 'share', () => ui.openMenu({ kind: 'ws_share', id: ws.id, takeOver: true }), 'Their agent continues it on their computer')] : []),
     ...(project?.root ? [cmd('project', 'scripts', 'Project Settings…', 'terminal', () => ui.openMenu({ kind: 'scripts', projectId: project.id }), 'Setup and Run commands')] : []),
   ];
 }

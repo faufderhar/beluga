@@ -90,7 +90,7 @@ export function UsageView() {
         detail="Add your projects: the disk their worktrees take and what your agent uses in them show up here."
         action={
           <EmptyActions>
-            <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+            <Button size="small" variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
               Add Projects…
             </Button>
           </EmptyActions>
@@ -105,7 +105,7 @@ export function UsageView() {
         <Chapter title="Right now" sub="Your plans and how much is left, your agents this week, and what your projects earned.">
           <div className={s.summaryFit}>
             <div className={s.summary}>
-              <PlanCard state={state} now={now} />
+              <PlanCard state={state} now={now} stats={got.stats} />
               <ActivityCard state={state} now={now} />
               <SessionsCard windows={got.stats?.plan ?? []} limits={planLimits(state)} now={got.at} />
               <EarningsSummaryCard />

@@ -7,9 +7,10 @@
 export type ComposeMode = 'act' | 'plan' | 'tasks';
 
 export const MODE_INFO: Readonly<Record<ComposeMode, { readonly label: string; readonly hint: string; readonly banner: string }>> = {
-  act: { label: 'Act', hint: 'Your agent does it right away', banner: '' },
-  plan: { label: 'Plan First', hint: 'Your agent looks around and asks you to approve a plan; approved, it becomes a task', banner: 'Your agent looks around and proposes a plan before changing anything' },
-  tasks: { label: 'Plan with Tasks', hint: 'Your agent cuts the work into milestones and tasks that can run side by side; nothing reaches the board until you approve', banner: 'Milestones and tasks, drafted here: nothing reaches the board until you approve' },
+  act: { label: 'Act', hint: 'Your agent starts right away', banner: '' },
+  plan: { label: 'Plan First', hint: 'Your agent proposes a plan and starts once you approve it', banner: 'Your agent proposes a plan before changing anything' },
+  // Bigger work (BLG-1023: was "Plan with Tasks"): a plan of milestones whose tasks run in parallel worktrees.
+  tasks: { label: 'Advanced Planning', hint: 'For bigger work: milestones and tasks that run side by side, each in its own worktree', banner: 'Your agent splits this into milestones and tasks that run side by side' },
 };
 
 /** ⇧⇥: acting ↔ planning first, as in Claude Code. (Plan with Tasks makes a plan: it's picked from the menu, never a keystroke away.) */

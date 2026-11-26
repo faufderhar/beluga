@@ -1,3 +1,4 @@
+import { namingFor } from '../shared/naming.js';
 import { actingVia, asActingAgent } from './acting-agent.js';
 import { takeYourHand } from './by-hand.js';
 import { closePreviews } from '../preview/off.js';
@@ -6,7 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isTermBusy } from '../shared/terminal-keys.js';
 import { agentLabel } from '../shared/agent-label.js';
 import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
-import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
+import { ASSISTANT_TITLE, isAssistant, THIS_COMPUTER } from '../shared/assistant.js';
 import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +22,7 @@ import { localRuntime } from '../agent/runtime/local.js';
 import { LOCAL_RUNTIME } from '../shared/local-endpoints.js';
 import type { LocalEndpoints } from './local-endpoints.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type AgentRef, Body, type BodyInput, type BodyOf, CLAUDE_AGENT, chatMessageId, defaultAgentOf, type FsEntry, MAX_TEXT, type MessageVia, type PeerInfo, type Profile } from '../protocol.js';
+import { type AgentRef, Body, type BodyInput, type BodyOf, CLAUDE_AGENT, type ClaudeAnswer, chatMessageId, defaultAgentOf, type FsEntry, MAX_TEXT, type MessageVia, type PeerInfo, type Profile } from '../protocol.js';
 import { type UsageUpdate, withUsage } from '../agent/usage.js';
 import { dialoguesOf } from './dialogues/registry.js';
 import { agentName } from '../shared/agent-label.js';
@@ -35,7 +36,9 @@ import { existsSync } from 'node:fs';
 import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
-import { isPlanHome } from './plans/model.js';
+import { isPlanHome, planForHome } from './plans/model.js';
+import { plansOf } from './plans/registry.js';
+import type { StandInRequest } from '../agent/stand-in.js';
 import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
@@ -91,6 +94,8 @@ export interface SessionOptions {
   readonly alsoRuntimes?: readonly AgentRuntime[];
   readonly runtime?: {
     readonly runtimes: (id?: RuntimeId) => AgentRuntime | undefined;
+    /** Your ACP agents Beluga has no name for (Cursor, a Registry agent, a command of yours): the pickers list them after the fixed ones. */
+    readonly extra?: () => ReadonlyArray<{ readonly id: RuntimeId; readonly label: string }>;
     readonly agent?: RuntimeId;
     readonly options: Omit<RuntimeOptions, 'bridge'>;
   };
@@ -256,7 +261,11 @@ export class Session {
   private readonly namedAsks = new Map<string, { readonly peer: string; readonly agent: AgentRef }>();
 
   constructor(private readonly opts: SessionOptions) {
-    if (opts.workspaces) opts.workspaces.branchPrefix = () => opts.store.getState().prefs.branchPrefix;
+    // The project's naming rule (yours, else its beluga.json), else Settings' prefix (BLG-1033).
+    if (opts.workspaces) {
+      const manager = opts.workspaces;
+      manager.branchPrefix = (root) => namingFor(opts.store.getState().prefs, manager.list.find((p) => p.root === root)).branchPrefix.value;
+    }
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
     const parts = createSessionParts(this, opts);
     this.workspaces = parts.workspaces;
@@ -306,7 +315,7 @@ export class Session {
     // Each runtime's turns also reach usage statistics, when you chose to send them (src/telemetry/hook.ts).
     const make = (r: AgentRuntime): AgentBackend => observeRuntime(guardedBackend(r.create({ ...rt.options, bridge: this.bridge, ownEnv: this.ownEnv }), r.capabilities), r.id);
     // Every other runtime that has plan usage reports it too (Codex's windows on the usage tab).
-    const withUsage = KNOWN_RUNTIMES.map((r) => r.id).filter((id) => id !== main.id && rt.runtimes(id)?.capabilities.hasUsage);
+    const withUsage = [...KNOWN_RUNTIMES.map((r) => r.id), ...(rt.extra?.() ?? []).map((r) => r.id)].filter((id) => id !== main.id && rt.runtimes(id)?.capabilities.hasUsage);
     return routedBackend(
       make(main),
       main.id,
@@ -344,6 +353,11 @@ export class Session {
     if (!runtime) return this.runtime?.capabilities.canSteer ?? false;
     const id = runtime === LOCAL_RUNTIME ? CLAUDE_AGENT.runtime : runtime;
     return (this.opts.runtime?.runtimes(id) ?? this.opts.alsoRuntimes?.find((r) => r.id === id))?.capabilities.canSteer ?? false;
+  }
+
+  /** The runtimes this Beluga runs beside its own (the demo's scripted Codex, OpenCode, Copilot and Antigravity). */
+  besideRuntimes(): readonly string[] {
+    return (this.opts.alsoRuntimes ?? []).map((r) => r.id);
   }
 
   /** Whether this Mac can run that agent now: its runtime is here (a local model: its endpoint is set up). */
@@ -485,6 +499,7 @@ export class Session {
       // Claude knows to ask Ata's Claude (the room's own parse only knows people in the room).
       const onlyYours = parsed.kind === 'agent' && parsed.unknown.length === 0 && parsed.targets.every((t) => t === this.selfId);
       const prompt = parsed.kind === 'agent' && onlyYours ? parsed.prompt : parsed.text;
+      if (this.holdWhileMaking(prompt, channel, urgent, terminal, id)) return true;
       const ask = (): string | undefined => (terminal ? this.startInTerminal(prompt, channel) : this.askOwnClaude(prompt, channel, urgent));
       if (!id) {
         const sent = ask() !== undefined;
@@ -692,6 +707,31 @@ export class Session {
   }
 
   /**
+   * A message written in a worktree whose page shows while git still makes it (BLG-942, BLG-1013):
+   * sent like any other, never queued. Its agent's card shows under it at once, making the worktree
+   * as its first step; its agent goes on from there once it's made. If it can't be made, the card
+   * says why. False when the worktree isn't being made (the message goes as usual).
+   */
+  private holdWhileMaking(prompt: string, channel: string, urgent: boolean, terminal: boolean, id: string | undefined): boolean {
+    const ctl = this.workspaces;
+    const ws = ctl?.beingMade(channel);
+    if (!ctl || !ws) return false;
+    if (id && this.sentById.has(id)) return true;
+    const requestId = this.showAsk(prompt, channel);
+    if (id) this.sentById.set(id, requestId);
+    // Seen as its terminal, the message opens that instead of a card: it just waits for the worktree.
+    const step = terminal ? undefined : this.host.beforeRuns.start(channel, requestId, prompt, { tool: 'make_worktree', input: { name: ws.name } });
+    ctl.holdAsk(channel, {
+      go: () => {
+        if (step && !step.finish()) return;
+        void (terminal ? this.startInTerminal(prompt, channel, requestId) : this.askOwnClaude(prompt, channel, urgent, false, requestId));
+      },
+      drop: () => (step ? step.fail('The worktree couldn’t be made, so this wasn’t sent to your agent.') : this.toast('The worktree couldn’t be made, so your message wasn’t sent', 'warn')),
+    });
+    return true;
+  }
+
+  /**
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
    * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already);
    * a string shows that instead (a short line for a long brief: Claude still gets the whole prompt).
@@ -812,9 +852,9 @@ export class Session {
     this.host.btw.dismiss(channel);
   }
 
-  /** Ask you to approve something; `peer` is who it's for. */
-  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string): Promise<'yes' | 'no' | 'always'> {
-    return this.host.ask(kind, title, detail, peer);
+  /** Ask you to approve something; `peer` is who it's for, `channel` the conversation it's about (Your Mac when none). */
+  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel?: string): Promise<'yes' | 'no' | 'always'> {
+    return this.host.ask(kind, title, detail, peer, channel);
   }
 
   /**
@@ -916,10 +956,14 @@ export class Session {
    * can't run on the endpoint yet), never quietly to Anthropic otherwise. Claude, the demo, tests: the backend's.
    */
   private sideRoute(project?: string): SideRoute {
+    return this.sideRouteOn(this.agentFor(project));
+  }
+
+  /** Where a side call on `agent` goes: its runtime's one-shot call, else Claude's (as sideRoute). */
+  private sideRouteOn(agent: AgentRef): SideRoute {
     const rt = this.opts.runtime;
     if (!this.runtime || !rt) return { claude: () => this.agent };
     const claude = (): AgentBackend | undefined => (this.runtime?.id === CLAUDE_AGENT.runtime ? this.agent : this.backendFor(CLAUDE_AGENT.runtime));
-    const agent = this.agentFor(project);
     if (agent.runtime === CLAUDE_AGENT.runtime) return { claude };
     if (agent.runtime === LOCAL_RUNTIME) return { claude: async () => ((await this.claudeSignedIn()) ? claude() : undefined) };
     const own = rt.runtimes(agent.runtime);
@@ -1029,6 +1073,68 @@ export class Session {
   /** A pull request reviewed before a sentinel merges it (undefined without an agent to ask, or on trouble). */
   async reviewPr(input: import('../agent/pr-reviewer.js').PrReviewInput): Promise<import('../agent/pr-reviewer.js').PrReview | undefined> {
     return routeSideCall(this.sideRoute(), (on) => on.reviewPr?.(input), undefined);
+  }
+
+  /**
+   * Full Autopilot's stand-in (BLG-981): what your agent asked, answered for you by `agent` (a plan's
+   * planner), else your default agent, with Claude when that one can't. Throws when none could answer.
+   */
+  async standIn(req: StandInRequest, agent?: AgentRef): Promise<string> {
+    const out = await routeSideCall(agent ? this.sideRouteOn(agent) : this.sideRoute(), (on) => on.standIn?.(req), undefined);
+    if (out === undefined) throw new Error('no agent here could answer');
+    return out;
+  }
+
+  /**
+   * Full Autopilot in a conversation (BLG-981): a stand-in agent answers what your agent asks there,
+   * so it never waits on you. A plan's own conversation switches its plan (and so all its work).
+   */
+  setAutopilot(channel: string, on: boolean): void {
+    const plan = planForHome(this.store.getState().plans, channel);
+    const plans = plansOf(this);
+    if (plan && plan.status !== 'done' && plans) {
+      plans.setFullAuto(plan.id, on);
+    } else this.store.dispatch({ type: 'autopilot', channel, on });
+    this.toast(on ? 'Full Autopilot: what your agent asks here, a stand-in agent answers for you' : 'Autopilot off: what your agent asks waits for you again', 'success');
+  }
+
+  /**
+   * Plan here, build with another agent (BLG-982): who builds what's planned in this conversation
+   * once you approve it (null: the agent that planned it). Plan First hands the conversation over;
+   * Plan with Tasks makes it the plan's builder (a plan already here: its builder from now on).
+   */
+  setBuildWith(channel: string, agent: AgentRef | null): void {
+    const plan = planForHome(this.store.getState().plans, channel);
+    const plans = plansOf(this);
+    if (plan && plan.status !== 'done' && plans) {
+      this.toast(plans.setRoleAgent(plan.id, 'builder', agent), 'success');
+      return;
+    }
+    this.store.dispatch({ type: 'build_with', channel, ...(agent ? { agent } : {}) });
+    const who = agent ? agentName(agent, { model: true }) : undefined;
+    this.toast(who ? `${who} builds what’s planned here, once you approve it` : 'The agent that plans here builds it too', 'success');
+  }
+
+  /**
+   * You approved a plan your agent proposed in a chat that builds with another agent (QuestionBroker's
+   * handOff): the planning agent is told to stop there, and once its turn ends the conversation moves
+   * to the builder (a quiet handoff: it gets the recent conversation), which is asked to build the plan.
+   * → what the planning agent is told; undefined when the builder is the agent already here.
+   */
+  handOffPlan(channel: string, plan: string): ClaudeAnswer | undefined {
+    const builder = this.store.getState().buildWith[channel];
+    if (!builder) return undefined;
+    const here = this.workspaces?.agentOf(channel, this.agentRef);
+    this.store.dispatch({ type: 'build_with', channel });
+    if (here && here.runtime === builder.runtime && (!builder.model || builder.model === here.model)) return undefined;
+    const who = agentName(builder, { model: true });
+    const planner = here ? agentName(here) : 'Your agent';
+    void this.host.idle(channel).then(() => {
+      if (!this.workbench?.setAgent(channel, builder, 'quiet')) return this.toast(`Couldn’t move this conversation to ${who}`, 'warn');
+      this.store.dispatch({ type: 'system', channel, text: `${planner} planned it; ${who} builds it now.`, level: 'info' });
+      this.askOwnClaude(`The user approved this plan. Build it now, step by step, and say what you did:\n\n${plan}`, channel, false, false);
+    });
+    return { kind: 'plan', approve: false, feedback: `The user approved your plan, and ${who} builds it in this conversation from here. Change nothing more: end your turn now with one line saying the plan is handed over.` };
   }
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
@@ -1582,7 +1688,7 @@ export class Session {
     const name = peerName(this.store.getState(), from);
     const wanted = agentName(asked.agent);
     const answered = agentName(by);
-    if (mine) this.system(`Your ${wanted} isn’t set up on this Mac, so your ${answered} answers`, 'warn');
+    if (mine) this.system(`Your ${wanted} isn’t set up on ${THIS_COMPUTER}, so your ${answered} answers`, 'warn');
     else if (body.fallback) this.system(`${name}’s ${wanted} isn’t set up on their Mac, so their ${answered} answers`, 'warn');
     else this.system(`${name}’s Mac can’t pick an agent by name yet (an older Beluga), so their ${answered} answers`, 'warn');
   }

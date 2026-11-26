@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { belugaEnvBoth } from '../core/beluga-env.js';
+import { NamingRules } from '../shared/naming.js';
 
 /** Commands a project runs in its workspaces: `setup` once per new worktree, `run` on demand. */
 export interface ProjectScripts {
@@ -26,6 +27,8 @@ export interface ResolvedScripts {
   readonly run?: { readonly command: string; readonly source: ScriptSource };
   /** Extra pull request instructions for this project (beluga.json "prPrompt"). */
   readonly prPrompt?: string;
+  /** The team's naming rules (beluga.json "naming": branchPrefix, prTitle; BLG-1033). */
+  readonly naming?: NamingRules;
 }
 
 const Command = z.string().trim().min(1).max(2000);
@@ -34,6 +37,8 @@ const Command = z.string().trim().min(1).max(2000);
 export const ProjectFile = z.object({
   scripts: z.object({ setup: Command.optional(), run: Command.optional() }).partial().default({}),
   prPrompt: z.string().max(8000).optional(),
+  // A bad rule is dropped, never the whole file (its scripts still count).
+  naming: NamingRules.optional().catch(undefined),
 });
 export type ProjectFile = z.infer<typeof ProjectFile>;
 
@@ -208,7 +213,7 @@ export function resolveScripts(root: string, yours: ProjectScripts = {}): Resolv
   };
   const setup = yours.skipSetup && !yours.setup ? undefined : pick('setup', detectSetup);
   const run = pick('run', detectRun);
-  return { ...(setup ? { setup } : {}), ...(run ? { run } : {}), ...(file?.prPrompt ? { prPrompt: file.prPrompt } : {}) };
+  return { ...(setup ? { setup } : {}), ...(run ? { run } : {}), ...(file?.prPrompt ? { prPrompt: file.prPrompt } : {}), ...(file?.naming && Object.keys(file.naming).length ? { naming: file.naming } : {}) };
 }
 
 /** Write the scripts into the project's beluga.json (or its older klaud.json) so teammates get them too (keeps other fields). */
@@ -218,6 +223,15 @@ export function saveProjectFile(root: string, scripts: ProjectScripts): ProjectF
   const current = (readJson(file) as Record<string, unknown> | undefined) ?? {};
   const merged = { ...current, scripts: { ...((current.scripts as object | undefined) ?? {}), ...scripts } };
   writeFileSync(file, `${JSON.stringify(merged, null, 2)}\n`);
+  return name;
+}
+
+/** Write the team's naming rules into the project's beluga.json (keeps other fields); none left: the key goes. */
+export function saveProjectNaming(root: string, naming: NamingRules | undefined): ProjectFileName {
+  const name = projectFileName(root);
+  const file = path.join(root, name);
+  const { naming: _old, ...rest } = (readJson(file) as Record<string, unknown> | undefined) ?? {};
+  writeFileSync(file, `${JSON.stringify(naming ? { ...rest, naming } : rest, null, 2)}\n`);
   return name;
 }
 

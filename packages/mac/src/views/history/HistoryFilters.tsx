@@ -45,7 +45,7 @@ export function HistoryFilters({ filters, query, onChange, compact, onRefresh, r
         <Icon name="search" size={12} />
         <input className="selectable" type="search" aria-label="Path" placeholder={compact ? 'Path' : 'Path or file name'} value={path} spellCheck={false} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && path && (e.stopPropagation(), setPath(''))} />
       </label>
-      {onRefresh ? <IconButton icon="refresh" label={refreshing ? 'Loading…' : 'Reload'} className={cx(refreshing && s.spinning)} onClick={onRefresh} /> : null}
+      {onRefresh ? <IconButton size="small" icon="refresh" label={refreshing ? 'Loading…' : 'Reload'} className={cx(refreshing && s.spinning)} onClick={onRefresh} /> : null}
     </div>
   );
 }

@@ -6,7 +6,8 @@ import s from './settings.module.css';
 import x from './experimental.module.css';
 
 /**
- * Settings › Experimental: early features, each off until you turn it on, each saying what it
+ * Settings › Experimental: early features, each off until you turn it on (or on until you turn it
+ * off: shared/experiments.ts DEFAULT_ON), each saying what it
  * changes in Beluga and what it costs this computer (shared/experiments.ts). Turning one on is
  * saved with your settings, and the daemon follows it at once (what your agent is told, what it
  * may build).
@@ -20,7 +21,7 @@ export function ExperimentalSettings() {
       <div className={x.intro}>
         <Icon name="flask" size={16} className={x.introIcon} />
         <p>
-          Early features we’re still shaping. They haven’t been tested as fully as the rest of Beluga, so each one is off until you turn it on, and it may change before it’s finished. Here’s what each does, and what it changes.
+          Early features we’re still shaping. They haven’t been tested as fully as the rest of Beluga, so most are off until you turn them on, and each may change before it’s finished. Here’s what each does, and what it changes.
         </p>
       </div>
       {EXPERIMENTS.map((id) => {

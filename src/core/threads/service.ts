@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ThreadStartInput, ThreadTools } from '../../agent/types.js';
 import type { AgentRef } from '../../protocol.js';
-import { ASSISTANT_TITLE, isAssistant } from '../../shared/assistant.js';
+import { ASSISTANT_TITLE, isAssistant, THIS_COMPUTER } from '../../shared/assistant.js';
 import { autoContinueFor, limitResumeAt } from '../../shared/auto-continue.js';
 import { limitStops } from '../auto-continue.js';
 import { LOCAL_RUNTIME } from '../../shared/local-endpoints.js';
@@ -235,7 +235,7 @@ export class ThreadService {
     const choice = state.runtimes.find((r) => r.id === runtime);
     if (!choice && state.runtimes.length) throw new Error(`There is no agent runtime "${runtime}". Use one of: ${available.join(', ')}.`);
     const agent: AgentRef = { runtime: runtime as AgentRef['runtime'], label: choice?.label ?? runtime, ...(model ? { model } : {}) };
-    if (choice && !choice.available) throw new Error(`${choice.label} cannot run on this Mac: ${choice.why ?? choice.fix ?? 'it is not set up'}. Use one of: ${available.join(', ')}.`);
+    if (choice && !choice.available) throw new Error(`${choice.label} cannot run on ${THIS_COMPUTER}: ${choice.why ?? choice.fix ?? 'it is not set up'}. Use one of: ${available.join(', ')}.`);
     const models = this.modelsOf(runtime);
     const picked = models.find((m) => m.value === model);
     const usable = (): string => models.filter((m) => !m.why).map((m) => m.value).join(', ') || 'none now';
@@ -243,7 +243,7 @@ export class ThreadService {
     if (!model && runtime === LOCAL_RUNTIME) throw new Error(`${agent.label} needs a model. Use one of: ${usable()}.`);
     if (model && models.length && !picked) throw new Error(`${agent.label} has no model "${model}". Use one of: ${usable()}.`);
     if (picked?.why) throw new Error(`Model "${model}" cannot run now: ${picked.why}`);
-    if (!this.deps.runsAgent(agent)) throw new Error(`${agent.label} cannot run on this Mac${model ? ` with model "${model}"` : ''}. Use one of: ${available.join(', ')}.`);
+    if (!this.deps.runsAgent(agent)) throw new Error(`${agent.label} cannot run on ${THIS_COMPUTER}${model ? ` with model "${model}"` : ''}. Use one of: ${available.join(', ')}.`);
     const efforts = picked?.efforts;
     if (effort && efforts?.length && !efforts.includes(effort)) throw new Error(`Model "${model}" has no effort "${effort}". Use one of: ${efforts.join(', ')}.`);
     return agent;

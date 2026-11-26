@@ -11,6 +11,7 @@ import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { attachDialogues, detachDialogues } from './registry.js';
 import { Dialogues } from './service.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
 export interface DialoguesHost {
   readonly session: Session;
@@ -19,7 +20,7 @@ export interface DialoguesHost {
 }
 
 /** Runtimes a dialogue can name besides your default agent (when this Beluga has them). */
-const KNOWN_RUNTIMES = ['claude', 'codex', 'opencode', 'copilot', 'grok', 'local'];
+const KNOWN_RUNTIMES = ['claude', 'codex', 'opencode', 'copilot', 'grok', 'antigravity', 'local'];
 
 /** Your agents: the default one, then every other runtime this Beluga can run. */
 export function myAgents(own: AgentRef): AgentRef[] {
@@ -89,7 +90,7 @@ export function launchDialogues(host: DialoguesHost): () => void {
     runTurn: async (run) => {
       const runtime = run.participant.agent.runtime;
       const backend = session.backendFor(runtime);
-      if (!backend) throw new Error(`${run.participant.agent.label} can't run on this Mac`);
+      if (!backend) throw new Error(`${run.participant.agent.label} can't run on ${THIS_COMPUTER}`);
       const channel = run.dialogue.channel ?? 'room';
       const place = channel === 'room' ? undefined : turnPlace(session.workspaces?.place(channel), run.participant.agent, run.dialogue.mode !== 'work');
       // No place (the room): the speaker's own model rides the run, or a local model wouldn't know its endpoint (BLG-503).

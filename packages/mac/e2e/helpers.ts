@@ -85,3 +85,32 @@ export async function openTasks(page: Page): Promise<void> {
   await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: /^Work/ }).first().click();
   await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: /^Tasks/ }).click();
 }
+
+type XtermLike = {
+  element?: Element;
+  options: { fontSize?: number };
+  buffer: { active: { length: number; getLine: (y: number) => { translateToString: (trim: boolean) => string } | undefined } };
+};
+
+/** Each terminal drawn in `scope`: its text (all lines kept) and font size, read through the dev build's hook. */
+const termsIn = (scope: Scope): Promise<Array<{ text: string; fontSize: number }>> =>
+  scope.locator('.xterm').evaluateAll((els) => {
+    const terms = Object.values((window as unknown as { __belugaTerms?: Record<string, XtermLike> }).__belugaTerms ?? {});
+    return els.flatMap((el) => {
+      const t = terms.find((x) => x.element === el);
+      if (!t) return [];
+      const buf = t.buffer.active;
+      const lines: string[] = [];
+      for (let y = 0; y < buf.length; y++) lines.push(buf.getLine(y)?.translateToString(true) ?? '');
+      return [{ text: lines.join('\n'), fontSize: t.options.fontSize ?? 0 }];
+    });
+  });
+
+/**
+ * What the terminals in `scope` show, as text. Terminals draw with the GPU (BLG-963), so there is
+ * no text in the page to find: poll this instead, `expect.poll(() => termText(term)).toContain(…)`.
+ */
+export const termText = async (scope: Scope): Promise<string> => (await termsIn(scope)).map((t) => t.text).join('\n');
+
+/** The font size the terminal in `scope` draws with. */
+export const termFontSize = async (scope: Scope): Promise<number> => (await termsIn(scope))[0]?.fontSize ?? 0;

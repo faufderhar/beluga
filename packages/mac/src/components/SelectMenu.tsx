@@ -14,7 +14,7 @@ interface MenuProps<T extends string> {
   readonly search: boolean;
   readonly searchPlaceholder?: string | undefined;
   readonly mono?: boolean | undefined;
-  readonly size: 'regular' | 'small';
+  readonly size: 'regular' | 'small' | 'large';
   readonly trigger: RefObject<HTMLButtonElement | null>;
   readonly pressed: RefObject<{ x: number; y: number } | null>;
   readonly onChoose: (value: T) => void;

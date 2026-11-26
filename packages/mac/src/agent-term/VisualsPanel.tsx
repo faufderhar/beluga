@@ -90,7 +90,7 @@ export function VisualsPanel({ wsId, opened, active, onPick, onClose, onCloseAll
           );
         })}
         <span className={s.flex} />
-        <IconButton icon="x" label="Close the Panel" keys="Esc" onClick={onCloseAll} />
+        <IconButton size="small" icon="x" label="Close the Panel" keys="Esc" onClick={onCloseAll} />
       </div>
       <div className={s.visualBody} role="tabpanel">
         {current?.kind === 'visual' ? <VisualBody key={openedId(current)} wsId={wsId} n={current.n} /> : current?.kind === 'image' ? <Markdown text={`![${current.path.split('/').pop() ?? 'Picture'}](<${current.path}>)`} paths localImages /> : current?.kind === 'task' ? findIssue(board, current.key) ? <Markdown text={'```' + TASKS_FENCE + '\n' + current.key + '\n```'} tasks /> : <p className={s.visualGone}>{current.key} isn’t on your board.</p> : null}

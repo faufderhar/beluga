@@ -4,6 +4,7 @@ import path from 'node:path';
 import { WorkspaceError } from './manager.js';
 import { git, tryGit } from './git.js';
 import { cloneableOrigin, repoName } from '../shared/repo-key.js';
+import { THIS_COMPUTER, upFirst } from '../shared/assistant.js';
 
 /** Where new projects go unless you pick somewhere: the first of these that exists, else ~/Projects. */
 const HOMES = ['Projects', 'projects', 'Developer', 'code', 'Code', 'dev', 'repos', 'GitHub'];
@@ -113,13 +114,13 @@ function freeFolder(parent: string, name: string): string {
 
 /** git's trouble cloning `address`, in plain words. */
 export function cloneError(output: string, address: string): string {
-  if (/permission denied \(publickey\)|host key verification failed/i.test(output)) return "This Mac's SSH key can't get at that repository. Try its https address, or add your key where it's hosted.";
+  if (/permission denied \(publickey\)|host key verification failed/i.test(output)) return `${upFirst(THIS_COMPUTER)}'s SSH key can't get at that repository. Try its https address, or add your key where it's hosted.`;
   if (/could not read username|authentication failed|terminal prompts disabled|denied to|403/i.test(output)) {
     return "That repository needs a sign-in git doesn't have here. If it's on GitHub, run gh auth login and gh auth setup-git in a terminal, then try again.";
   }
   if (/repository not found|not found|does not exist/i.test(output)) return "Can't find that repository: check the address, or it may be private.";
   if (/could not resolve host|network is unreachable|timed out|connection refused/i.test(output)) return `Can't reach ${address} right now.`;
-  if (/no space left/i.test(output)) return 'This Mac is out of disk space.';
+  if (/no space left/i.test(output)) return `${upFirst(THIS_COMPUTER)} is out of disk space.`;
   const last = output.trim().split('\n').filter(Boolean).pop();
   return last ? `Cloning failed: ${last.replace(/^fatal:\s*/, '').slice(0, 200)}` : 'Cloning failed';
 }

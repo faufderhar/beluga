@@ -4,6 +4,7 @@ import { cx } from '../components/ui.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { type RowColor, colorVars } from '../lib/row-colors.js';
 import s from './Sidebar.module.css';
+import m from './signal.module.css';
 
 /** The sidebar's building blocks: a foldable section and a row (used by Sidebar and the friends' sections). */
 
@@ -42,6 +43,25 @@ export type RowProps = Omit<HTMLAttributes<HTMLDivElement>, 'onClick'> & {
 };
 
 /**
+ * What a list of conversations (the categories, Unread) adds to a chat's or plan's own row. The row
+ * stays the one a project's list draws: these only add to it, so it does there all it does here.
+ */
+export interface RowExtras {
+  /** Its name with what waits ("add-auth · Needs you"): apart from the same row further down. */
+  readonly label: string;
+  /** Where it lives, quietly after its name: the project, "Chats". */
+  readonly where: string;
+  /** Before the row's own marks at its right edge: the list's tools and words. */
+  readonly trailing?: ReactNode;
+  /** Its name bold for something other than news (a snooze that ended). */
+  readonly bold?: boolean;
+  /** A click on it: the list opens it, and keeps it in place while you're in it. */
+  readonly open: () => void;
+  /** The list's own marks on the row (`data-category`). */
+  readonly data?: Readonly<Record<`data-${string}`, string>>;
+}
+
+/**
  * A sidebar row. It passes its ref and other props through, so a right-click menu (or a
  * tooltip) wrapped around it can attach.
  */
@@ -74,3 +94,13 @@ export const Row = forwardRef<HTMLDivElement, RowProps>(function Row({ icon, lab
     </div>
   );
 });
+
+/** A row's name, and what a list adds to it: bold when the list says so, and where it lives after it (drawn from the attribute: a hint for the eye, the tooltip says it). */
+export function ExtrasName({ name, extras, className }: { name: ReactNode; extras: RowExtras | undefined; className?: string | undefined }) {
+  return (
+    <>
+      <span className={cx(className, extras?.bold && m.unreadName)}>{name}</span>
+      {extras ? <span className={m.where} data-where={extras.where} aria-hidden="true" /> : null}
+    </>
+  );
+}

@@ -5,6 +5,7 @@ import type { MergePreview } from '@beluga/workspaces/merge-preview.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Button, cx } from '../../components/ui.js';
+import { Checkbox } from '../../components/Alert.js';
 import { useApi, useApp } from '../../lib/beluga.js';
 import { type CheckTone, reviewMerge } from '../../lib/merge-review.js';
 import { askBeforeWork } from '../../lib/work-confirm.js';
@@ -20,6 +21,7 @@ import s from './merge-review.module.css';
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 const SHOWN_COMMITS = 5;
+const NO_KEYS: readonly string[] = [];
 
 const TONE_ICON: Record<CheckTone, IconName> = { ok: 'check', info: 'info', block: 'alert' };
 
@@ -103,10 +105,15 @@ function Body({ ws, close, children }: { ws: Workspace; close: () => void; child
   const home = useApp((st) => st.home);
   const { preview, error } = usePreview(ws.id);
   const review = preview ? reviewMerge(preview) : undefined;
+  // Variables kept for this chat (keys pasted into it, BLG-965): the project keeps them unless you untick it.
+  const ownVars = useApp((st) => st.envKeys.worktrees?.[ws.id] ?? NO_KEYS);
+  const projectName = useApp((st) => st.projects.find((p) => p.id === ws.projectId)?.name ?? 'the project');
+  const [keepVars, setKeepVars] = useState(true);
   const go = (): void => {
     if (!review?.canMerge) return;
     close();
-    void api.workspaces.merge(ws.id);
+    const first = keepVars && ownVars.length ? api.env.carryWorktree(ws.id) : Promise.resolve(0);
+    void first.catch(() => 0).then(() => api.workspaces.merge(ws.id));
   };
   const fix = (kind: 'commit' | 'claude'): void => {
     close();
@@ -136,15 +143,35 @@ function Body({ ws, close, children }: { ws: Workspace; close: () => void; child
           </li>
         ))}
       </ul>
+      {ownVars.length ? (
+        <div className={s.vars} data-merge-vars>
+          <Checkbox
+            checked={keepVars}
+            onChange={setKeepVars}
+            label={
+              <>
+                Keep {ownVars.slice(0, 3).map((k, i) => (
+                  <span key={k}>
+                    {i ? ', ' : ''}
+                    <code>{k}</code>
+                  </span>
+                ))}
+                {ownVars.length > 3 ? ` and ${ownVars.length - 3} more` : ''} for {projectName}
+              </>
+            }
+            detail={`Pasted into this chat, so only it has ${ownVars.length === 1 ? 'it' : 'them'} now. Kept, ${ownVars.length === 1 ? 'it joins' : 'they join'} ${projectName}’s variables and every new chat and worktree gets ${ownVars.length === 1 ? 'it' : 'them'}. Off: only this worktree keeps ${ownVars.length === 1 ? 'it' : 'them'}.`}
+          />
+        </div>
+      ) : null}
       <p className={s.note}>A merge commit is made in your main folder, so its files change. Nothing is pushed.</p>
     </>
   );
   const buttons = (
     <div className={s.buttons}>
-      <Button size="small" onClick={close}>
+      <Button onClick={close}>
         Cancel
       </Button>
-      <Button size="small" variant="merge" icon="merge" disabled={!review?.canMerge} onClick={go} data-merge-confirm>
+      <Button variant="merge" icon="merge" disabled={!review?.canMerge} onClick={go} data-merge-confirm>
         {review?.confirm ?? 'Merge'}
       </Button>
     </div>

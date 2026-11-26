@@ -3,11 +3,13 @@ import { CLAUDE_CAPABILITIES, claudeRuntime } from './claude/index.js';
 import { createClaudeBackend } from './claude/runner.js';
 import { askBtw } from './claude/btw.js';
 import { endpointClaudeHome, prepareEndpointHome, type EndpointHome } from './endpoint-home.js';
-import { tokensPerSecond } from '../../shared/local-endpoints.js';
+import { type EndpointFormat, tokensPerSecond } from '../../shared/local-endpoints.js';
+import { type BridgeRoute, openaiBridge } from './openai-bridge.js';
 import type { AgentRuntime } from './types.js';
 import type { BtwRequest } from '../btw.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
 
-const GONE = "That local model isn't set up on this Mac any more. Pick another in Settings › Local models.";
+const GONE = `That local model isn't set up on ${THIS_COMPUTER} any more. Pick another in Settings › Local models.`;
 
 /** The endpoint a picked model value names (core/local-endpoints.ts resolves it). */
 export interface LocalTarget {
@@ -15,6 +17,18 @@ export interface LocalTarget {
   readonly baseUrl: string;
   readonly key?: string;
   readonly model: string;
+  /** Unset: 'anthropic'. 'openai' runs through the translator (openai-bridge.ts). */
+  readonly format?: EndpointFormat;
+}
+
+/** Where Claude Code's requests actually go: the endpoint itself, or the translator in front of an OpenAI-format one. */
+export type Wire = Pick<BridgeRoute, 'baseUrl'> & { readonly key?: string };
+
+/** The wire for a target: an OpenAI-format endpoint gets a route on the translator, its key kept there. */
+export async function wireFor(t: LocalTarget, route: (t: LocalTarget) => Promise<BridgeRoute> = (x) => openaiBridge().route(x)): Promise<Wire> {
+  if (t.format !== 'openai') return { baseUrl: t.baseUrl, ...(t.key ? { key: t.key } : {}) };
+  const r = await route(t);
+  return { baseUrl: r.baseUrl, key: r.token };
 }
 
 /**
@@ -26,12 +40,12 @@ export interface LocalTarget {
  * its own (`configDir`, see endpoint-home.ts): signed in to Claude, it would send that sign-in
  * over any of these variables.
  */
-export function endpointEnv(t: LocalTarget, configDir: string = endpointClaudeHome()): Record<string, string> {
+export function endpointEnv(t: LocalTarget, configDir: string = endpointClaudeHome(), wire: Wire = t): Record<string, string> {
   const m = t.model;
   return {
     CLAUDE_CONFIG_DIR: configDir,
-    ANTHROPIC_BASE_URL: t.baseUrl,
-    ANTHROPIC_AUTH_TOKEN: t.key || 'ollama',
+    ANTHROPIC_BASE_URL: wire.baseUrl,
+    ANTHROPIC_AUTH_TOKEN: wire.key || 'ollama',
     ANTHROPIC_API_KEY: '',
     CLAUDE_CODE_OAUTH_TOKEN: '',
     CLAUDE_CODE_USE_BEDROCK: '',
@@ -78,23 +92,23 @@ export function localRuntime(resolve: (value: string | undefined) => LocalTarget
       // The model is told its own name, not Claude's (run-instructions.ts).
       const claude = createClaudeBackend({ ...opts, ...claudePath, bridge, model: undefined, agentOf: (input) => ({ runtime: 'local', label: input.model ?? 'Local model' }) });
       return Object.assign(Object.create(claude) as AgentBackend, {
-        run: (input: AgentRunInput) => {
+        run: async (input: AgentRunInput) => {
           const value = input.model ?? input.place?.agent?.model;
           const target = resolve(value);
-          if (!target) return Promise.reject(new Error(GONE));
-          return claude.run(onEndpoint(input, target, (v) => resolve(v)));
+          if (!target) throw new Error(GONE);
+          return claude.run(onEndpoint(input, target, (v) => resolve(v), usageMeter(), prepareEndpointHome(), await wireFor(target)));
         },
         // Its terminal (BLG-534): Claude Code on the endpoint, as its runs are.
-        terminal: (input: AgentRunInput, sink: TerminalSink) => {
+        terminal: async (input: AgentRunInput, sink: TerminalSink) => {
           const target = resolve(input.model ?? input.place?.agent?.model);
-          if (!target) return Promise.reject(new Error(GONE));
-          return claude.terminal!(onEndpoint(input, target, (v) => resolve(v)), sink);
+          if (!target) throw new Error(GONE);
+          return claude.terminal!(onEndpoint(input, target, (v) => resolve(v), usageMeter(), prepareEndpointHome(), await wireFor(target)), sink);
         },
         // A side question forks the conversation on its own endpoint: a local conversation never goes to Anthropic.
-        btw: (req: BtwRequest) => {
+        btw: async (req: BtwRequest) => {
           const target = resolve(req.model);
-          if (!target) return Promise.reject(new Error(GONE));
-          return askBtw({ ...req, model: target.model }, { ...claudePath, env: endpointEnv(target) });
+          if (!target) throw new Error(GONE);
+          return askBtw({ ...req, model: target.model }, { ...claudePath, env: endpointEnv(target, endpointClaudeHome(), await wireFor(target)) });
         },
       });
     },
@@ -134,7 +148,7 @@ export function usageMeter(now: () => number = Date.now): { begin: () => void; m
  * The run, on the endpoint: its env over yours, its model's own name, no effort (endpoints don't take it), free usage with its speed.
  * What of your Claude Code folder didn't come along (endpoint-home.ts) is said on the run, never left to guess.
  */
-export function onEndpoint(input: AgentRunInput, target: LocalTarget, resolve: (value: string | undefined) => LocalTarget | undefined, meter = usageMeter(), home: EndpointHome = prepareEndpointHome()): AgentRunInput {
+export function onEndpoint(input: AgentRunInput, target: LocalTarget, resolve: (value: string | undefined) => LocalTarget | undefined, meter = usageMeter(), home: EndpointHome = prepareEndpointHome(), wire: Wire = target): AgentRunInput {
   if (home.missed.length) input.onEvent('progress', missedWords(home.missed));
   const onEvent = (to: AgentRunInput['onEvent']): AgentRunInput['onEvent'] => (kind, text) => to(kind, kind === 'usage' ? meter.map(text) : text);
   // A model picked mid-run on the same endpoint switches; one elsewhere waits for the next run.
@@ -151,7 +165,9 @@ export function onEndpoint(input: AgentRunInput, target: LocalTarget, resolve: (
     ...rest,
     model: target.model,
     onEvent: onEvent(input.onEvent),
-    env: { ...input.env, ...endpointEnv(target, home.dir) },
+    env: { ...input.env, ...endpointEnv(target, home.dir, wire) },
+    // Its key is how Claude Code signs in to the endpoint: kept for Claude Code, not held for the shell (BLG-1027).
+    signsInFromEnv: true,
     ...(input.onFollowUps ? { onFollowUps: (send) => input.onFollowUps!(send && ((f) => send(mapFollowUp(f)))) } : {}),
     ...(input.onSteer ? { onSteer: (steer) => input.onSteer!(steer && wrapSteer(steer, mapFollowUp)) } : {}),
   };

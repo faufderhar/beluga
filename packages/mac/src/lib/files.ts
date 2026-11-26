@@ -63,6 +63,13 @@ export async function revealInFinder(client: SocketClient, path: string): Promis
   await client.api.local.openFolder(parentOf(path));
 }
 
+/** Open a folder of yours in a Finder window (in a served page or on a computer's page: as Show in Finder there). */
+export async function openFolderInFinder(client: SocketClient, path: string): Promise<void> {
+  if (webServed()) return downloadOrSay(client, path);
+  if (await openThere(client, path, 'reveal')) return;
+  await client.api.local.openFolder(path);
+}
+
 /** Open a file of yours the way Finder would (its default app, usually your editor). One that runs something shows in Finder instead. */
 export async function openWithDefaultApp(client: SocketClient, path: string): Promise<void> {
   if (webServed()) return downloadOrSay(client, path);

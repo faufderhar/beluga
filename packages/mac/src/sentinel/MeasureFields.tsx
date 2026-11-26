@@ -151,7 +151,7 @@ function MetricRow({ m, index, from, change, remove }: { m: MetricSpec; index: n
         onChange={(u) => change(u === 'rows' || u === 'output' ? { kind: u, unit: undefined, better: 'none' } : u === 'series' ? { kind: 'series', unit: undefined } : { kind: undefined, unit: u })}
       />
       {m.kind === 'rows' || m.kind === 'output' ? <span /> : <Select<Better> label={`Which way number ${index + 1} is good`} size="small" value={m.better ?? 'up'} options={BETTER} onChange={(better) => change({ better })} />}
-      <IconButton icon="x" label={`Remove ${m.label || m.name}`} onClick={remove} />
+      <IconButton size="small" icon="x" label={`Remove ${m.label || m.name}`} onClick={remove} />
     </div>
   );
 }

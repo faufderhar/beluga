@@ -85,7 +85,7 @@ function Starts({ projects, has, send }: { projects: readonly string[]; has: boo
   );
   return (
     <div className={s.starts} data-testid="sentinel-starts">
-      <Segmented<Kind> radio label="What your agent can make" value={kind} options={KINDS.map(({ value, label, icon }) => ({ value, label, icon }))} onChange={setKind} />
+      <Segmented<Kind> size="small" radio label="What your agent can make" value={kind} options={KINDS.map(({ value, label, icon }) => ({ value, label, icon }))} onChange={setKind} />
       <p className={s.startsLine}>{picked.line}</p>
       <div className={home.ideas} role="group" aria-label={`${picked.label} to ask for`}>
         {examplesFor(kind, projects).map((x) => pill(x))}
@@ -247,12 +247,12 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
         {busy ? <span className={s.chatBusy}>Working…</span> : null}
         <span className={s.grow} />
         <Tip label="A new conversation beside this one">
-          <IconButton icon="plus" label="New Chat" onClick={() => void fresh()} />
+          <IconButton size="small" icon="plus" label="New Chat" onClick={() => void fresh()} />
         </Tip>
         <ActionsDropdown items={more}>
-          <IconButton icon="more" label="More for this chat" />
+          <IconButton size="small" icon="more" label="More for this chat" />
         </ActionsDropdown>
-        {onClose ? <IconButton icon="x" label="Close" onClick={onClose} /> : null}
+        {onClose ? <IconButton size="small" icon="x" label="Close" onClick={onClose} /> : null}
       </div>
       <div className={v.chat} data-drop-zone>
         <ChatLog

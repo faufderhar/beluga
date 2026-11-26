@@ -17,6 +17,10 @@ export const GIT_HANDLERS = {
   'git.fetch': (s, projectId) => ctl(s).mainSync.fetch(projectId),
   'git.fetchIfStale': (s, projectId) => ctl(s).mainSync.fetchIfStale(projectId),
   'git.updateMain': (s, projectId) => ctl(s).mainSync.update(projectId),
+  'git.pushMain': (s, id) => {
+    const c = ctl(s);
+    return c.mainSync.push(c.manager.find(id)?.projectId ?? id);
+  },
   'git.stashAndUpdate': (s, projectId) => ctl(s).mainSync.stashAndUpdate(projectId),
   'git.moveAndUpdate': async (s, projectId, name) => {
     const out = await ctl(s).mainSync.moveAndUpdate(projectId, name || undefined);

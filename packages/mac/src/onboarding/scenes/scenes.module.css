@@ -133,19 +133,8 @@
   background: color-mix(in srgb, var(--ok) 13%, transparent);
 }
 
-/* ── Agents ───────────────────────────────────────────────── */
+/* ── A conversation's pieces (Friends) ─────────────────────── */
 
-.agents {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  transform-style: preserve-3d;
-}
-.window {
-  composes: glass;
-  width: 330px;
-  overflow: hidden;
-}
 .windowBar {
   display: flex;
   align-items: center;
@@ -189,13 +178,6 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
-.chat {
-  padding: 14px;
-  min-height: 236px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .ask {
   align-self: flex-end;
   max-width: 85%;
@@ -215,8 +197,6 @@
   color: var(--text-2);
 }
 .step code,
-.steer code,
-.answer code,
 .request code {
   font-family: var(--font-mono);
   font-size: 0.92em;
@@ -236,125 +216,6 @@
   to {
     transform: rotate(360deg);
   }
-}
-.steer {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 11px;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-.steerTag {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-}
-.answer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text);
-}
-.claudeMark {
-  color: var(--claude);
-}
-.side {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 186px;
-  transform: translateZ(40px);
-}
-.agent {
-  composes: glass;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 11px;
-  border-radius: 11px;
-}
-.agent div {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.agent .dim {
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.agentDot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--claude);
-  animation: breathe 1.8s ease-in-out infinite;
-}
-@keyframes breathe {
-  50% {
-    opacity: 0.3;
-  }
-}
-.shot {
-  composes: glass;
-  padding: 7px;
-  border-radius: 11px;
-  transform-origin: top center;
-}
-.shotPage {
-  position: relative;
-  height: 96px;
-  border-radius: 6px;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  box-shadow: inset 0 0 0 0.5px var(--hairline);
-}
-.shotLine {
-  height: 5px;
-  border-radius: 3px;
-  background: var(--text-3);
-  opacity: 0.5;
-}
-.shotField {
-  width: 60%;
-  height: 10px;
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
-}
-.shotButton {
-  width: 60%;
-  height: 11px;
-  border-radius: 3px;
-  background: var(--accent);
-  opacity: 0.8;
-}
-.shotToast {
-  position: absolute;
-  bottom: 5px;
-  font-size: 8.5px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 12%, var(--bg));
-}
-.shotCaption {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 2px 0;
-  font-size: 10.5px;
-  color: var(--text-3);
 }
 
 /* ── Friends ──────────────────────────────────────────────── */
@@ -567,6 +428,26 @@
   background: var(--accent);
   color: white;
   box-shadow: none;
+}
+button.btn:hover {
+  background: var(--bg-hover);
+}
+button.btnPrimary:disabled {
+  cursor: default;
+}
+/* Ada's Allow, waiting for you to press it: a ring that keeps reaching out. */
+.btnPrimary[data-waiting] {
+  cursor: pointer;
+  animation: nudge 1.4s var(--ease-out) infinite;
+}
+@keyframes nudge {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  80%,
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
 }
 
 /* ── Earnings ─────────────────────────────────────────────── */
@@ -846,370 +727,3 @@
   animation: none;
 }
 
-/* ── Sentinel: a sentence becomes a sentinel (Sentinel.tsx) ─ */
-
-.sentinel {
-  composes: glass;
-  width: min(100%, 620px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.sentinelBarName {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 550;
-}
-.sentinelBody {
-  position: relative;
-  height: 356px;
-  padding: 14px;
-}
-.sentinelRun {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-/* What each part of the sentence becomes: the trigger (blue), Claude's work (copper), how you hear (green). */
-.said {
-  align-self: flex-end;
-  max-width: 92%;
-  padding: 8px 12px;
-  border-radius: 12px 12px 4px 12px;
-  background: var(--bg-hover);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.said span {
-  display: inline;
-  padding: 1px 3px;
-  margin-right: 3px;
-  border-radius: 5px;
-}
-.said [data-part='when'],
-.sentinelRow[data-part='when'] .sentinelLabel {
-  color: color-mix(in srgb, var(--info) 80%, var(--text));
-}
-.said [data-part='when'] {
-  background: color-mix(in srgb, var(--info) 13%, transparent);
-}
-.said [data-part='what'] {
-  color: color-mix(in srgb, var(--claude) 80%, var(--text));
-  background: color-mix(in srgb, var(--claude) 13%, transparent);
-}
-.said [data-part='then'] {
-  color: color-mix(in srgb, var(--ok) 80%, var(--text));
-  background: color-mix(in srgb, var(--ok) 13%, transparent);
-}
-.sentinelCard {
-  display: flex;
-  flex-direction: column;
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: 0 0 0 0.5px var(--hairline);
-  overflow: hidden;
-}
-.sentinelHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-bottom: 0.5px solid var(--hairline);
-  font-size: 13px;
-}
-.sentinelHead > svg {
-  color: var(--text-3);
-}
-.sentinelState {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-3);
-  transition: color 0.3s ease;
-}
-.sentinelState[data-on] {
-  color: var(--ok);
-}
-/* A switch like the page's Turn It On: off while it's new, on when you turn it on. */
-.toggle {
-  position: relative;
-  width: 26px;
-  height: 15px;
-  border-radius: 8px;
-  background: var(--hairline-strong);
-  transition: background 0.3s ease;
-}
-.toggle i {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--bg-raised);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: transform 0.35s var(--ease-out);
-}
-.toggle[data-on] {
-  background: var(--ok);
-}
-.toggle[data-on] i {
-  transform: translateX(11px);
-}
-.sentinelRow {
-  display: grid;
-  grid-template-columns: 38px 16px 14px auto 1fr 14px;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  color: var(--text-2);
-  transition: background 0.3s ease;
-}
-.sentinelRow[data-part='when'] {
-  grid-template-columns: 38px 14px 1fr;
-  border-bottom: 0.5px solid var(--hairline);
-  color: var(--text);
-}
-.sentinelRow[data-part='when'] > svg {
-  color: color-mix(in srgb, var(--info) 80%, var(--text));
-}
-.sentinelRow[data-part='what'] > svg {
-  color: var(--claude);
-}
-.sentinelRow[data-part='then'] > svg {
-  color: color-mix(in srgb, var(--ok) 85%, var(--text));
-}
-.sentinelRow[data-state='running'] {
-  background: color-mix(in srgb, var(--claude) 7%, transparent);
-}
-.sentinelLabel {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-.stepNum {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--bg-hover);
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--text-3);
-}
-.stepKind {
-  font-weight: 550;
-  color: var(--text);
-  white-space: nowrap;
-}
-.stepDetail {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-3);
-}
-.stepState {
-  display: grid;
-  place-items: center;
-}
-.sentinelAccess {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-top: 0.5px solid var(--hairline);
-  font-size: 11px;
-}
-.sentinelAccess .dim {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Look · Work · Ship, the one it has picked. */
-.accessPick {
-  flex: none;
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--bg-hover);
-}
-.accessPick span {
-  padding: 2px 8px;
-  border-radius: 5px;
-  color: var(--text-3);
-}
-.accessPick span[data-on] {
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 0.5px var(--hairline);
-  color: var(--text);
-  font-weight: 550;
-}
-.report {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--ok) 11%, var(--bg-raised));
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ok) 28%, var(--hairline));
-}
-.reportIcon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--ok) 18%, transparent);
-  color: color-mix(in srgb, var(--ok) 85%, var(--text));
-}
-.reportText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.reportText span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-2);
-}
-.sentinelPick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 14px 12px;
-  border-top: 0.5px solid var(--hairline);
-}
-.sentinelChip,
-.usesTab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  font: inherit;
-  font-size: 11.5px;
-  color: var(--text-3);
-  cursor: default;
-  transition:
-    background 0.2s ease,
-    color 0.2s ease;
-}
-.sentinelChip:hover,
-.usesTab:hover {
-  color: var(--text-2);
-  background: var(--bg-hover);
-}
-.sentinelChip[aria-selected='true'],
-.usesTab[aria-selected='true'] {
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-/* ── Sentinel at work: its page's films (SentinelUses.tsx) ── */
-
-.uses {
-  composes: glass;
-  width: min(100%, 620px);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 12px 14px;
-}
-.usesTabs {
-  display: flex;
-  gap: 4px;
-}
-.usesTab {
-  position: relative;
-  overflow: hidden;
-}
-/* The film playing fills its tab as it plays (it holds while you point at it). */
-.usesFill {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 100%;
-  transform-origin: left;
-  background: color-mix(in srgb, var(--accent) 60%, transparent);
-  animation: usesFill linear forwards;
-}
-.usesFill[data-held] {
-  animation-play-state: paused;
-}
-@keyframes usesFill {
-  from {
-    transform: scaleX(0);
-  }
-}
-.usesScreen {
-  position: relative;
-  height: 272px;
-  border-radius: 12px;
-  background: var(--bg-sunken);
-  box-shadow: inset 0 0 0 0.5px var(--hairline);
-  overflow: hidden;
-}
-.usesFoot {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: usesIn 0.5s var(--ease-out);
-}
-@keyframes usesIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-.usesLine {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 550;
-}
-.usesLine svg {
-  flex: none;
-  color: var(--text-3);
-}
-.usesSaid {
-  display: flex;
-  gap: 7px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: var(--bg-hover);
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--text-2);
-}
-.usesSaid svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--text-3);
-}
-.usesSaid span {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-@media (prefers-reduced-motion: reduce) {
-  .usesFoot {
-    animation: none;
-  }
-}
-:global(html[data-motion='reduce']) .usesFoot {
-  animation: none;
-}

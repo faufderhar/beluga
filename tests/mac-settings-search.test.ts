@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { PANES, SETTINGS } from '../packages/mac/src/dialogs/settings-index.js';
 import { HIDEABLE_BUTTONS } from '../src/ui/settings-menus.js';
 import { EXPERIMENTS, EXPERIMENT_INFO } from '../src/shared/experiments.js';
+import { TRACE_PROVIDERS } from '../src/shared/trace-destinations.js';
 import { flatHits, foldText, hitAnchors, searchSettings, settingAnchor } from '../packages/mac/src/lib/settings-search.js';
 
 /** Settings search (BLG-740): find a setting by typing, and jump to its row. */
@@ -142,10 +143,12 @@ const s = (...names: string[]) => names.map((n) => fn(SETTINGS_TSX, n)).join('\n
 const PANE_SOURCES: Record<string, string> = {
   general: [s('General', 'PictureRow'), fn(read('dialogs/UpdateSettings.tsx'), 'UpdateSettingsGroup'), read('dialogs/TelemetrySettings.tsx'), read('dialogs/EarningsSettings.tsx')].join('\n'),
   appearance: [s('Appearance'), read('dialogs/ThemePicker.tsx'), read('dialogs/ArchiveSettledRow.tsx')].join('\n'),
-  claude: [s('AgentPane', 'OpenModelsGroup', 'AgentsGroup'), ...['LaunchFlagsSettings', 'McpSettings', 'LocalModelsSettings', 'ContextSettings', 'UsageLimitSettings', 'ParallelSettings', 'ChatLimitSettings'].map((f) => read(`dialogs/${f}.tsx`)), fn(read('dialogs/AgentThreadsSettings.tsx'), 'ThreadLimitsSettings'), ...THREAD_LIMIT_ROWS.map(({ label }) => `'${label}'`)].join('\n'),
+  claude: [s('AgentPane', 'OpenModelsGroup', 'AgentsGroup'), ...['LaunchFlagsSettings', 'McpSettings', 'LocalModelsSettings', 'AcpAgentsSettings', 'ContextSettings', 'UsageLimitSettings', 'ParallelSettings', 'ChatLimitSettings', 'AutopilotWaitSettings'].map((f) => read(`dialogs/${f}.tsx`)), fn(read('dialogs/AgentThreadsSettings.tsx'), 'ThreadLimitsSettings'), ...THREAD_LIMIT_ROWS.map(({ label }) => `'${label}'`)].join('\n'),
+  // Its rows are made from shared/trace-destinations.ts, and so are their entries.
+  traces: [read('dialogs/TracesSettings.tsx'), ...TRACE_PROVIDERS.map((p) => `'${p.name}'`)].join('\n'),
   notifications: ['dialogs/NotificationSettings.tsx', 'dialogs/sound/SoundSettings.tsx', 'dialogs/sound/TestNotification.tsx'].map(read).join('\n'),
   // Its toolbar buttons' rows are made from HIDEABLE_BUTTONS, and so are their entries.
-  workspaces: [s('Workspaces', 'HiddenProjectsGroup', 'BranchPrefixRow', 'FetchEveryRow'), ...HIDEABLE_BUTTONS.map(([, label]) => `'${label}'`)].join('\n'),
+  workspaces: [s('Workspaces', 'HiddenProjectsGroup', 'BranchPrefixRow', 'PrTitleRow', 'FetchEveryRow'), ...HIDEABLE_BUTTONS.map(([, label]) => `'${label}'`)].join('\n'),
   terminal: ['dialogs/TerminalSettings.tsx', 'dialogs/TerminalThemes.tsx', 'dialogs/TerminalImport.tsx'].map(read).join('\n'),
   fire: read('dialogs/FireSettings.tsx'),
   menubar: read('dialogs/MenuBarSettings.tsx'),

@@ -29,7 +29,7 @@ export function EarningsCard() {
         <Button size="small" variant="primary" onClick={() => openEarnings()}>
           Connect…
         </Button>
-        <IconButton icon="x" label="Don’t show this again" className={s.dismiss} onClick={dismissEarningsHint} />
+        <IconButton size="small" icon="x" label="Don’t show this again" className={s.dismiss} onClick={dismissEarningsHint} />
       </section>
     );
   }

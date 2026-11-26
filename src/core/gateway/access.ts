@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { NEEDS, type Need, type TaskKind } from './protocol.js';
 import { hhmm } from '../../shared/clock.js';
+import { THIS_COMPUTER } from '../../shared/assistant.js';
+import { knownOr } from '../../shared/known-or.js';
 
 /**
  * Who may have their Claude do what on this Mac: per-capability settings by trust level, and
@@ -61,18 +63,18 @@ export function capabilitiesFrom(raw: unknown): Capabilities {
 }
 
 /** Plain words for each capability (Settings, the request sheet, reasons sent back). */
-export const CAP_INFO: Readonly<Record<Need, { label: string; detail: string; doing: string }>> = {
-  shell: { label: 'Run commands', detail: 'Commands in a terminal on this Mac, with no input, stopped after a time limit.', doing: 'run commands' },
+export const CAP_INFO: Readonly<Record<Need, { label: string; detail: string; doing: string }>> = knownOr({
+  shell: { label: 'Run commands', detail: `Commands in a terminal on ${THIS_COMPUTER}, with no input, stopped after a time limit.`, doing: 'run commands' },
   files: { label: 'Read and write files', detail: 'In the folders you choose below (and the task’s own folder). Secrets never.', doing: 'read or write files' },
   project: { label: 'Work in projects', detail: 'Your agent works in one of your projects (as for your own requests).', doing: 'work in your projects' },
   screen: { label: 'See the screen', detail: 'Screenshots of the main display or one app’s window, read-only.', doing: 'see the screen' },
   device: { label: 'Device info', detail: 'macOS version, Mac model, processor, memory, disk space, apps, network basics and battery. No secrets.', doing: 'read device information' },
-};
+}, (v) => ({ label: v, detail: '', doing: v }));
 
 /** The order Settings lists them in. */
 export const CAP_ORDER: readonly Need[] = ['shell', 'files', 'project', 'screen', 'device'];
 
-export const CAP_LEVEL_INFO: Readonly<Record<CapLevel, string>> = { allow: 'Allow', ask: 'Ask me', off: 'Off' };
+export const CAP_LEVEL_INFO: Readonly<Record<CapLevel, string>> = knownOr({ allow: 'Allow', ask: 'Ask me', off: 'Off' }, (v) => v);
 
 /** What one capability is for someone at this trust level. */
 export const capFor = (caps: Capabilities, need: Need, trust: string): CapLevel => (trust === 'blocked' ? 'off' : (caps.levels[need][trust as CapTrust] ?? 'off'));
@@ -201,7 +203,7 @@ export function declineReason(d: AccessDecision, owner: string): string {
 
 export const EXPIRIES = ['never', 'day', 'week'] as const;
 export type Expiry = (typeof EXPIRIES)[number];
-export const EXPIRY_INFO: Readonly<Record<Expiry, string>> = { never: 'Never expires', day: 'For 1 day', week: 'For 1 week' };
+export const EXPIRY_INFO: Readonly<Record<Expiry, string>> = knownOr({ never: 'Never expires', day: 'For 1 day', week: 'For 1 week' }, (v) => v);
 const EXPIRY_MS: Readonly<Record<Expiry, number | undefined>> = { never: undefined, day: 86_400_000, week: 7 * 86_400_000 };
 
 /** Your answer to a request: once, always (with the rule's scope), or no (with a reason). */
@@ -237,7 +239,7 @@ export function ruleFor(facts: RequestFacts, peerName: string, decision: Pick<De
 
 // ------------------------------------------------------------------ words for screens
 
-const KIND_WORDS: Readonly<Record<RuleKind, string>> = { task: 'Requests to your agent', command: 'Commands', file: 'Files sent from this Mac' };
+const KIND_WORDS: Readonly<Record<RuleKind, string>> = { task: 'Requests to your agent', command: 'Commands', file: `Files sent from ${THIS_COMPUTER}` };
 
 /** "Requests to your Claude needing: run commands, see the screen · in landing". */
 export function ruleLabel(rule: Rule): string {
@@ -257,7 +259,7 @@ export function expiryLabel(rule: Pick<Rule, 'expiresAt'>, now = Date.now()): st
   return `until ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${hhmm(rule.expiresAt)}`;
 }
 
-export const DECISION_INFO: Readonly<Record<RuleDecision, string>> = { allow: 'Allow', ask: 'Ask me', decline: 'Decline' };
+export const DECISION_INFO: Readonly<Record<RuleDecision, string>> = knownOr({ allow: 'Allow', ask: 'Ask me', decline: 'Decline' }, (v) => v);
 
 /** How the scope of "Always" reads for this request (the sheet spells it out). */
 export function scopeChoices(facts: Pick<RequestFacts, 'kind' | 'project' | 'folder'>): { this: string; any: string } | undefined {

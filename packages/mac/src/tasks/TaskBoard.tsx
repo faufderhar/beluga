@@ -539,7 +539,7 @@ const Column = memo(function Column({
             <span className={t.grow} />
             {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
             {status === 'done' ? <ArchiveDoneButton projectId={projectId} /> : null}
-            <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />
+            <IconButton size="small" icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />
           </>
         )}
       </header>

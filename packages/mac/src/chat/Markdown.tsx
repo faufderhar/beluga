@@ -18,6 +18,8 @@ import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { MentionPill } from './Mention.js';
+import { KEY_LINK, knownKeyNames, linkKeyRefs } from './key-refs.js';
+import kp from './key-paste.module.css';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
 import { keepBlankLines } from './typed-lines.js';
@@ -36,6 +38,8 @@ import { hastText } from '../components/markdown/hast-text.js';
 import { GITHUB_REHYPE, TO_HTML } from '../components/markdown/md-pipeline.js';
 import { RichBlock, useRichFence } from '../components/blocks/RichBlock.js';
 import { loadHighlighter } from '../lib/highlight.js';
+import { useRunInTerminal } from '../lib/term-run.js';
+import { runnableCommand } from '@beluga/shared/render/run-command.js';
 import { CODE_FENCE } from '@beluga/shared/code-ref.js';
 import { CodeRefBlock } from '../components/code/CodeRefBlock.js';
 import { PR_COMMENTS_FENCE } from '@beluga/shared/pr-comments-ref.js';
@@ -48,7 +52,8 @@ import s from './chat.module.css';
 import { thisComputer } from '../lib/os-words.js';
 
 
-function Code({ code, lang }: { code: string; lang?: string }) {
+/** A code block in a message: Copy, and Run for shell commands (`onRun`: your own and your own Claude's only). */
+function Code({ code, lang, onRun }: { code: string; lang?: string; onRun?: ((command: string) => void) | undefined }) {
   const [html, setHtml] = useState<string | undefined>();
   useEffect(() => {
     if (!lang) return;
@@ -65,17 +70,27 @@ function Code({ code, lang }: { code: string; lang?: string }) {
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
   const copy = (text: string, what: string): void => void copyText(text).then(() => say(`Copied ${what}`));
   const fence = `\`\`\`${lang ?? ''}\n${code}\n\`\`\``;
+  const command = useMemo(() => (onRun ? runnableCommand(lang, code) : undefined), [onRun, lang, code]);
   const items: ActionItem[] = [
-    { label: 'Copy Code', icon: 'copy', onSelect: () => copy(code, 'the code') },
+    ...(command && onRun ? [{ label: 'Run in Terminal', icon: 'play' as const, onSelect: () => onRun(command) }] : []),
+    { label: 'Copy Code', icon: 'copy', separate: Boolean(command), onSelect: () => copy(code, 'the code') },
     { label: 'Copy as Markdown', onSelect: () => copy(fence, 'as Markdown') },
     { label: 'Quote in Reply', icon: 'chat', separate: true, onSelect: () => quoteInBox(ui, fence) },
   ];
   return (
     <ActionsContext items={items}>
       <div className={s.codeBlock}>
-        <button type="button" className={s.copyCode} onClick={() => copy(code, 'the code')} aria-label="Copy code">
-          Copy
-        </button>
+        <div className={s.codeTools}>
+          {command && onRun ? (
+            <button type="button" className={s.copyCode} onClick={() => onRun(command)} aria-label="Run in the terminal" title={command}>
+              <Icon name="play" size={10} />
+              Run
+            </button>
+          ) : null}
+          <button type="button" className={s.copyCode} onClick={() => copy(code, 'the code')} aria-label="Copy code">
+            Copy
+          </button>
+        </div>
         {/* eslint-disable-next-line react/no-danger */}
         {html ? <div className={s.shiki} dangerouslySetInnerHTML={{ __html: html }} /> : <pre><code>{code}</code></pre>}
       </div>
@@ -174,12 +189,15 @@ function MessageFence({ code, lang, localImages }: { code: string; lang: string 
   const { ui } = useBeluga();
   const live = useContext(LiveText);
   const fence = useRichFence(lang, code);
+  // Run only what's yours to run: your own words and your own Claude's, never a friend's.
+  const run = useRunInTerminal();
+  const onRun = localImages && !live ? run : undefined;
   if (fence?.kind === 'math') return <MathTex tex={fence.tex} display />;
   if (fence?.kind === 'mermaid') return fence.block.kind === 'graph' ? <GraphBlock code={fence.block.text} live={live} localImages={localImages} /> : <ViewBlock code={fence.block.text} type="any" live={live} local={localImages} />;
-  if (fence) return <RichBlock fence={fence} code={code} lang={lang} onQuote={(text) => quoteInBox(ui, text)} />;
+  if (fence) return <RichBlock fence={fence} code={code} lang={lang} onQuote={(text) => quoteInBox(ui, text)} onRun={onRun} />;
   // A kind of diagram we don't draw ourselves: Mermaid draws it, once it's all there.
   if (lang === 'mermaid' && !live) return <Diagram code={code} />;
-  return <Code code={code} {...(lang ? { lang } : {})} />;
+  return <Code code={code} {...(lang ? { lang } : {})} onRun={onRun} />;
 }
 
 type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
@@ -264,10 +282,18 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
   const worktrees = useApp((st) => (tasks ? worktreeIds(st.projects) : ''));
   // Paths relative to a worktree link only where there's one on screen to open them in.
   const inWorktree = useApp((st) => paths && st.view.kind === 'workspace');
+  // `$NAME` this chat keeps (a key kept out of the chat, BLG-965): a key chip, as in the box.
+  const keyNames = useApp((st) => {
+    if (!text.includes('$')) return '';
+    const wsId = st.view.kind === 'workspace' ? st.view.id : undefined;
+    const project = wsId ? st.projects.find((p) => p.workspaces.some((w) => w.id === wsId)) : undefined;
+    return knownKeyNames(st.envKeys, wsId, project?.root).join(' ');
+  });
   // A chat named by its ref ("<owner>/<channel>", or a mention a line's code kept from being a pill) is its chip.
   const source = useMemo(() => {
     // Math first (prices stay words), then set aside so the links below leave it alone.
-    const math = guardMath(prepareMath(typed ? keepBlankLines(text) : text));
+    const keyed = keyNames ? linkKeyRefs(text, new Set(keyNames.split(' '))) : text;
+    const math = guardMath(prepareMath(typed ? keepBlankLines(keyed) : keyed));
     // A pasted worktree link in ticks first (its chip), then mentions, chats, paths and task keys: each leaves the code and links before it alone.
     const known = new Set(worktrees.split(' '));
     const withRefs = worktrees ? codeWorktreeRefs(math.text, (id) => known.has(id)) : math.text;
@@ -276,7 +302,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     const withPaths = paths ? linkPaths(withChats, { relative: inWorktree }) : withChats;
     const board = new Set(keys.split(' '));
     return math.restore(keys ? linkTaskKeys(withPaths, (k) => board.has(k)) : withPaths);
-  }, [text, keys, worktrees, mentions, paths, inWorktree, typed]);
+  }, [text, keys, worktrees, mentions, paths, inWorktree, typed, keyNames]);
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
   // The same renderers from one render to the next: a new one would remount what it drew (a graph
@@ -299,6 +325,14 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       if (mention) return <MentionPill mention={mention} />;
       // A bare task key (shared/task-refs.ts linkTaskKeys): the board's small chip.
       if (href.startsWith(TASK_LINK_SCHEME)) return <TaskKeyChip taskKey={href.slice(TASK_LINK_SCHEME.length)} />;
+      // A key this chat keeps: its chip (the words say $NAME; the agent has the key in its environment).
+      if (href.startsWith(KEY_LINK))
+        return (
+          <span className={kp.ref} data-key-ref={href.slice(KEY_LINK.length)} title="A key kept for this chat: its name went, never the key">
+            <Icon name="key" size={10} />
+            {href.slice(KEY_LINK.length)}
+          </span>
+        );
       // An image in the words: the chip the message box showed, a link that opens it full size.
       const image = parseAttachmentHref(href);
       if (image) {

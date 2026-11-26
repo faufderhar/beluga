@@ -116,7 +116,7 @@ function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: bool
             <>
               <span className={side.hoverTools}>
                 <ActionsDropdown items={items}>
-                  <IconButton icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
+                  <IconButton size="small" icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
                 </ActionsDropdown>
               </span>
             </>

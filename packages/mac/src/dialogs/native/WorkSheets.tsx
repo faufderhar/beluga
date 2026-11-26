@@ -4,12 +4,14 @@ import { EnvironmentSheet, WorktreeEnvSheet } from '../EnvironmentSheet.js';
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { BoardSheet } from '../../tasks/boards.js';
 import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
+import { ScheduleSheet } from '../../chat/ScheduleSheet.js';
 import { AddTileSheet } from '../../sentinel/AddTileSheet.js';
 import { DocumentSheet } from '../../sentinel/DocumentSheet.js';
 import { DataSheet } from '../../sentinel/DataSheet.js';
 import { ShareProjectSheet } from './ShareProjectSheet.js';
 import { SyncSheet } from '../../tasks/SyncSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
+import { PlanSettingsSheet } from '../../plans/PlanSettingsSheet.js';
 import { useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { canRunOn } from '@beluga/core/trust.js';
@@ -24,6 +26,7 @@ import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
 import { ContinueSheet } from './ContinueSheet.js';
 import { ForkToMacSheet } from './ForkToMacSheet.js';
+import { ForkCarrySheet } from './ForkCarrySheet.js';
 import { ImportConversationSheet } from './ImportConversationSheet.js';
 import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
 import { DeleteProjectAlert } from './DeleteProjectAlert.js';
@@ -175,6 +178,8 @@ export function NativeSheets() {
       return <ContinueSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
     case 'fork_to_mac':
       return <ForkToMacSheet key={sheet.wsId} owner={sheet.owner} wsId={sheet.wsId} close={close} />;
+    case 'fork_carry':
+      return <ForkCarrySheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
     case 'peer_run':
       return <PeerRunSheet key={sheet.peerId ?? ''} {...(sheet.peerId ? { peerId: sheet.peerId } : {})} close={close} />;
     case 'template':
@@ -211,6 +216,8 @@ export function NativeSheets() {
       return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
     case 'new_sentinel':
       return <NewSentinelSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.way ? { way: sheet.way } : {})} close={close} />;
+    case 'schedule':
+      return <ScheduleSheet channel={sheet.channel} {...(sheet.prompt ? { prompt: sheet.prompt } : {})} {...(sheet.onMade ? { onMade: sheet.onMade } : {})} close={close} />;
     case 'add_tile':
       return <AddTileSheet key={sheet.dashboardId} dashboardId={sheet.dashboardId} close={close} />;
     case 'sentinel_data':
@@ -223,6 +230,8 @@ export function NativeSheets() {
       return <SendBackSheet planId={sheet.planId} milestone={sheet.milestone} close={close} />;
     case 'plan_mode':
       return <PlanModeSheet key={sheet.planId} planId={sheet.planId} close={close} />;
+    case 'plan_settings':
+      return <PlanSettingsSheet key={sheet.planId} planId={sheet.planId} close={close} />;
     case 'git_trouble':
       return <GitTroubleSheet key={`${sheet.wsId}:${sheet.trouble.kind}`} wsId={sheet.wsId} trouble={sheet.trouble} retry={sheet.retry} close={close} />;
     case 'share_copy':

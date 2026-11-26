@@ -8,6 +8,7 @@ import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
 import { type DeviceCert, MacFrame, PhoneFrame, type PhoneControl as PhoneControlState, type PhoneOp, type ScreenView } from '../src/companion/protocol.js';
 import { mkdtempSync } from 'node:fs';
 import path from 'node:path';
+import { waitFor } from './helpers.js';
 
 /** A fake adb: exec/execBytes answer from scripted matchers (first whose args match the join). */
 function fakeSys(script: Array<{ match: RegExp; out?: string; code?: number; bytes?: Buffer }>): { sys: SystemPort; calls: string[] } {
@@ -394,7 +395,8 @@ describe('the mirror over adb plays video (BLG-185)', () => {
     const pieces: VideoPiece[] = [];
     const statuses: MirrorStatus[] = [];
     const stop = ctl.startMirror(id, { fps: 30, video: true }, () => {}, (st) => statuses.push(st), (p) => pieces.push(p));
-    await sleep(400);
+    // The three pieces, however long a busy machine takes to pass them on (a fixed wait failed under load).
+    await waitFor(() => pieces.length >= 3, 10_000);
     const record = calls.find((c) => /screenrecord/.test(c));
     expect(record).toContain('--output-format=h264 --size 592x1280 --bit-rate 6000000');
     expect(pieces.map((p) => p.key)).toEqual([true, false, false]);

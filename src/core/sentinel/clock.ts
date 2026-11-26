@@ -1,4 +1,4 @@
-import { type ScheduleTrigger, type Trigger, scheduleMinutes } from './model.js';
+import { type OnceTrigger, type ScheduleTrigger, type Trigger, scheduleMinutes } from './model.js';
 
 /**
  * When a schedule runs (docs/sentinel.md §4, "Clock"): pure, in the Mac's local time (or `tz`,
@@ -114,6 +114,8 @@ const wallMinutes = (w: Wall): number => w.h * 60 + w.min;
  * without it, the next after `now`. Not a schedule: undefined. A result at or before `now` is due.
  */
 export function nextRunAt(trigger: Trigger, after: number | undefined, now: number, tz?: string): number | undefined {
+  // One time: its moment, until a slot at or after it ran (or it was turned on after it).
+  if (trigger.kind === 'once') return onceAt(trigger.at, after ?? now - 1);
   if (trigger.kind !== 'schedule') return undefined;
   const from = after ?? now;
   const start = wallOf(from, tz);
@@ -132,6 +134,10 @@ export function nextRunAt(trigger: Trigger, after: number | undefined, now: numb
 
 /** The latest slot at or before `now`. */
 export function lastSlotAt(trigger: Trigger, now: number, tz?: string): number | undefined {
+  if (trigger.kind === 'once') {
+    const at = Date.parse(trigger.at);
+    return at <= now ? at : undefined;
+  }
   if (trigger.kind !== 'schedule') return undefined;
   const start = wallOf(now, tz);
   const latest = wallMinutes(start) + SHIFT_MIN;
@@ -161,7 +167,7 @@ export type Due =
  * only just passed always runs.
  */
 export function dueNow(trigger: Trigger, last: number | undefined, now: number, opts: { readonly lateMs?: number; readonly tz?: string } = {}): Due {
-  if (trigger.kind !== 'schedule') return { kind: 'wait' };
+  if (trigger.kind !== 'schedule' && trigger.kind !== 'once') return { kind: 'wait' };
   const next = nextRunAt(trigger, last, now, opts.tz);
   if (next === undefined) return { kind: 'wait' };
   if (next > now) return { kind: 'wait', at: next };
@@ -178,7 +184,8 @@ const COUNT_MAX = 1000;
 const LATE_FLOOR_MS = 60_000;
 
 /** When a slot counts as missed: LATE_MS, or half the gap for a schedule every few minutes (never under LATE_FLOOR_MS). */
-function lateMsOf(t: ScheduleTrigger): number {
+function lateMsOf(t: ScheduleTrigger | OnceTrigger): number {
+  if (t.kind === 'once') return LATE_MS;
   return t.every === 'minutes' ? Math.min(LATE_MS, Math.max(LATE_FLOOR_MS, (scheduleMinutes(t) * 60_000) / 2)) : LATE_MS;
 }
 
@@ -186,7 +193,14 @@ function lateMsOf(t: ScheduleTrigger): number {
 function countSlots(trigger: Trigger, first: number, last: number, tz?: string): number {
   // Every few minutes: counted, not walked (a week asleep is two thousand slots).
   if (trigger.kind === 'schedule' && trigger.every === 'minutes') return Math.min(COUNT_MAX, Math.floor((last - first) / (scheduleMinutes(trigger) * 60_000)) + 1);
+  if (trigger.kind === 'once') return 1;
   let n = 0;
   for (let t: number | undefined = first; t !== undefined && t <= last && n < COUNT_MAX; t = nextRunAt(trigger, t, t, tz)) n++;
   return n;
+}
+
+/** A one-time trigger's moment when it's still to come after `after`; undefined once it ran (or for a moment that can't be read). */
+function onceAt(at: string, after: number): number | undefined {
+  const t = Date.parse(at);
+  return Number.isNaN(t) || t <= after ? undefined : t;
 }

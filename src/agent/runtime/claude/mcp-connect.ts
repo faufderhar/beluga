@@ -31,13 +31,20 @@ export interface McpSession {
 /** `env`, when given, is Claude Code's whole environment (else Beluga's own). */
 export type OpenMcpSession = (cwd: string, servers: NonNullable<Options['mcpServers']>, env?: Readonly<Record<string, string | undefined>>) => McpSession;
 
-/** A Claude Code session that takes no prompt: only asked about its MCP servers. */
+/**
+ * Claude Code tells its MCP servers it draws MCP Apps (the `io.modelcontextprotocol/ui` extension
+ * at `initialize`), so a server sends its view-only data in a result's `_meta`. Set on your runs that
+ * keep apps (runner.ts withAppsHost) and on these sessions, whose tools/call answer apps.
+ */
+export const MCP_APPS_HOST_ENV: Readonly<Record<string, string>> = { CLAUDE_CODE_MCP_APPS_HOST: '1' };
+
+/** A Claude Code session that takes no prompt: only asked about its MCP servers (and an app's calls and reads). */
 export function claudeMcpSession(claudePath?: string): OpenMcpSession {
   return (cwd, mcpServers, env) => {
     const idle = (async function* () {
       await new Promise(() => undefined);
     })() as AsyncIterable<never>;
-    return query({ prompt: idle, options: { cwd, settingSources: [], mcpServers, ...(env ? { env: { ...env } } : {}), ...claudeExecutable(claudePath) } }) as unknown as McpSession;
+    return query({ prompt: idle, options: { cwd, settingSources: [], mcpServers, env: { ...(env ?? process.env), ...MCP_APPS_HOST_ENV }, ...claudeExecutable(claudePath) } }) as unknown as McpSession;
   };
 }
 
@@ -172,15 +179,16 @@ export class McpConnect {
   /**
    * The session kept for `server` with your servers (opened now when there is none), once `server`
    * is up (or as it is when that took too long). It stays open for the next call only while the
-   * server is connected and the call did not fail. A server that needs a sign-in is refused with
-   * words the chat can show.
+   * server is connected and the call did not fail. A server that needs a sign-in, or one Claude
+   * Code never listed, is refused with words the chat can show.
    */
   private withServer<T>(cwds: readonly string[], server: string, use: (session: McpSession, statuses: McpServerStatus[]) => Promise<T>): Promise<T> {
     return this.kept.use(JSON.stringify([cwds, server]), () => this.openFor(cwds, this.entries(cwds)), async (session, forget) => {
       const statuses = await this.settle(session, server);
-      const status = statuses.find((s) => s.name === server)?.status;
-      if (status === 'needs-auth') throw new Error(`${server} needs you to sign in. Sign in to it, then open this chat again.`);
-      if (status !== 'connected') forget();
+      const st = statuses.find((s) => s.name === server);
+      if (!st) throw new Error(notListed(server));
+      if (st.status === 'needs-auth') throw new Error(`${server} needs you to sign in. Sign in to it, then open this chat again.`);
+      if (st.status !== 'connected') forget();
       return use(session, statuses);
     });
   }
@@ -211,12 +219,18 @@ export class McpConnect {
     return this.opts.ownEnv ? this.open(cwd, servers, this.envAt(cwds)) : this.open(cwd, servers);
   }
 
-  /** The statuses once none (or `only`, when named) is still starting, or as they are when it took too long. */
+  /**
+   * The statuses once none is still starting, or as they are when it took too long. With `only`
+   * named: once that one is listed and not starting. Claude Code lists claude.ai connectors only
+   * after its account answers (a second or so after the session opens, with no settings file to
+   * name them), so a server not listed yet may still come.
+   */
   private async settle(session: McpSession, only?: string): Promise<McpServerStatus[]> {
     const until = Date.now() + (this.opts.settleMs ?? SETTLE_MS);
     for (;;) {
       const statuses = await session.mcpServerStatus();
-      if (!statuses.some((s) => s.status === 'pending' && (only === undefined || s.name === only)) || Date.now() >= until) return statuses;
+      const starting = only === undefined ? statuses.some((s) => s.status === 'pending') : (statuses.find((s) => s.name === only)?.status ?? 'pending') === 'pending';
+      if (!starting || Date.now() >= until) return statuses;
       await sleep(this.opts.pollMs ?? POLL_MS);
     }
   }
@@ -233,8 +247,20 @@ export class McpConnect {
   }
 }
 
+/** The name Claude Code gives a claude.ai connector ("claude.ai Ratel Cloud"). */
+const CLAUDE_AI_PREFIX = 'claude.ai ';
+
+/** Why an app's server isn't there: Claude Code never listed it, even after waiting. */
+export function notListed(server: string): string {
+  if (server.startsWith(CLAUDE_AI_PREFIX)) {
+    const label = server.slice(CLAUDE_AI_PREFIX.length);
+    return `Claude Code didn’t load ${label}, your claude.ai connector. Check that ${label} is still connected on claude.ai and that Claude Code is signed in with your claude.ai account (not an API key), then open this chat again. If one of your own MCP servers has the same address, Claude Code uses that one instead: call the tool again to see its app.`;
+  }
+  return `Claude Code didn’t load ${server}: it isn’t one of your MCP servers here any more, or it took too long to start. Check it in Settings › Claude, then open this chat again.`;
+}
+
 function toRow(st: McpServerStatus, entry: OwnerMcpEntry | undefined): McpServerRow {
-  const claudeAi = !entry && (st.scope === 'claudeai' || st.source === 'claudeai' || st.name.startsWith('claude.ai '));
+  const claudeAi = !entry && (st.scope === 'claudeai' || st.source === 'claudeai' || st.name.startsWith(CLAUDE_AI_PREFIX));
   const from: McpServerRow['from'] = entry?.from ?? (claudeAi ? 'claude.ai' : 'user');
   const where = entry?.from === 'plugin' ? entry.plugin : entry?.from === 'project' && entry.project ? path.basename(entry.project) : undefined;
   const kind = st.config && 'type' in st.config ? st.config.type : undefined;

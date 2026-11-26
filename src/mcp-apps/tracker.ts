@@ -1,21 +1,25 @@
 import type { StepApp } from '../shared/mcp-apps.js';
 import type { StepRecord } from '../shared/steps.js';
 import { appsSupported } from './domain/capabilities.js';
-import { boundStructured } from './domain/result.js';
+import { boundResultMeta, boundStructured } from './domain/result.js';
 import { splitMcpToolName } from './domain/tool-name.js';
 import { toolUiOf } from './domain/ui-meta.js';
 import type { CatalogServer, McpToolCatalog } from './ports/tool-catalog.js';
 
 /**
  * Follows a run's SDK messages beside the StepRecorder and puts on each step of a UI tool what its
- * app needs (shared/mcp-apps.ts): the server, the `ui://` resource and the result's structured
- * content. The lookup of a tool's `_meta` is async: a step recorded before it came back is sent
- * again, with its app, through `emit`. It records apps only while the turn's `system/init` says
+ * app needs (shared/mcp-apps.ts): the server, the `ui://` resource, and the result's structured
+ * content and `_meta` (for the view only: the model reads the tool_result, never these). The lookup
+ * of a tool's `_meta` is async: a step recorded before it came back is sent again, with its app,
+ * through `emit`. It records apps only while the turn's `system/init` says
  * Claude Code has both MCP Apps capabilities (domain/capabilities.ts): without them the chat looks
  * as it did before MCP Apps.
  */
 
-type AppPlace = Omit<StepApp, 'structuredContent'>;
+type AppPlace = Omit<StepApp, 'structuredContent' | 'resultMeta'>;
+
+/** What a step's tool result keeps for its app. */
+type AppResult = Pick<StepApp, 'structuredContent' | 'resultMeta'>;
 
 interface Block {
   readonly type?: string;
@@ -37,7 +41,7 @@ export interface TrackedMessage {
 export class McpAppTracker {
   /** Steps whose tool has an app. */
   private readonly apps = new Map<string, AppPlace>();
-  private readonly structured = new Map<string, unknown>();
+  private readonly results = new Map<string, AppResult>();
   /** The newest record of each MCP tool step whose lookup is still out. */
   private readonly waiting = new Map<string, StepRecord | undefined>();
   /** Tools listed again once already (a server that connected after the first list). */
@@ -67,8 +71,10 @@ export class McpAppTracker {
     // tool_use_result belongs to the message's one tool result.
     const results = blocks.filter((b) => b.type === 'tool_result' && b.tool_use_id);
     if (results.length !== 1) return;
-    const value = boundStructured(msg.tool_use_result);
-    if (value !== undefined) this.structured.set(results[0]!.tool_use_id!, value);
+    const structuredContent = boundStructured(msg.tool_use_result);
+    const resultMeta = boundResultMeta(msg.tool_use_result);
+    if (structuredContent === undefined && resultMeta === undefined) return;
+    this.results.set(results[0]!.tool_use_id!, { ...(structuredContent !== undefined ? { structuredContent } : {}), ...(resultMeta ? { resultMeta } : {}) });
   }
 
   /** The record with its app, if its tool has one. */
@@ -76,8 +82,7 @@ export class McpAppTracker {
     if (this.waiting.has(record.id)) this.waiting.set(record.id, record);
     const app = this.apps.get(record.id);
     if (!app) return record;
-    const structuredContent = this.structured.get(record.id);
-    return { ...record, app: { ...app, ...(structuredContent !== undefined ? { structuredContent } : {}) } };
+    return { ...record, app: { ...app, ...this.results.get(record.id) } };
   }
 
   private lookUp(id: string, name: string): void {

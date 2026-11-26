@@ -1,6 +1,7 @@
 import type { Session } from '../core/session.js';
 import { type ContentResults, type NameResults, formatWithPrettier, formatterFor, searchContents, searchNames, writeWorkspaceFile } from '../core/workspace-files.js';
 import type { Args } from './api.js';
+import { THIS_COMPUTER } from '../shared/assistant.js';
 
 /** What each method in files-api.ts does: on your own workspaces' folders, on this Mac. */
 
@@ -10,7 +11,7 @@ type FilesEditHandlers = { readonly [M in FilesEditMethod]: (s: Session, ...args
 /** The workspace's folder, and its project's main folder (where Prettier may be installed instead). */
 function foldersOf(s: Session, wsId: string): { root: string; more: string[] } {
   const ws = s.workspaces?.manager.find(wsId);
-  if (!ws?.path || ws.archived) throw new Error('That workspace isn’t on this Mac');
+  if (!ws?.path || ws.archived) throw new Error(`That workspace isn’t on ${THIS_COMPUTER}`);
   return { root: ws.path, more: ws.projectRoot && ws.projectRoot !== ws.path ? [ws.projectRoot] : [] };
 }
 
