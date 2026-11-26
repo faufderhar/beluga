@@ -5,7 +5,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import { until, useSupports } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { HomeView, UsageView } from '../lib/link/protocol';
-import { shortTokens, tokenDetail, tokenTotal } from '../../../src/ui/usage-cards';
+import { shortTokens, tokenDetail, tokenTotal } from '../../../src/shared/token-format';
 import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
 import { AgentMarkIcon, runtimeMark } from './AgentMark';
