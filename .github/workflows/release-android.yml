@@ -1,0 +1,99 @@
+name: Release for Android
+
+# The Android phone app (Beluga-<version>.apk) and Beluga Link (Beluga-Link.apk), built here when
+# asked. If BELUGA_ANDROID_KEYSTORE_BASE64 and BELUGA_ANDROID_KEY_PASSWORD secrets are configured,
+# both APKs are signed with that release key; otherwise both are signed with Expo's debug keystore
+# so Beluga and Beluga Link still match signatures (checkSignatures).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release's tag (v3.8.0-mac)
+        required: true
+        default: v3.8.0-mac
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+      - run: npm ci
+      - run: npm ci
+        working-directory: packages/companion
+      - name: Bundle Bare link worklet and Android native addons
+        working-directory: packages/companion
+        run: npm run worklet:bundle
+      - name: Generate Android project
+        working-directory: packages/companion
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform android --no-install --clean
+      - name: Configure optional Android release signing
+        env:
+          KEYSTORE_B64: ${{ secrets.BELUGA_ANDROID_KEYSTORE_BASE64 }}
+          KEY_PASSWORD: ${{ secrets.BELUGA_ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BELUGA_ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEY_PASSWORD" ]; then
+            ks="$RUNNER_TEMP/beluga-android.p12"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$ks"
+            echo "BELUGA_ANDROID_KEYSTORE=$ks" >> "$GITHUB_ENV"
+            echo "BELUGA_ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            [ -n "$KEY_ALIAS" ] && echo "BELUGA_ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "Using release keystore from repository secrets."
+          else
+            echo "No BELUGA_ANDROID_KEYSTORE_BASE64 secret configured; signing both APKs with debug keystore."
+          fi
+      - name: Build release APKs
+        working-directory: packages/companion/android
+        env:
+          CI: '1'
+        run: |
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          ./gradlew assembleRelease --no-daemon
+      - name: Collect and verify APKs
+        working-directory: packages/companion
+        run: |
+          ver=$(node -p "require('./app.json').expo.version")
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/Beluga-${ver}.apk"
+          cp modules/phone-control/addon/build/outputs/apk/release/phone-control-addon-release.apk dist/Beluga-Link.apk
+          apksigner=$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          sig_app=$("$apksigner" verify --print-certs "dist/Beluga-${ver}.apk" | awk '/SHA-256 digest:/ {print $NF; exit}')
+          sig_link=$("$apksigner" verify --print-certs dist/Beluga-Link.apk | awk '/SHA-256 digest:/ {print $NF; exit}')
+          echo "Beluga-${ver}.apk SHA-256 signer: $sig_app"
+          echo "Beluga-Link.apk   SHA-256 signer: $sig_link"
+          if [ -z "$sig_app" ] || [ "$sig_app" != "$sig_link" ]; then
+            echo "APK signing certificates do not match!" >&2
+            exit 1
+          fi
+          ls -lh dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beluga-android-${{ inputs.tag }}
+          path: packages/companion/dist/*.apk
+      - name: The release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          ver=$(node -p "require('./packages/companion/app.json').expo.version")
+          notes_args=(--generate-notes)
+          [ -f "docs/releases/${ver}.md" ] && notes_args=(--notes-file "docs/releases/${ver}.md")
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Beluga ${ver}" "${notes_args[@]}" --latest || true
+          fi
+          gh release upload "$TAG" "packages/companion/dist/Beluga-${ver}.apk" "packages/companion/dist/Beluga-Link.apk" --clobber
